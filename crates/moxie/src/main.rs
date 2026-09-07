@@ -15,15 +15,9 @@ fn main() {
             // Before `DefaultPlugins`: its absolute asset source
             // builds when `AssetPlugin` does, not after.
             register_absolute_source,
-            // `../assets`: the editor crates share one asset folder
-            // (`editor/assets`) rather than each carrying its own.
             DefaultPlugins
                 .set(AssetPlugin {
-                    file_path: "../assets".into(),
-                    // A dragged file's own path is outside this root
-                    // by construction, so it needs the per-load
-                    // override `Deny` allows; the stricter default
-                    // (`Forbid`) has no such escape hatch.
+                    file_path: "../../assets".into(),
                     unapproved_path_mode: UnapprovedPathMode::Deny,
                     ..default()
                 })

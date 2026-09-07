@@ -224,13 +224,8 @@ enum Dialog {
 /// Where a project file is picked, starting at the editor's own scene
 /// folder. `None` when the dialog was dismissed.
 fn ask_for_path(dialog: Dialog) -> Option<PathBuf> {
-    let scenes = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../assets/scenes");
-    let _ = std::fs::create_dir_all(&scenes);
-
     let file = rfd::FileDialog::new()
-        .add_filter("MotionGfx project", &[EXTENSION])
-        .set_directory(&scenes);
+        .add_filter("MotionGfx project", &[EXTENSION]);
 
     match dialog {
         Dialog::Open => file.pick_file(),
