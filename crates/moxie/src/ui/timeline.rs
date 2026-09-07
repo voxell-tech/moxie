@@ -3,9 +3,14 @@
 //! block's own header box already carries its label.
 
 mod drag;
+mod drop;
 mod pattern;
 
 pub(crate) use drag::{Dragging, cancel_on_escape};
+pub(crate) use drop::{
+    Dragging as DropDragging,
+    cancel_on_escape as cancel_drop_on_escape,
+};
 pub(crate) use pattern::DelayPattern;
 
 use bevy_fynix::tag::TagExt as _;
@@ -252,43 +257,76 @@ impl Composer<FynixHost> for TrackArea {
         self,
         ui: &mut BevyUi,
     ) -> ElementHandle<FynixHost, Frame> {
-        ui.elem(elem!(
+        let mut root = ui.elem(elem!(
             Frame,
             width = percent(100),
             direction = FlexDirection::Column,
             flex_grow = 1.0f32
-        ))
-        .observe(on_track_press)
-        .observe(on_track_drag)
-        .observe(on_track_release)
-        .observe(on_track_click_release)
-        .observe(on_track_cancel)
-        .observe(on_track_scroll)
-        .with(|ui| {
-            ui.elem(elem!(PlayheadLine)).bind(
-                |line| line.left(),
-                resource_changed::<MotionGfxManager>(),
-                |WorldNodeRef { world, node }| {
-                    px(world
-                        .resource::<TimelineView>()
-                        .x_from_time(current_time(world, node)))
-                },
-            );
-        })
-        .with(|ui| {
-            ui.compose(TimeAxis);
-        })
-        .with(|ui| {
-            ui.elem(elem!(
-                ScrollArea,
-                width = percent(100),
-                flex_grow = 1.0f32
-            ))
-            .insert(TrackViewport)
-            .remove::<ScrollAreaBehavior>()
-            .watch(value_changed(block_view), build_block_boxes);
-        })
-        .handle()
+        ));
+        root.observe(on_track_press)
+            .observe(on_track_drag)
+            .observe(on_track_release)
+            .observe(on_track_click_release)
+            .observe(on_track_cancel)
+            .observe(on_track_scroll)
+            .with(|ui| {
+                ui.elem(elem!(PlayheadLine)).bind(
+                    |line| line.left(),
+                    resource_changed::<MotionGfxManager>(),
+                    |WorldNodeRef { world, node }| {
+                        px(world
+                            .resource::<TimelineView>()
+                            .x_from_time(current_time(world, node)))
+                    },
+                );
+            })
+            .with(|ui| {
+                ui.compose(TimeAxis);
+            })
+            .with(|ui| {
+                ui.elem(elem!(
+                    ScrollArea,
+                    width = percent(100),
+                    flex_grow = 1.0f32
+                ))
+                .insert(TrackViewport)
+                .remove::<ScrollAreaBehavior>()
+                .watch(value_changed(block_view), build_block_boxes);
+            });
+        let track_area = root.id();
+        let handle = root.handle();
+
+        // Permanent children of `TrackArea` itself, not the
+        // `ScrollArea`: anything spawned inside a `.watch()`-owned
+        // node is gone the next time that node rebuilds, and a live
+        // drag's visuals need to survive every one of those.
+        let insert = ui.theme.color.accent;
+        let merge = ui.theme.palette.purple;
+        let ghost = ui
+            .world
+            .spawn((drop::hidden_ghost(), ChildOf(track_area)))
+            .id();
+        let ghost_label = ui
+            .world
+            .spawn((drop::hidden_ghost_label(), ChildOf(ghost)))
+            .id();
+        let line = ui
+            .world
+            .spawn((drop::hidden_line(insert), ChildOf(track_area)))
+            .id();
+        let outline = ui
+            .world
+            .spawn((drop::hidden_outline(merge), ChildOf(track_area)))
+            .id();
+        ui.world.insert_resource(drop::Visuals::new(
+            track_area,
+            ghost,
+            ghost_label,
+            line,
+            outline,
+        ));
+
+        handle
     }
 }
 
@@ -325,17 +363,27 @@ fn block_placements(world: &World, _: Entity) -> Vec<Placed> {
         .unwrap_or_default()
 }
 
+/// Counter bumped by every committed reorder.
+#[derive(Resource, Default)]
+pub(crate) struct RebuildTick(pub(crate) u64);
+
 /// The boxes plus which one, if any, is selected. The watcher's
 /// signal: a box rebuilds only when a node is added, removed,
-/// re-timed, re-nested, or selection moves onto or off it.
+/// re-timed, re-nested, reordered, or selection moves onto or off it.
 fn block_view(
     world: &World,
     node: Entity,
-) -> (Vec<Placed>, Option<Vec<usize>>) {
+) -> (Vec<Placed>, Option<Vec<usize>>, u64) {
     let selected = world
         .get_resource::<SelectedAction>()
         .and_then(|s| s.0.clone());
-    (block_placements(world, node), selected)
+    // Two siblings drawn the same size lay out identically whichever
+    // order they're in, so a swap leaves the placements elementwise
+    // equal and nothing else here would ask for the rebuild that
+    // rebinds each box to its new path.
+    let tick =
+        world.get_resource::<RebuildTick>().map_or(0, |tick| tick.0);
+    (block_placements(world, node), selected, tick)
 }
 
 /// A block's header: its name (or combinator, if unnamed) beside its
@@ -391,8 +439,10 @@ impl Composer<FynixHost> for BlockHeader {
             background = block_color.with_alpha(0.03),
             border = block_color.with_alpha(0.5)
         ));
+        let ghost_fill = block_color.with_alpha(0.35);
+        let ghost_border = block_color.with_alpha(0.7);
         header.insert(drag::BoxPath(path.clone())).with(move |ui| {
-            ui.elem(elem!(
+            let mut header_button = ui.elem(elem!(
                 !GhostButton,
                 width = percent(100),
                 height = px(18),
@@ -400,16 +450,44 @@ impl Composer<FynixHost> for BlockHeader {
                 padding = UiRect::axes(px(4), px(2)),
                 radius = Val::ZERO,
                 column_gap = px(4)
-            ))
-            .observe({
+            ));
+            header_button.observe({
                 let path = path.clone();
                 move |_: On<Activate>,
                       mut selected: ResMut<SelectedAction>| {
                     selected.0 = Some(path.clone());
                 }
-            })
-            .with(move |ui| {
-                chevron(ui, path, folded, chevron_color);
+            });
+            drop::body(
+                &mut header_button,
+                path.clone(),
+                ghost_fill,
+                ghost_border,
+                label.clone(),
+            );
+            header_button.with(move |ui| {
+                ui.elem(elem!(
+                    !TintButton::default(),
+                    icon = elem!(
+                        Icon,
+                        image = moxie_ui::icons::CHEVRON,
+                        size = px(7),
+                        color = chevron_color,
+                        rotation = if folded {
+                            CHEVRON_SHUT
+                        } else {
+                            CHEVRON_OPEN
+                        }
+                    )
+                ))
+                .observe(
+                    move |_: On<Activate>, mut commands: Commands| {
+                        let path = path.clone();
+                        commands.queue(move |world: &mut World| {
+                            toggle_folded(world, &path);
+                        });
+                    },
+                );
                 ui.elem(elem!(
                     Label,
                     text = label,
@@ -429,7 +507,7 @@ impl Composer<FynixHost> for BlockHeader {
 /// clicking either writes that path in; only the action also lights
 /// up under the cursor.
 fn build_block_boxes(ui: &mut BevyUi) {
-    let (placements, selected) = block_view(ui.world, ui.parent());
+    let (placements, selected, _) = block_view(ui.world, ui.parent());
     let theme = ui.theme;
     let pattern = ui.world.resource::<DelayPattern>().0.clone();
 
@@ -508,11 +586,12 @@ fn build_block_boxes(ui: &mut BevyUi) {
                 } else {
                     Color::NONE
                 };
+                let label_text = label.clone();
                 let mut clip = ui.elem(elem!(
                     TimelineAction,
                     label = elem!(
                         Label,
-                        text = label.clone(),
+                        text = label_text,
                         size = theme.text.small,
                         color = if placed.draft {
                             theme.color.critical.with_alpha(0.9)
@@ -539,6 +618,13 @@ fn build_block_boxes(ui: &mut BevyUi) {
                             selected.0 = Some(path.clone());
                         }
                     });
+                drop::body(
+                    &mut clip,
+                    path.clone(),
+                    fill,
+                    border,
+                    label,
+                );
                 edge_handle(
                     ui,
                     path.clone(),
@@ -558,34 +644,6 @@ fn build_block_boxes(ui: &mut BevyUi) {
             }
         }
     }
-}
-
-/// A block's fold toggle: positioned relative to its own corner
-/// rather than the placement's absolute coordinates, so it moves for
-/// free with whatever a live drag does to the block's own `Node`.
-fn chevron(
-    ui: &mut BevyUi,
-    path: Vec<usize>,
-    folded: bool,
-    color: Color,
-) {
-    ui.elem(elem!(
-        !TintButton::default(),
-        icon = elem!(
-            Icon,
-            image = moxie_ui::icons::CHEVRON,
-            size = px(7),
-            color = color,
-            rotation =
-                if folded { CHEVRON_SHUT } else { CHEVRON_OPEN }
-        )
-    ))
-    .observe(move |_: On<Activate>, mut commands: Commands| {
-        let path = path.clone();
-        commands.queue(move |world: &mut World| {
-            toggle_folded(world, &path);
-        });
-    });
 }
 
 /// A thin, absolutely positioned strip at one edge of a box, wired to

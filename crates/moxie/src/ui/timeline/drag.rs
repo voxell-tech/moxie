@@ -36,7 +36,7 @@ use moxie_ui::reactive::FynixHost;
 
 use super::super::action::{node_at, node_at_mut};
 use super::BlockFoldState;
-use crate::block_layout;
+use crate::block_layout::{self, Placed};
 use crate::{EditorScene, TimelineView};
 
 /// How wide an edge handle is.
@@ -216,8 +216,8 @@ fn relayout(
     path: &[usize],
     kind: Kind,
     secs: f32,
-    mut boxes: Query<(&BoxPath, &mut Node)>,
-    mut gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
+    boxes: Query<(&BoxPath, &mut Node)>,
+    gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
 ) {
     let mut animation = editor_scene.scene().0.animation.clone();
     let Some(node) = node_at_mut(&mut animation, path) else {
@@ -225,38 +225,47 @@ fn relayout(
     };
     apply_edit(node, kind, secs);
 
-    for placed in
-        block_layout::layout(&animation, view, folded.paths())
-    {
-        for (box_path, mut node) in &mut boxes {
-            if box_path.0 != placed.path {
-                continue;
-            }
-            node.left = px(placed.x);
-            node.top = px(placed.y);
-            node.width = px(placed.w);
-            node.height = px(placed.h);
-            break;
-        }
+    let layout = block_layout::layout(&animation, view, folded.paths());
+    apply_layout(&layout, boxes, gaps);
+}
 
-        for (gap_path, mut node) in &mut gaps {
-            if gap_path.0 != placed.path {
-                continue;
-            }
-            // A gap already spawned for this path, but the drag has
-            // since closed it, collapses to nothing rather than
-            // showing a stale width - a fresh gap the drag opens up
-            // where none existed has to wait for the next real
-            // rebuild, same as the edge handles and fold chevron.
-            let width = placed.gap_x.map_or(0.0, |gap_x| {
-                node.left = px(gap_x);
-                node.top = px(placed.y);
-                node.height = px(placed.h);
-                placed.x - gap_x
-            });
-            node.width = px(width);
-            break;
-        }
+/// Pushes `layout` onto whichever spawned box and gap entities
+/// [`BoxPath`]/[`GapPath`] match.
+fn apply_layout(
+    layout: &[Placed],
+    mut boxes: Query<(&BoxPath, &mut Node)>,
+    mut gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
+) {
+    for (box_path, mut node) in &mut boxes {
+        let Some(placed) =
+            layout.iter().find(|p| p.path == box_path.0)
+        else {
+            continue;
+        };
+        node.left = px(placed.x);
+        node.top = px(placed.y);
+        node.width = px(placed.w);
+        node.height = px(placed.h);
+    }
+
+    for (gap_path, mut node) in &mut gaps {
+        let Some(placed) =
+            layout.iter().find(|p| p.path == gap_path.0)
+        else {
+            continue;
+        };
+        // A gap already spawned for this path, but the drag has
+        // since closed it, collapses to nothing rather than
+        // showing a stale width - a fresh gap the drag opens up
+        // where none existed has to wait for the next real
+        // rebuild, same as the edge handles and fold chevron.
+        let width = placed.gap_x.map_or(0.0, |gap_x| {
+            node.left = px(gap_x);
+            node.top = px(placed.y);
+            node.height = px(placed.h);
+            placed.x - gap_x
+        });
+        node.width = px(width);
     }
 }
 
