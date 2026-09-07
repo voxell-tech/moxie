@@ -1,8 +1,7 @@
 use bevy::prelude::*;
 use bevy::text::{EditableText, TextEditChange};
 
-use fynix::WorldNodeRef;
-use fynix::elem;
+use fynix::prelude::*;
 
 use crate::elements::{TextField, TextFieldCursor};
 use crate::reactive::BevyUi;

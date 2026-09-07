@@ -20,8 +20,7 @@ use crate::{
     playback, scene, view, zoom,
 };
 use bevy_fynix::WorldEntityMut;
-use fynix::WorldNodeRef;
-use fynix::elem;
+use fynix::prelude::*;
 use moxie_ui::MoxieUiPlugin;
 use moxie_ui::elements::{Frame, FrameCursor, Panel};
 use moxie_ui::reactive::{BevyUi, FynixSet, value_changed};

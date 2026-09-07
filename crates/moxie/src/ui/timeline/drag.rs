@@ -30,8 +30,7 @@ use bevy::ui::UiScale;
 use bevy::window::SystemCursorIcon;
 use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::backend::Backend;
-use fynix::element::Element;
-use fynix::ui::ElementMut;
+use fynix::prelude::*;
 use motiongfx_scene::block::Node as SceneNode;
 use moxie_ui::reactive::FynixHost;
 

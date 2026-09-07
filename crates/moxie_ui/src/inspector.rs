@@ -24,10 +24,8 @@ use std::any::TypeId;
 use bevy::light::CascadeShadowConfig;
 use bevy::prelude::*;
 use bevy::reflect::{FromType, GetTypeRegistration, PartialReflect};
-use fynix::WorldNodeRef;
+use fynix::prelude::*;
 use fynix::composer::Composer;
-use fynix::elem;
-use fynix::ui::ElementHandle;
 use moxie_asset::AssetKindAppExt;
 
 use crate::elements::{Frame, Label};

@@ -20,11 +20,9 @@ use bevy::reflect::std_traits::ReflectDefault;
 use bevy::ui_widgets::{Activate, ActivateOnPress, MenuButton};
 
 use bevy_fynix::WorldEntityMut;
-use fynix::WorldNodeRef;
+use fynix::prelude::*;
 use fynix::composer::Composer;
-use fynix::elem;
 use fynix::records::{BuildFn, ChangedFn};
-use fynix::ui::ElementHandle;
 
 use super::{
     Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Icon,

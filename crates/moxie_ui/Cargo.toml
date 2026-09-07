@@ -9,9 +9,8 @@ readme = "./README.md"
 
 [dependencies]
 bevy_fynix = { workspace = true }
-bevy_motiongfx = { workspace = true, features = ["color"] }
+bevy_motiongfx = { workspace = true }
 fynix = { workspace = true }
-motiongfx_interp = { workspace = true }
 moxie_asset = { workspace = true }
 bevy = { workspace = true, default-features = true, features = [
     "bevy_feathers",

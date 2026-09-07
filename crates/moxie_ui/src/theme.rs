@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use motiongfx_interp::ease::{self, EaseFn};
+use fynix::prelude::motiongfx_interp::ease::{self, EaseFn};
 
 /// The editor's ground colour, also [`Colors::bg`].
 pub const BG: Color = Color::srgb_u8(0x19, 0x18, 0x1A);

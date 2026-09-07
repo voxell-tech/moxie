@@ -13,12 +13,9 @@
 use bevy::prelude::*;
 use bevy::ui_widgets::Activate;
 use bevy_fynix::WorldEntityMut;
-use fynix::WorldNodeRef;
+use fynix::prelude::*;
 use fynix::composer::Composer;
-use fynix::elem;
-use fynix::host::Host;
 use fynix::records::BuildFn;
-use fynix::ui::{ElementHandle, ElementMut};
 
 use crate::elements::{
     Button, ButtonCursor, Frame, FrameCursor, Icon, IconCursor,

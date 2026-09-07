@@ -17,10 +17,8 @@ use bevy::prelude::*;
 use bevy::ui_widgets::Activate;
 use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::id::EntityUid;
-use fynix::WorldNodeRef;
+use fynix::prelude::*;
 use fynix::composer::Composer;
-use fynix::elem;
-use fynix::ui::{ElementHandle, ElementMut};
 use moxie_ui::elements::{
     Button, ButtonCursor, Frame, FrameCursor, GhostButton, Icon,
     Label, LabelCursor, Panel, ScrollArea, TintButton,

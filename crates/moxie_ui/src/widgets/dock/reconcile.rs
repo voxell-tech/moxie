@@ -15,8 +15,7 @@ use std::fmt::Write as _;
 
 use bevy::prelude::*;
 
-use fynix::WorldNodeRef;
-use fynix::elem;
+use fynix::prelude::*;
 
 use super::area::ActiveDockWindow;
 

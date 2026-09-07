@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use bevy::ui::{UiGlobalTransform, UiScale};
 use bevy_fynix::{BevyFynix, WorldEntityMut};
 use bevy_motiongfx::scene::id::EntityUid;
-use fynix::ui::ElementMut;
+use fynix::prelude::*;
 use moxie_ui::elements::Button;
 use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::FynixHost;

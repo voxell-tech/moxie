@@ -17,8 +17,7 @@ use bevy::prelude::*;
 use bevy::ui_widgets::ValueChange;
 
 use bevy_fynix::WorldEntityMut;
-use fynix::WorldNodeRef;
-use fynix::elem;
+use fynix::prelude::*;
 
 use super::{Inspect, Source, SourceExt, when_changed};
 use crate::elements::{Frame, Label, NumberField, NumberFieldCursor};

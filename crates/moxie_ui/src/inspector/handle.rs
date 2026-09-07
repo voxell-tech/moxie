@@ -12,8 +12,7 @@ use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 
 use bevy_fynix::WorldEntityMut;
-use fynix::WorldNodeRef;
-use fynix::elem;
+use fynix::prelude::*;
 use moxie_asset::ABSOLUTE_SOURCE;
 
 use crate::asset::AssetDragging;

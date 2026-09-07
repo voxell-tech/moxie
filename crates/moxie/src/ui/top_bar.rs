@@ -7,9 +7,8 @@ use bevy::ui_widgets::{
 };
 use bevy_fynix::WorldEntityMut;
 use bevy_fynix::tag::TagExt as _;
+use fynix::prelude::*;
 use fynix::composer::Composer;
-use fynix::elem;
-use fynix::ui::ElementHandle;
 use moxie_ui::elements::{
     Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Label,
     MenuButton,

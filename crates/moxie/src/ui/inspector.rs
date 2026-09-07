@@ -2,9 +2,8 @@
 //! component of one entity, each under a collapsible header.
 
 use bevy::prelude::*;
+use fynix::prelude::*;
 use fynix::composer::Composer;
-use fynix::elem;
-use fynix::ui::ElementHandle;
 use moxie_ui::elements::{EntityInspector, Label, ScrollArea};
 use moxie_ui::reactive::{BevyUi, FynixHost, resource_changed};
 

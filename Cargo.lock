@@ -917,7 +917,7 @@ dependencies = [
 [[package]]
 name = "bevy_fynix"
 version = "0.0.1"
-source = "git+https://github.com/voxell-tech/fynix#0db5a78f578b481449633653cc510493cbd38bd6"
+source = "git+https://github.com/voxell-tech/fynix#8484f11602a1fd5b7054e421bb95ecbaa36e9ce9"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1313,8 +1313,9 @@ checksum = "bff34eb29ff4b8a8688bc7299f14fb6b597461ca80fec03ed7d22939ab33e48f"
 
 [[package]]
 name = "bevy_motiongfx"
-version = "0.3.0"
-source = "git+https://github.com/voxell-tech/motiongfx?branch=moxie#e51e8d6f7f940c545f786f1d2c17aed045420dd6"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ec277f1f46a9a69ec2a52825bc1cd902ad13b10d9d0c982db7f8f4333148a39"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -2884,7 +2885,7 @@ dependencies = [
 [[package]]
 name = "fynix"
 version = "0.0.1"
-source = "git+https://github.com/voxell-tech/fynix#0db5a78f578b481449633653cc510493cbd38bd6"
+source = "git+https://github.com/voxell-tech/fynix#8484f11602a1fd5b7054e421bb95ecbaa36e9ce9"
 dependencies = [
  "fynix_macros",
  "hashbrown 0.17.1",
@@ -2896,7 +2897,7 @@ dependencies = [
 [[package]]
 name = "fynix_macros"
 version = "0.0.1"
-source = "git+https://github.com/voxell-tech/fynix#0db5a78f578b481449633653cc510493cbd38bd6"
+source = "git+https://github.com/voxell-tech/fynix#8484f11602a1fd5b7054e421bb95ecbaa36e9ce9"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -3747,8 +3748,9 @@ dependencies = [
 
 [[package]]
 name = "motiongfx"
-version = "0.3.0"
-source = "git+https://github.com/voxell-tech/motiongfx?branch=moxie#e51e8d6f7f940c545f786f1d2c17aed045420dd6"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bdd3e7e414d1c68481f3bdb963287b82cb8477288844dd93992eb3dbc01e47f"
 dependencies = [
  "field_path",
  "hashbrown 0.17.1",
@@ -3759,15 +3761,18 @@ dependencies = [
 
 [[package]]
 name = "motiongfx_interp"
-version = "0.3.0"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c7f0535a3fd94bcd06982b52d9bdc1de3e198f033cbc501efa63b1e01db5a83"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "motiongfx_scene"
-version = "0.3.0"
-source = "git+https://github.com/voxell-tech/motiongfx?branch=moxie#e51e8d6f7f940c545f786f1d2c17aed045420dd6"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "822aa359d48ff0b11a29738da9846d353e4bc7b83fc09cfc97294c62fbdd79a2"
 dependencies = [
  "educe",
  "hashbrown 0.17.1",
@@ -3819,7 +3824,6 @@ dependencies = [
  "bevy_fynix",
  "bevy_motiongfx",
  "fynix",
- "motiongfx_interp",
  "moxie_asset",
 ]
 
