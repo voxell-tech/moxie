@@ -17,7 +17,7 @@ const HEAD_REACH: f32 = HEAD_SIDE * FRAC_1_SQRT_2;
 pub struct PlayheadLine {
     #[elem(patch = PatchLeft)]
     pub left: Val,
-    #[elem(patch = PatchTop)]
+    #[elem(default = px(0), patch = PatchTop)]
     pub top: Val,
 }
 
