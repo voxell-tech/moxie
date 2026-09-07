@@ -1,5 +1,4 @@
-//! Reusable UI elements and widgets for Moxie.
-
+#![doc = include_str!("../README.md")]
 #![allow(
     clippy::type_complexity,
     clippy::too_many_arguments,

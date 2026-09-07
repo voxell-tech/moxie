@@ -1,0 +1,146 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup component add rustfmt
+      - run: cargo fmt --all -- --check
+
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: moxie
+      # `motiongfx_interp` is patched to a sibling checkout - see Cargo.toml.
+      - uses: actions/checkout@v4
+        with:
+          repository: voxell-tech/motiongfx
+          ref: moxie
+          path: motiongfx
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: moxie
+          shared-key: ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libwayland-dev
+      - run: cargo check --workspace --all-features --all-targets
+        working-directory: moxie
+
+  check-no-defaults:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: moxie
+      - uses: actions/checkout@v4
+        with:
+          repository: voxell-tech/motiongfx
+          ref: moxie
+          path: motiongfx
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: moxie
+          shared-key: ci
+          save-if: false
+      - run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+      - run: cargo check --workspace --no-default-features
+        working-directory: moxie
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: moxie
+      - uses: actions/checkout@v4
+        with:
+          repository: voxell-tech/motiongfx
+          ref: moxie
+          path: motiongfx
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: moxie
+          shared-key: ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libwayland-dev
+      - run: rustup component add clippy
+      - run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+        working-directory: moxie
+
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: moxie
+      - uses: actions/checkout@v4
+        with:
+          repository: voxell-tech/motiongfx
+          ref: moxie
+          path: motiongfx
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: moxie
+          shared-key: ci
+          save-if: false
+      - run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+      - run: cargo doc --workspace --all-features --no-deps --document-private-items
+        working-directory: moxie
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: moxie
+      - uses: actions/checkout@v4
+        with:
+          repository: voxell-tech/motiongfx
+          ref: moxie
+          path: motiongfx
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: moxie
+          shared-key: test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libwayland-dev
+      - run: cargo test --workspace --all-features --all-targets
+        working-directory: moxie
+
+  # Note: cargo test --all-targets disables doc tests, so we have to add this to test docs
+  doctest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: moxie
+      - uses: actions/checkout@v4
+        with:
+          repository: voxell-tech/motiongfx
+          ref: moxie
+          path: motiongfx
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: moxie
+          shared-key: test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libwayland-dev
+      - run: cargo test --workspace --all-features --doc
+        working-directory: moxie

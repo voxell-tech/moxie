@@ -1,12 +1,4 @@
-//! Timeline editor for MotionGfx, built on `bevy_ui` + `bevy_feathers`.
-//!
-//! Renders a docked timeline panel for the first [`Timeline`] it finds:
-//! scrub by pressing/dragging the track, toggle play/pause with the
-//! button or spacebar, and scroll the track (wheel/trackpad) with a
-//! resizable name column.
-//!
-//! [`Timeline`]: bevy_motiongfx::prelude::BevyTimeline
-
+#![doc = include_str!("../README.md")]
 #![allow(
     clippy::type_complexity,
     clippy::too_many_arguments,
