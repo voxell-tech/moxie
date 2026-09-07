@@ -12,14 +12,16 @@ use bevy_fynix::tag::TagExt as _;
 use core::time::Duration;
 use std::collections::BTreeSet;
 
+use bevy::feathers::controls::NumberInputValue;
 use bevy::prelude::*;
 use bevy::ui_widgets::{Activate, ScrollArea as ScrollAreaBehavior};
 use bevy_motiongfx::prelude::MotionGfxManager;
 
 use crate::block_layout::{self, Placed};
 use crate::playback::{
-    TogglePlayback, on_track_cancel, on_track_click_release,
-    on_track_drag, on_track_press, on_track_release,
+    TogglePlayback, on_time_entered, on_track_cancel,
+    on_track_click_release, on_track_drag, on_track_press,
+    on_track_release,
 };
 use crate::zoom::{FitTimeline, on_track_scroll};
 use crate::{
@@ -30,9 +32,9 @@ use fynix::composer::Composer;
 use fynix::prelude::*;
 use moxie_ui::elements::{
     Button, ButtonCursor, Frame, GhostButton, Icon, IconCursor,
-    Label, LabelCursor, Panel, PlayheadLine, PlayheadLineCursor,
-    ScrollArea, TimeLabel, TimeTick, TimelineAction, TimelineBlock,
-    TimelineGap, TintButton,
+    Label, NumberField, NumberFieldCursor, Panel, PlayheadLine,
+    PlayheadLineCursor, ScrollArea, TimeLabel, TimeTick,
+    TimelineAction, TimelineBlock, TimelineGap, TintButton,
 };
 use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use moxie_ui::reactive::{
@@ -141,19 +143,29 @@ impl Composer<FynixHost> for ControlBar {
                 },
             );
 
-            ui.elem(elem!(Label, text = "0.00s")).bind(
-                |label| label.text(),
-                resource_changed::<MotionGfxManager>(),
-                |WorldNodeRef {
-                     world,
-                     node: entity,
-                 }| {
-                    format!(
-                        "{:.2}s",
-                        current_time(world, entity).as_secs_f32()
-                    )
-                },
-            );
+            ui.elem(elem!(
+                Frame,
+                align = AlignItems::Center,
+                column_gap = px(3)
+            ))
+            .with(|ui| {
+                ui.elem(elem!(NumberField, width = px(64)))
+                    .observe(on_time_entered)
+                    .bind(
+                        |input| input.value(),
+                        value_changed(current_time),
+                        |WorldNodeRef { world, node }| {
+                            let centis = current_time(world, node)
+                                .as_millis()
+                                / 10;
+                            NumberInputValue::F32(
+                                centis as f32 / 100.0,
+                            )
+                        },
+                    );
+
+                ui.elem(elem!(Label, text = "s"));
+            });
 
             // Fit button.
             ui.elem(elem!(Frame, flex_grow = 1.0f32));
@@ -265,15 +277,16 @@ impl Composer<FynixHost> for TrackArea {
         .observe(on_track_cancel)
         .observe(on_track_scroll)
         .with(|ui| {
-            ui.elem(elem!(PlayheadLine)).bind(
-                |line| line.left(),
-                resource_changed::<MotionGfxManager>(),
-                |WorldNodeRef { world, node }| {
-                    px(world
-                        .resource::<TimelineView>()
-                        .x_from_time(current_time(world, node)))
-                },
-            );
+            ui.elem(elem!(PlayheadLine, top = px(TIME_AXIS_HEIGHT)))
+                .bind(
+                    |line| line.left(),
+                    resource_changed::<MotionGfxManager>(),
+                    |WorldNodeRef { world, node }| {
+                        px(world
+                            .resource::<TimelineView>()
+                            .x_from_time(current_time(world, node)))
+                    },
+                );
         })
         .with(|ui| {
             ui.compose(TimeAxis);

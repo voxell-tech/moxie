@@ -3,11 +3,13 @@
 
 use core::time::Duration;
 
+use bevy::input_focus::InputFocus;
 use bevy::picking::events::{
     Cancel, Drag, DragEnd, Pointer, Press, Release,
 };
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
+use bevy::ui_widgets::ValueChange;
 use bevy_motiongfx::prelude::*;
 
 use crate::{EditorState, TimelineView};
@@ -250,4 +252,24 @@ pub(crate) fn stop_at_track_end(
     if state.is_playing != now_playing {
         state.is_playing = now_playing;
     }
+}
+
+/// Seek to a time typed into the control bar's readout.
+/// Only a finished edit moves the playhead.
+pub(crate) fn on_time_entered(
+    change: On<ValueChange<f32>>,
+    state: Res<EditorState>,
+    mut focus: ResMut<InputFocus>,
+    mut manager: ResMut<MotionGfxManager>,
+    mut q_players: Query<&mut RealtimePlayer>,
+) {
+    if !change.is_final {
+        return;
+    }
+    focus.clear();
+    let secs = change.value.clamp(0.0, state.duration.as_secs_f32());
+    let Ok(time) = Duration::try_from_secs_f32(secs) else {
+        return;
+    };
+    scrub_to(time, &state, &mut manager, &mut q_players);
 }
