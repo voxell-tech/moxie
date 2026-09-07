@@ -61,6 +61,7 @@ impl Plugin for UiPlugin {
                     playback::play_pause_hotkey
                         .run_if(not(text_field_focused)),
                     playback::stop_at_track_end,
+                    playback::track_playing,
                     view::retarget_scene_cameras,
                 )
                     .chain()
