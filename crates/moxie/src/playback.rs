@@ -42,6 +42,12 @@ pub(crate) fn on_toggle_playback(
     // One global target: invert the aggregate, not each player, so
     // mixed states resolve to a single play/pause, not a swap.
     let should_play = !q_players.iter().any(|p| p.is_playing);
+
+    // A zero length track has nothing to play.
+    if should_play && state.duration == Duration::ZERO {
+        return;
+    }
+
     for mut player in &mut q_players {
         player.is_playing = should_play;
         player.time_scale = 1.0;
