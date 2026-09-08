@@ -153,11 +153,10 @@ impl Composer<FynixHost> for ControlBar {
                     .observe(on_time_entered)
                     .bind(
                         |input| input.value(),
-                        value_changed(current_time),
-                        |WorldNodeRef { world, node }| {
-                            let centis = current_time(world, node)
-                                .as_millis()
-                                / 10;
+                        value_changed(|world, _| current_time(world)),
+                        |WorldNodeRef { world, .. }| {
+                            let centis =
+                                current_time(world).as_millis() / 10;
                             NumberInputValue::F32(
                                 centis as f32 / 100.0,
                             )
@@ -281,10 +280,10 @@ impl Composer<FynixHost> for TrackArea {
                 .bind(
                     |line| line.left(),
                     resource_changed::<MotionGfxManager>(),
-                    |WorldNodeRef { world, node }| {
+                    |WorldNodeRef { world, .. }| {
                         px(world
                             .resource::<TimelineView>()
-                            .x_from_time(current_time(world, node)))
+                            .x_from_time(current_time(world)))
                     },
                 );
         })
@@ -306,7 +305,7 @@ impl Composer<FynixHost> for TrackArea {
 }
 
 /// `timeline.target_time()`, or zero if no timeline is focused yet.
-fn current_time(world: &World, _: Entity) -> Duration {
+fn current_time(world: &World) -> Duration {
     let state = world.resource::<EditorState>();
     let Some(id) = state.timeline else {
         return Duration::ZERO;
