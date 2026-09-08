@@ -25,7 +25,7 @@ use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::FynixHost;
 use moxie_ui::theme::EditorTheme;
 
-use super::drag::{BoxPath, GapPath};
+use super::retime::{BoxPath, GapPath};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
 use crate::block_layout::{self, HEADER_HEIGHT, Placed};
 use crate::{EditorScene, SelectedAction, TimelineView};

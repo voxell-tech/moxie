@@ -2,9 +2,9 @@
 //! scrubbable track viewport, edge to edge. No name gutter: a
 //! block's own header box already carries its label.
 
-mod drag;
-mod drop;
 mod pattern;
+mod reorder;
+mod retime;
 
 use pattern::DelayPattern;
 
@@ -48,14 +48,14 @@ impl Plugin for TimelinePlugin {
             .init_resource::<BlockFoldState>()
             .init_resource::<RebuildTick>()
             .init_resource::<DelayPattern>()
-            .init_resource::<drag::Dragging>()
-            .init_resource::<drop::Dragging>()
+            .init_resource::<retime::Dragging>()
+            .init_resource::<reorder::Dragging>()
             .add_systems(
                 Update,
-                (drag::cancel_on_escape, drop::cancel_on_escape),
+                (retime::cancel_on_escape, reorder::cancel_on_escape),
             )
-            .add_systems(Update, drop::preview.after(FynixSet))
-            .add_observer(drop::on_drag_end)
+            .add_systems(Update, reorder::preview.after(FynixSet))
+            .add_observer(reorder::on_drag_end)
             .add_observer(on_fit_timeline);
     }
 }
@@ -312,7 +312,7 @@ impl Composer<FynixHost> for TrackArea {
 
         // Siblings of the `.watch()`-owned `ScrollArea`, not children
         // of it: a hint built inside that would be gone the next time
-        // the box list rebuilds. `drop.rs` shows and places them.
+        // the box list rebuilds. `reorder` shows and places them.
         let track_area = root.id();
         root.with(|ui| {
             let insert = ui.theme.color.accent;
@@ -341,7 +341,7 @@ impl Composer<FynixHost> for TrackArea {
                 ))
                 .insert(Pickable::IGNORE)
                 .id();
-            ui.world.insert_resource(drop::Visuals::new(
+            ui.world.insert_resource(reorder::Visuals::new(
                 track_area, line, outline,
             ));
         });
@@ -465,26 +465,27 @@ impl Composer<FynixHost> for BlockHeader {
             background = background,
             border = block_color.with_alpha(0.5)
         ));
-        header.insert(drag::BoxPath(path.clone())).with(move |ui| {
-            let mut header_button = ui.elem(elem!(
-                !GhostButton,
-                width = percent(100),
-                height = px(18),
-                justify = JustifyContent::FlexStart,
-                padding = UiRect::axes(px(4), px(2)),
-                radius = Val::ZERO,
-                column_gap = px(4)
-            ));
-            header_button.observe({
-                let path = path.clone();
-                move |_: On<Activate>,
+        header.insert(retime::BoxPath(path.clone())).with(
+            move |ui| {
+                let mut header_button = ui.elem(elem!(
+                    !GhostButton,
+                    width = percent(100),
+                    height = px(18),
+                    justify = JustifyContent::FlexStart,
+                    padding = UiRect::axes(px(4), px(2)),
+                    radius = Val::ZERO,
+                    column_gap = px(4)
+                ));
+                header_button.observe({
+                    let path = path.clone();
+                    move |_: On<Activate>,
                       mut selected: ResMut<SelectedAction>| {
                     selected.0 = Some(path.clone());
                 }
-            });
-            drop::body(&mut header_button, path.clone());
-            header_button.with(move |ui| {
-                ui.elem(elem!(
+                });
+                reorder::body(&mut header_button, path.clone());
+                header_button.with(move |ui| {
+                    ui.elem(elem!(
                     !TintButton::default(),
                     icon = elem!(
                         Icon,
@@ -506,14 +507,15 @@ impl Composer<FynixHost> for BlockHeader {
                         });
                     },
                 );
-                ui.elem(elem!(
-                    Label,
-                    text = label,
-                    wrap = false,
-                    color = label_color
-                ));
-            });
-        });
+                    ui.elem(elem!(
+                        Label,
+                        text = label,
+                        wrap = false,
+                        color = label_color
+                    ));
+                });
+            },
+        );
 
         header.handle()
     }
@@ -547,7 +549,7 @@ fn build_block_boxes(ui: &mut BevyUi) {
                 image = image,
                 color = theme.color.text_dim.with_alpha(0.35)
             ))
-            .insert(drag::GapPath(placed.path.clone()));
+            .insert(retime::GapPath(placed.path.clone()));
         }
 
         match placed.label {
@@ -569,7 +571,7 @@ fn build_block_boxes(ui: &mut BevyUi) {
                     edge_handle(
                         ui,
                         path,
-                        drag::Kind::Move,
+                        retime::Kind::Move,
                         placed.x,
                         placed.y,
                         placed.h,
@@ -626,7 +628,7 @@ fn build_block_boxes(ui: &mut BevyUi) {
                     border = border,
                     selected = is_selected
                 ));
-                clip.insert(drag::BoxPath(placed.path.clone()))
+                clip.insert(retime::BoxPath(placed.path.clone()))
                     .pointer_tags()
                     .observe({
                         let path = path.clone();
@@ -635,11 +637,11 @@ fn build_block_boxes(ui: &mut BevyUi) {
                             selected.0 = Some(path.clone());
                         }
                     });
-                drop::body(&mut clip, path.clone());
+                reorder::body(&mut clip, path.clone());
                 edge_handle(
                     ui,
                     path.clone(),
-                    drag::Kind::Move,
+                    retime::Kind::Move,
                     placed.x,
                     placed.y,
                     placed.h,
@@ -647,8 +649,8 @@ fn build_block_boxes(ui: &mut BevyUi) {
                 edge_handle(
                     ui,
                     path,
-                    drag::Kind::Resize,
-                    placed.x + placed.w - drag::EDGE_HANDLE_PX,
+                    retime::Kind::Resize,
+                    placed.x + placed.w - retime::EDGE_HANDLE_PX,
                     placed.y,
                     placed.h,
                 );
@@ -658,11 +660,11 @@ fn build_block_boxes(ui: &mut BevyUi) {
 }
 
 /// A thin, absolutely positioned strip at one edge of a box, wired to
-/// `kind` via [`drag::edge`].
+/// `kind` via [`retime::edge`].
 fn edge_handle(
     ui: &mut BevyUi,
     path: Vec<usize>,
-    kind: drag::Kind,
+    kind: retime::Kind,
     x: f32,
     y: f32,
     h: f32,
@@ -672,11 +674,11 @@ fn edge_handle(
         Frame,
         position = PositionType::Absolute,
         inset = UiRect::new(px(x), auto(), px(y), auto()),
-        width = px(drag::EDGE_HANDLE_PX),
+        width = px(retime::EDGE_HANDLE_PX),
         height = px(h),
         hover_background = accent.with_alpha(0.35),
         press_background = accent.with_alpha(0.6)
     ));
     handle.pointer_tags();
-    drag::edge(&mut handle, path, kind);
+    retime::edge(&mut handle, path, kind);
 }
