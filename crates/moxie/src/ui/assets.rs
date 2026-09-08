@@ -19,8 +19,8 @@ use bevy::prelude::*;
 use bevy::ui_widgets::Activate;
 use bevy::window::SystemCursorIcon;
 use bevy_fynix::WorldEntityMut;
-use fynix::prelude::*;
 use fynix::composer::Composer;
+use fynix::prelude::*;
 use moxie_asset::AssetKinds;
 use moxie_ui::asset::draggable;
 use moxie_ui::elements::{

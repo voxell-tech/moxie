@@ -13,8 +13,8 @@ use bevy::prelude::*;
 use bevy::reflect::PartialReflect;
 use bevy_motiongfx::scene::backend::{AnimEase, AnimInterp, Backend};
 use bevy_motiongfx::scene::id::{SceneUid, SceneUidMap};
-use fynix::prelude::*;
 use fynix::composer::Composer;
+use fynix::prelude::*;
 use motiongfx_scene::block::{ActionCmd, Block, Combinator, Node};
 use motiongfx_scene::refs::FieldRef;
 use moxie_ui::elements::{

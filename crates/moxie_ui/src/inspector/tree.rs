@@ -13,8 +13,8 @@ use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::reflect::{PartialReflect, ReflectRef, TypeRegistry};
 use bevy_fynix::WorldEntityMut;
-use fynix::prelude::*;
 use fynix::composer::Composer;
+use fynix::prelude::*;
 use fynix::records::BuildFn;
 
 use super::{Field, FieldRow, ReflectInspect, enums};

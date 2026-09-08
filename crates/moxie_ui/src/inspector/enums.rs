@@ -28,8 +28,8 @@ use bevy::ui_widgets::Activate;
 use bevy_fynix::tag::TagExt as _;
 
 use bevy_fynix::WorldEntityMut;
-use fynix::prelude::*;
 use fynix::composer::Composer;
+use fynix::prelude::*;
 
 use super::{Source, when_changed};
 use crate::elements::{

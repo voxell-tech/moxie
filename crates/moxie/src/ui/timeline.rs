@@ -26,8 +26,8 @@ use crate::{
     EditorScene, EditorState, SelectedAction, TimelineView, time_axis,
 };
 use bevy_fynix::WorldEntityMut;
-use fynix::prelude::*;
 use fynix::composer::Composer;
+use fynix::prelude::*;
 use moxie_ui::elements::{
     Button, ButtonCursor, Frame, GhostButton, Icon, IconCursor,
     Label, LabelCursor, Panel, PlayheadLine, PlayheadLineCursor,
