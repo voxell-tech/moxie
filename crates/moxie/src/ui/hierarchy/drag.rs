@@ -132,27 +132,7 @@ pub(super) fn rows<'r, 'u, 'a>(
                 }
             },
         )
-        .observe(
-            move |drop: On<Pointer<DragDrop>>,
-                  dragging: Res<Dragging>,
-                  mut commands: Commands| {
-                // Read rather than taken: the drop lands before the
-                // drag ends, which is what clears it.
-                let Some(dragged) = dragging.subject else {
-                    return;
-                };
-                if drop.button != PointerButton::Primary {
-                    return;
-                }
-                let Some((target_row, at)) = dragging.target else {
-                    return;
-                };
-
-                commands.queue(move |world: &mut World| {
-                    apply(world, dragged, target_row, at);
-                });
-            },
-        )
+        .observe(commit_drop)
         .observe(
             move |start: On<Pointer<DragStart>>,
                   names: Query<&Name>,
@@ -207,6 +187,60 @@ pub(super) fn rows<'r, 'u, 'a>(
                 dragging.target = None;
             },
         )
+}
+
+/// Wires `zone` as the catch-all below the list: a drop anywhere on it
+/// lands the dragged subject at the top level, right after `last`,
+/// clear of any open branch. A no-op when `last` is `None`, which only
+/// happens with nothing to drag.
+pub(super) fn aim_below<'r, 'u, 'a, E: Element<FynixHost>>(
+    zone: &'r mut ElementMut<'u, 'a, FynixHost, E>,
+    last: Option<Entity>,
+) -> &'r mut ElementMut<'u, 'a, FynixHost, E> {
+    zone.observe(
+        move |over: On<Pointer<DragOver>>,
+              mut dragging: ResMut<Dragging>| {
+            if over.button != PointerButton::Primary
+                || dragging.subject.is_none()
+            {
+                return;
+            }
+            dragging.target = last.map(|row| (row, At::After));
+        },
+    )
+    .observe(
+        move |_: On<Pointer<DragLeave>>,
+              mut dragging: ResMut<Dragging>| {
+            if matches!(
+                dragging.target,
+                Some((row, At::After)) if Some(row) == last
+            ) {
+                dragging.target = None;
+            }
+        },
+    )
+    .observe(commit_drop)
+}
+
+/// Queues the pending drop on a primary-button release, shared by
+/// every kind of drop target. Read, not taken: the drop lands before
+/// [`DragEnd`] clears the drag.
+fn commit_drop(
+    drop: On<Pointer<DragDrop>>,
+    dragging: Res<Dragging>,
+    mut commands: Commands,
+) {
+    if drop.button != PointerButton::Primary {
+        return;
+    }
+    let (Some(dragged), Some((row, at))) =
+        (dragging.subject, dragging.target)
+    else {
+        return;
+    };
+    commands.queue(move |world: &mut World| {
+        apply(world, dragged, row, at);
+    });
 }
 
 /// What follows the cursor while a row is being dragged.

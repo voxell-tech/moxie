@@ -30,8 +30,9 @@ use moxie_ui::reactive::{
 
 use crate::{SceneRoot, SelectedEntity};
 
-/// Room below the last row for the button that floats over it.
-const BUTTON_CLEARANCE: f32 = 34.0;
+/// The [`tail`]'s least height: room below the last row for the
+/// floating button, and a drop target even when the list is full.
+const TAIL_MIN: f32 = 34.0;
 
 /// Every scene subject, as nested rows, under what acts on the list
 /// as a whole.
@@ -108,12 +109,7 @@ impl Composer<FynixHost> for Roots {
             ScrollArea,
             width = percent(100),
             flex_grow = 1.0f32,
-            padding = UiRect::new(
-                px(pad),
-                px(pad),
-                px(pad),
-                px(BUTTON_CLEARANCE)
-            ),
+            padding = UiRect::all(px(pad)),
             scroll_x = false
         ))
         .watch(
@@ -174,19 +170,56 @@ fn build_roots(ui: &mut BevyUi) {
         roots(ui.world, &mut query)
     };
 
-    listing(ui, roots);
+    let last = listing(ui, &roots);
+    tail(ui, last);
 }
 
-/// One list of subtrees, with a seam between each and at either end
-/// where a drop can land a row beside its neighbours.
-fn listing(ui: &mut BevyUi, entities: Vec<Entity>) {
+/// A list of subtrees with a seam before each, returning the last one.
+/// The caller closes the list off: a nested one with a plain seam, the
+/// root with a [`tail`].
+fn listing(ui: &mut BevyUi, entities: &[Entity]) -> Option<Entity> {
     let mut prev = None;
-    for &entity in &entities {
+    for &entity in entities {
         seam(ui, prev, Some(entity));
         ui.compose(Subtree { entity });
         prev = Some(entity);
     }
-    seam(ui, prev, None);
+    prev
+}
+
+/// The strip below the last root row, filling whatever height is left.
+/// A drop anywhere on it lands the row at the top level after the last
+/// one, clear of any open branch.
+fn tail(ui: &mut BevyUi, last: Option<Entity>) {
+    let accent = ui.theme.color.accent;
+    let thickness = ui.theme.space.edge;
+
+    let mut zone = ui.elem(elem!(
+        Frame,
+        width = percent(100),
+        flex_grow = 1.0f32,
+        min_height = px(TAIL_MIN),
+        direction = FlexDirection::Column
+    ));
+    drag::aim_below(&mut zone, last);
+    zone.with(move |ui| {
+        ui.elem(elem!(
+            Frame,
+            width = percent(100),
+            height = px(thickness)
+        ))
+        .bind(
+            |line| line.background(),
+            seam_changed(last, None),
+            move |WorldNodeRef { world, .. }| {
+                if seam_lit(world, last, None) {
+                    accent
+                } else {
+                    Color::NONE
+                }
+            },
+        );
+    });
 }
 
 /// The seam between two rows, and the line a drop lights on it. Full
@@ -333,7 +366,9 @@ impl Composer<FynixHost> for Subtree {
                 .watch(
                     component_changed_on::<Children>(entity),
                     move |ui| {
-                        listing(ui, children_of(ui.world, entity));
+                        let kids = children_of(ui.world, entity);
+                        let last = listing(ui, &kids);
+                        seam(ui, last, None);
                     },
                 );
             },
