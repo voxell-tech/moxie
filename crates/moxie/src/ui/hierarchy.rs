@@ -30,10 +30,6 @@ use moxie_ui::reactive::{
 
 use crate::{SceneRoot, SelectedEntity};
 
-/// Thickness of the line marking where a drop would land a row beside
-/// another.
-const DROP_LINE: f32 = 2.0;
-
 /// Room below the last row for the button that floats over it.
 const BUTTON_CLEARANCE: f32 = 34.0;
 
@@ -204,6 +200,7 @@ fn seam(
     below: Option<Entity>,
 ) {
     let accent = ui.theme.color.accent;
+    let thickness = ui.theme.space.edge;
 
     ui.elem(elem!(
         Frame,
@@ -222,7 +219,7 @@ fn seam(
         ui.elem(elem!(
             Frame,
             width = percent(100),
-            height = px(DROP_LINE)
+            height = px(thickness)
         ))
         .bind(
             |line| line.background(),

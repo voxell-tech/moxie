@@ -36,19 +36,11 @@ const EDGE_MARGIN_PX: f32 = 8.0;
 /// How much of a node's core, at either end, chains rather than
 /// overlaps.
 const CHAIN_BAND: f32 = 0.25;
-/// Thickness of the insertion line.
-const LINE_PX: f32 = 2.0;
 /// How far the merge outline sits outside the node it marks.
 const OUTLINE_GROW: f32 = 2.0;
 /// Cursor shown for the duration of a drag.
 const GRABBING: EntityCursor =
     EntityCursor::System(SystemCursorIcon::Grabbing);
-/// The dragged box rides above its siblings.
-const DRAG_Z: i32 = 200;
-/// The landing hints ride below the dragged box, above the rest.
-pub(super) const HINT_Z: i32 = 150;
-/// The merge outline's border thickness.
-pub(super) const OUTLINE_BORDER_PX: f32 = 2.0;
 
 /// The node being dragged, if any.
 #[derive(Resource, Default)]
@@ -228,6 +220,7 @@ pub(crate) fn preview(
         return;
     };
     let vp_rect = logical_rect(vp_node, vp_transform);
+    let drag_z = kernel.theme().layer.drag;
 
     let content = Vec2::new(
         gesture.cursor.x - vp_rect.min.x,
@@ -251,7 +244,7 @@ pub(crate) fn preview(
         if !under(&box_path.0, &gesture.path) {
             continue;
         }
-        commands.entity(entity).insert(GlobalZIndex(DRAG_Z));
+        commands.entity(entity).insert(GlobalZIndex(drag_z));
         if let Some(placed) =
             layout.iter().find(|p| p.path == box_path.0)
             && let Ok(mut node) = nodes.get_mut(entity)
@@ -264,7 +257,7 @@ pub(crate) fn preview(
         if !under(&gap_path.0, &gesture.path) {
             continue;
         }
-        commands.entity(entity).insert(GlobalZIndex(DRAG_Z));
+        commands.entity(entity).insert(GlobalZIndex(drag_z));
         if let Some(Placed {
             gap_x: Some(gap_x),
             y,
@@ -826,9 +819,13 @@ fn show_landing(
             let Some(axis) = axis_of(root, parent) else {
                 return;
             };
-            let Some(bounds) =
-                line_rect(parent, *index, layout, axis)
-            else {
+            let Some(bounds) = line_rect(
+                parent,
+                *index,
+                layout,
+                axis,
+                theme.space.edge,
+            ) else {
                 return;
             };
             place(nodes, visuals.line, bounds, to_area);
@@ -918,32 +915,39 @@ fn paint(
     }
 }
 
-/// A [`LINE_PX`] band across `bounds`, centered on `at` along `axis`.
-fn band_across(bounds: Rect, axis: Axis, at: f32) -> Rect {
+/// A `width`-thick band across `bounds`, centered on `at` along
+/// `axis`.
+fn band_across(
+    bounds: Rect,
+    axis: Axis,
+    at: f32,
+    width: f32,
+) -> Rect {
     match axis {
         Axis::X => Rect::new(
-            at - LINE_PX / 2.0,
+            at - width / 2.0,
             bounds.min.y,
-            at + LINE_PX / 2.0,
+            at + width / 2.0,
             bounds.max.y,
         ),
         Axis::Y => Rect::new(
             bounds.min.x,
-            at - LINE_PX / 2.0,
+            at - width / 2.0,
             bounds.max.x,
-            at + LINE_PX / 2.0,
+            at + width / 2.0,
         ),
     }
 }
 
-/// The insert line at `index` among `parent`'s children: centered in
-/// the gap between neighbours, flush against a lone neighbour, or at
-/// the block's leading edge when there are none.
+/// The `width`-thick insert line at `index` among `parent`'s children:
+/// centered in the gap between neighbours, flush against a lone
+/// neighbour, or at the block's leading edge when there are none.
 fn line_rect(
     parent: &[usize],
     index: usize,
     layout: &[Placed],
     axis: Axis,
+    width: f32,
 ) -> Option<Rect> {
     let block =
         rect(layout.iter().find(|placed| placed.path == *parent)?);
@@ -969,7 +973,7 @@ fn line_rect(
         (Some(before), None) => axis.of(before.max),
         (None, None) => axis.of(content.min),
     };
-    Some(band_across(content, axis, at))
+    Some(band_across(content, axis, at, width))
 }
 
 /// Hides both landing hints.

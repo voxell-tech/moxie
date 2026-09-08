@@ -317,13 +317,15 @@ impl Composer<FynixHost> for TrackArea {
         root.with(|ui| {
             let insert = ui.theme.color.accent;
             let merge = ui.theme.palette.purple;
+            let hint_z = ui.theme.layer.drop_hint;
+            let edge = px(ui.theme.space.edge);
             let line = ui
                 .elem(elem!(
                     Frame,
                     position = PositionType::Absolute,
                     display = Display::None,
                     background = insert,
-                    z = Some(drop::HINT_Z)
+                    z = Some(hint_z)
                 ))
                 .insert(Pickable::IGNORE)
                 .id();
@@ -333,9 +335,9 @@ impl Composer<FynixHost> for TrackArea {
                     position = PositionType::Absolute,
                     display = Display::None,
                     background = merge.with_alpha(0.15),
-                    border = px(drop::OUTLINE_BORDER_PX),
+                    border = edge,
                     border_color = merge,
-                    z = Some(drop::HINT_Z)
+                    z = Some(hint_z)
                 ))
                 .insert(Pickable::IGNORE)
                 .id();

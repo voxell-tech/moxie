@@ -131,6 +131,8 @@ fn on_drag_move(
     let drop_tint = kernel.theme().color.accent.with_alpha(0.18);
     let text_primary = kernel.theme().color.text;
     let ghost_fill = kernel.theme().color.fill;
+    let drag_z = kernel.theme().layer.drag;
+    let hint_z = kernel.theme().layer.drop_hint;
     let drag_event = trigger.event();
     let cursor_pos_ui = Vec2::new(
         drag_event.pointer_location.position.x,
@@ -170,7 +172,7 @@ fn on_drag_move(
                 .spawn((
                     DragGhost,
                     ghost_node(cursor_pos_ui),
-                    GlobalZIndex(200),
+                    GlobalZIndex(drag_z),
                 ))
                 .id();
             commands.entity(source_tab).insert(Visibility::Hidden);
@@ -327,7 +329,7 @@ fn on_drag_move(
                             ..Default::default()
                         },
                         BackgroundColor(drop_tint),
-                        GlobalZIndex(150),
+                        GlobalZIndex(hint_z),
                     ))
                     .id();
 
@@ -369,7 +371,7 @@ fn on_drag_move(
                                     ..default()
                                 },
                                 BackgroundColor(drop_tint),
-                                GlobalZIndex(150),
+                                GlobalZIndex(hint_z),
                             ))
                             .id();
                         new_overlay = Some(overlay);
@@ -393,7 +395,7 @@ fn on_drag_move(
                                     ..default()
                                 },
                                 BackgroundColor(drop_tint),
-                                GlobalZIndex(150),
+                                GlobalZIndex(hint_z),
                             ))
                             .id();
                         new_overlay = Some(overlay);

@@ -225,7 +225,7 @@ fn ghost(at: Vec2, name: String, theme: &EditorTheme) -> impl Bundle {
             ..default()
         },
         BackgroundColor(theme.color.accent.with_alpha(0.85)),
-        GlobalZIndex(200),
+        GlobalZIndex(theme.layer.drag),
         Pickable::IGNORE,
         children![(
             Text::new(name),
