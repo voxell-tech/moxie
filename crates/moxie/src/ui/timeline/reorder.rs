@@ -60,13 +60,10 @@ enum Target {
 /// One drag in progress.
 struct Gesture {
     path: Vec<usize>,
-    /// Last known pointer position, in logical screen space, updated on
-    /// pointer motion. [`preview`] re-maps it against the live view
-    /// every frame, so a pan or zoom without pointer motion still
-    /// tracks.
+    /// Last pointer position, logical screen space.
     cursor: Vec2,
-    /// Subtracted from the cursor, in content space, to place the
-    /// dragged box's top-left.
+    /// Subtracted from the cursor, in content space, for the box's
+    /// top-left.
     grab_offset: Vec2,
     target: Option<Target>,
 }

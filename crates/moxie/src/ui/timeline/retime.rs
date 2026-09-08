@@ -54,9 +54,9 @@ struct Gesture {
     path: Vec<usize>,
     kind: Kind,
     cursor_start: Vec2,
-    /// `delay` (move) or `duration` (resize) before the drag started.
+    /// `delay` or `duration` at drag start.
     base_secs: f32,
-    /// The same, live: what release commits.
+    /// The same, live: what a release commits.
     value_secs: f32,
 }
 
