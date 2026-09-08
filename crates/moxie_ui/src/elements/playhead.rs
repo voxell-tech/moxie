@@ -25,43 +25,42 @@ impl PlayheadLine {
     fn build(&self, build: &mut FynixBuild<'_, Self>) {
         let color = build.theme.palette.orange;
 
-        build.insert((
-            Node {
-                position_type: PositionType::Absolute,
-                bottom: px(0),
-                width: px(LINE_WIDTH),
-                ..default()
-            },
-            ZIndex(10),
-            BackgroundColor(color),
-            Pickable::IGNORE,
-        ));
-
-        build.world.spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(LINE_WIDTH / 2.0 - HEAD_REACH),
-                top: px(-HEAD_REACH),
-                width: px(HEAD_REACH * 2.0),
-                height: px(HEAD_REACH),
-                overflow: Overflow::clip(),
-                ..default()
-            },
-            Pickable::IGNORE,
-            ChildOf(build.id()),
-            children![(
+        build
+            .insert((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: px(HEAD_REACH - HEAD_SIDE / 2.0),
-                    top: px(-HEAD_SIDE / 2.0),
-                    width: px(HEAD_SIDE),
-                    height: px(HEAD_SIDE),
+                    bottom: px(0),
+                    width: px(LINE_WIDTH),
                     ..default()
                 },
-                UiTransform::from_rotation(Rot2::degrees(45.0)),
+                ZIndex(10),
                 BackgroundColor(color),
                 Pickable::IGNORE,
-            )],
-        ));
+            ))
+            .with_child((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(LINE_WIDTH / 2.0 - HEAD_REACH),
+                    top: px(-HEAD_REACH),
+                    width: px(HEAD_REACH * 2.0),
+                    height: px(HEAD_REACH),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                Pickable::IGNORE,
+                children![(
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(HEAD_REACH - HEAD_SIDE / 2.0),
+                        top: px(-HEAD_SIDE / 2.0),
+                        width: px(HEAD_SIDE),
+                        height: px(HEAD_SIDE),
+                        ..default()
+                    },
+                    UiTransform::from_rotation(Rot2::degrees(45.0)),
+                    BackgroundColor(color),
+                    Pickable::IGNORE,
+                )],
+            ));
     }
 }
