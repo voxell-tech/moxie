@@ -3,11 +3,13 @@
 
 use core::time::Duration;
 
+use bevy::input_focus::InputFocus;
 use bevy::picking::events::{
     Cancel, Drag, DragEnd, Pointer, Press, Release,
 };
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
+use bevy::ui_widgets::ValueChange;
 use bevy_motiongfx::prelude::*;
 
 use crate::{EditorState, TimelineView};
@@ -33,18 +35,23 @@ pub(crate) fn play_pause_hotkey(
 /// playback is starting from the end of the track.
 pub(crate) fn on_toggle_playback(
     _toggle: On<TogglePlayback>,
-    mut state: ResMut<EditorState>,
+    state: Res<EditorState>,
     mut manager: ResMut<MotionGfxManager>,
     mut q_players: Query<&mut RealtimePlayer>,
 ) {
     // One global target: invert the aggregate, not each player, so
     // mixed states resolve to a single play/pause, not a swap.
     let should_play = !q_players.iter().any(|p| p.is_playing);
+
+    // A zero length track has nothing to play.
+    if should_play && state.duration == Duration::ZERO {
+        return;
+    }
+
     for mut player in &mut q_players {
         player.is_playing = should_play;
         player.time_scale = 1.0;
     }
-    state.is_playing = should_play;
 
     // Rewind if starting playback from the very end.
     if let Some(timeline_id) = state.timeline
@@ -217,7 +224,7 @@ pub(crate) fn on_track_cancel(
 ///
 /// [`Timeline::set_target_time`]: bevy_motiongfx::prelude::Timeline::set_target_time
 pub(crate) fn stop_at_track_end(
-    mut state: ResMut<EditorState>,
+    state: Res<EditorState>,
     manager: Res<MotionGfxManager>,
     mut q_players: Query<&mut RealtimePlayer>,
 ) {
@@ -232,7 +239,6 @@ pub(crate) fn stop_at_track_end(
     }
 
     // Playing backwards stops at the start instead.
-    let mut now_playing = state.is_playing;
     for mut player in &mut q_players {
         if !player.is_playing {
             continue;
@@ -244,10 +250,37 @@ pub(crate) fn stop_at_track_end(
         };
         if at_end {
             player.is_playing = false;
-            now_playing = false;
         }
     }
-    if state.is_playing != now_playing {
-        state.is_playing = now_playing;
+}
+
+/// Keep [`EditorState::is_playing`] tracking the players.
+pub(crate) fn track_playing(
+    q_players: Query<&RealtimePlayer>,
+    mut state: ResMut<EditorState>,
+) {
+    let is_playing = q_players.iter().any(|player| player.is_playing);
+    if state.is_playing != is_playing {
+        state.is_playing = is_playing;
     }
+}
+
+/// Seek to a time typed into the control bar's readout.
+/// Only a finished edit moves the playhead.
+pub(crate) fn on_time_entered(
+    change: On<ValueChange<f32>>,
+    state: Res<EditorState>,
+    mut focus: ResMut<InputFocus>,
+    mut manager: ResMut<MotionGfxManager>,
+    mut q_players: Query<&mut RealtimePlayer>,
+) {
+    if !change.is_final {
+        return;
+    }
+    focus.clear();
+    let secs = change.value.clamp(0.0, state.duration.as_secs_f32());
+    let Ok(time) = Duration::try_from_secs_f32(secs) else {
+        return;
+    };
+    scrub_to(time, &state, &mut manager, &mut q_players);
 }

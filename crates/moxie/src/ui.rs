@@ -8,9 +8,11 @@ mod top_bar;
 
 use bevy::camera::Hdr;
 use bevy::camera::visibility::RenderLayers;
-use bevy::ecs::schedule::common_conditions::resource_changed;
+use bevy::ecs::schedule::common_conditions::{not, resource_changed};
+use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
+use bevy::text::EditableText;
 use bevy::ui::widget::ImageNode;
 use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
 
@@ -52,8 +54,10 @@ impl Plugin for UiPlugin {
                         resource_changed::<scene::EditorScene>,
                     ),
                     playback::track_first_timeline,
-                    playback::play_pause_hotkey,
+                    playback::play_pause_hotkey
+                        .run_if(not(text_field_focused)),
                     playback::stop_at_track_end,
+                    playback::track_playing,
                     view::retarget_scene_cameras,
                 )
                     .chain()
@@ -61,6 +65,16 @@ impl Plugin for UiPlugin {
             )
             .add_observer(playback::on_toggle_playback);
     }
+}
+
+/// True while a text field holds focus.
+fn text_field_focused(
+    focus: Res<InputFocus>,
+    q_editable: Query<(), With<EditableText>>,
+) -> bool {
+    focus
+        .get()
+        .is_some_and(|entity| q_editable.contains(entity))
 }
 
 /// Marks the UI camera (which owns the window). Every other (scene)
