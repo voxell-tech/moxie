@@ -16,8 +16,8 @@ use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
 
 use crate::{
     EditorSettings, EditorState, PreviewImage, ProjectBookmarks,
-    ProjectPath, SelectedAction, SelectedEntity, TimelineView,
-    playback, scene, view, zoom,
+    ProjectPath, SelectedAction, SelectedEntity, playback, scene,
+    view,
 };
 use bevy_fynix::WorldEntityMut;
 use fynix::prelude::*;
@@ -35,18 +35,14 @@ pub(crate) struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MoxieUiPlugin)
+        app.add_plugins((MoxieUiPlugin, timeline::TimelinePlugin))
             .init_resource::<EditorState>()
             .init_resource::<SelectedAction>()
             .init_resource::<SelectedEntity>()
             .init_resource::<ProjectBookmarks>()
             .init_resource::<ProjectPath>()
-            .init_resource::<TimelineView>()
             .init_resource::<assets::AssetFoldState>()
-            .init_resource::<timeline::BlockFoldState>()
             .init_resource::<hierarchy::Dragging>()
-            .init_resource::<timeline::Dragging>()
-            .init_resource::<timeline::DelayPattern>()
             .init_resource::<scene::EditorScene>()
             .add_systems(Startup, setup_editor_ui)
             .add_systems(
@@ -63,9 +59,7 @@ impl Plugin for UiPlugin {
                     .chain()
                     .before(FynixSet),
             )
-            .add_systems(Update, timeline::cancel_on_escape)
-            .add_observer(playback::on_toggle_playback)
-            .add_observer(zoom::on_fit_timeline);
+            .add_observer(playback::on_toggle_playback);
     }
 }
 

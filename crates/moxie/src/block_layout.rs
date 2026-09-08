@@ -18,7 +18,7 @@ use crate::TimelineView;
 
 /// Height of an action leaf's bar, and of a block's header strip.
 const ROW_HEIGHT: f32 = 26.0;
-const HEADER_HEIGHT: f32 = 24.0;
+pub(crate) const HEADER_HEIGHT: f32 = 24.0;
 /// Vertical gap between lanes that would otherwise overlap in time.
 const LANE_GAP: f32 = 2.0;
 const MIN_WIDTH: f32 = 2.0;

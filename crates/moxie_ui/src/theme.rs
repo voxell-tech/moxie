@@ -58,6 +58,7 @@ pub struct EditorTheme {
     pub space: Spacing,
     pub text: TextScale,
     pub motion: Motion,
+    pub layer: Layers,
 }
 
 /// Semantic colour slots. A fill is translucent and layers over
@@ -117,10 +118,24 @@ pub struct Spacing {
     pub icon: f32,
     /// A divider or rail's thickness.
     pub hairline: f32,
+    /// A drawn edge that has to read as deliberate: a drop insertion
+    /// line, a drop target's outline.
+    pub edge: f32,
     /// A fold's chevron, sized to sit beside a row.
     pub fold_toggle: f32,
     /// How far a fold's rail sets its body in from the header.
     pub fold_indent: f32,
+}
+
+/// `GlobalZIndex` levels, so a drag's chrome stacks the same way
+/// wherever it is dragged.
+#[derive(Clone, Copy, Debug)]
+pub struct Layers {
+    /// A drop target hint, above the content it marks.
+    pub drop_hint: i32,
+    /// A dragged ghost or the box standing in for one, above every
+    /// hint.
+    pub drag: i32,
 }
 
 /// Font sizes, three steps.
@@ -174,6 +189,7 @@ impl Default for EditorTheme {
                 touch: 26.0,
                 icon: 11.0,
                 hairline: 1.0,
+                edge: 2.0,
                 fold_toggle: 14.0,
                 fold_indent: 9.0,
             },
@@ -185,6 +201,10 @@ impl Default for EditorTheme {
             motion: Motion {
                 interact: Duration::from_millis(120),
                 ease: ease::cubic::ease_out,
+            },
+            layer: Layers {
+                drop_hint: 150,
+                drag: 200,
             },
             palette,
         }

@@ -16,6 +16,7 @@ use bevy::ui::{UiGlobalTransform, UiScale};
 use bevy_fynix::{BevyFynix, WorldEntityMut};
 use bevy_motiongfx::scene::id::EntityUid;
 use fynix::prelude::*;
+use moxie_ui::drag::{follow, ghost};
 use moxie_ui::elements::Button;
 use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::FynixHost;
@@ -27,10 +28,6 @@ const EDGE: f32 = 0.25;
 
 /// What [`logical_rect`] reads off a node to place it in pointer space.
 type NodeRect = (&'static ComputedNode, &'static UiGlobalTransform);
-
-/// Where the ghost sits relative to the cursor, so the cursor lands
-/// just inside it rather than on its corner.
-const GHOST_OFFSET: Vec2 = Vec2::new(-8.0, -9.0);
 
 /// The subject being dragged, where a drop would land it, and what is
 /// following the cursor meanwhile. Empty whenever nothing is being
@@ -132,27 +129,7 @@ pub(super) fn rows<'r, 'u, 'a>(
                 }
             },
         )
-        .observe(
-            move |drop: On<Pointer<DragDrop>>,
-                  dragging: Res<Dragging>,
-                  mut commands: Commands| {
-                // Read rather than taken: the drop lands before the
-                // drag ends, which is what clears it.
-                let Some(dragged) = dragging.subject else {
-                    return;
-                };
-                if drop.button != PointerButton::Primary {
-                    return;
-                }
-                let Some((target_row, at)) = dragging.target else {
-                    return;
-                };
-
-                commands.queue(move |world: &mut World| {
-                    apply(world, dragged, target_row, at);
-                });
-            },
-        )
+        .observe(commit_drop)
         .observe(
             move |start: On<Pointer<DragStart>>,
                   names: Query<&Name>,
@@ -189,11 +166,10 @@ pub(super) fn rows<'r, 'u, 'a>(
                 let Ok(mut node) = nodes.get_mut(ghost) else {
                     return;
                 };
-                let at = drag.pointer_location.position / scale.0
-                    + GHOST_OFFSET;
-
-                node.left = px(at.x);
-                node.top = px(at.y);
+                follow(
+                    &mut node,
+                    drag.pointer_location.position / scale.0,
+                );
             },
         )
         .observe(
@@ -209,35 +185,58 @@ pub(super) fn rows<'r, 'u, 'a>(
         )
 }
 
-/// What follows the cursor while a row is being dragged.
-///
-/// [`Pickable::IGNORE`] because it sits directly under the cursor: seen
-/// by the pointer it would be the only thing ever dragged over, and no
-/// row would light up.
-fn ghost(at: Vec2, name: String, theme: &EditorTheme) -> impl Bundle {
-    (
-        Node {
-            position_type: PositionType::Absolute,
-            left: px(at.x + GHOST_OFFSET.x),
-            top: px(at.y + GHOST_OFFSET.y),
-            padding: UiRect::axes(px(6), px(2)),
-            border_radius: BorderRadius::all(px(3)),
-            ..default()
+/// Wires `zone` as the catch-all below the list: a drop anywhere on it
+/// lands the dragged subject at the top level, right after `last`,
+/// clear of any open branch. A no-op when `last` is `None`, which only
+/// happens with nothing to drag.
+pub(super) fn aim_below<'r, 'u, 'a, E: Element<FynixHost>>(
+    zone: &'r mut ElementMut<'u, 'a, FynixHost, E>,
+    last: Option<Entity>,
+) -> &'r mut ElementMut<'u, 'a, FynixHost, E> {
+    zone.observe(
+        move |over: On<Pointer<DragOver>>,
+              mut dragging: ResMut<Dragging>| {
+            if over.button != PointerButton::Primary
+                || dragging.subject.is_none()
+            {
+                return;
+            }
+            dragging.target = last.map(|row| (row, At::After));
         },
-        BackgroundColor(theme.color.accent.with_alpha(0.85)),
-        GlobalZIndex(200),
-        Pickable::IGNORE,
-        children![(
-            Text::new(name),
-            TextFont {
-                font_size: FontSize::Px(12.0),
-                ..default()
-            },
-            TextColor(theme.palette.base[0]),
-            TextLayout::linebreak(LineBreak::NoWrap),
-            Pickable::IGNORE,
-        )],
     )
+    .observe(
+        move |_: On<Pointer<DragLeave>>,
+              mut dragging: ResMut<Dragging>| {
+            if matches!(
+                dragging.target,
+                Some((row, At::After)) if Some(row) == last
+            ) {
+                dragging.target = None;
+            }
+        },
+    )
+    .observe(commit_drop)
+}
+
+/// Queues the pending drop on a primary-button release, shared by
+/// every kind of drop target. Read, not taken: the drop lands before
+/// [`DragEnd`] clears the drag.
+fn commit_drop(
+    drop: On<Pointer<DragDrop>>,
+    dragging: Res<Dragging>,
+    mut commands: Commands,
+) {
+    if drop.button != PointerButton::Primary {
+        return;
+    }
+    let (Some(dragged), Some((row, at))) =
+        (dragging.subject, dragging.target)
+    else {
+        return;
+    };
+    commands.queue(move |world: &mut World| {
+        apply(world, dragged, row, at);
+    });
 }
 
 /// Moves `dragged` to where `at` puts it relative to `row`.

@@ -97,6 +97,7 @@ set_node!(PatchJustify, JustifyContent, |n, v| n.justify_content =
     *v);
 set_node!(PatchPosition, PositionType, |n, v| n.position_type = *v);
 set_node!(PatchDisplay, Display, |n, v| n.display = *v);
+set_node!(PatchBorder, Val, |n, v| n.border = UiRect::all(*v));
 set_node!(PatchOverflow, Overflow, |n, v| n.overflow = *v);
 set_node!(PatchTop, Val, |n, v| n.top = *v);
 set_node!(PatchLeft, Val, |n, v| n.left = *v);
@@ -208,6 +209,6 @@ field_patch!(PatchTrackWidth, Val, |patch, v| {
 
 // A timeline clip's border thickens when it is selected.
 field_patch!(PatchSelected, bool, |patch, v| {
-    let w = if *v { 2 } else { 1 };
+    let w = if *v { 3 } else { 1 };
     node(patch, move |n| n.border = UiRect::all(px(w)));
 });

@@ -2,11 +2,11 @@
 //! scrubbable track viewport, edge to edge. No name gutter: a
 //! block's own header box already carries its label.
 
-mod drag;
 mod pattern;
+mod reorder;
+mod retime;
 
-pub(crate) use drag::{Dragging, cancel_on_escape};
-pub(crate) use pattern::DelayPattern;
+use pattern::DelayPattern;
 
 use bevy_fynix::tag::TagExt as _;
 use core::time::Duration;
@@ -21,7 +21,7 @@ use crate::playback::{
     TogglePlayback, on_track_cancel, on_track_click_release,
     on_track_drag, on_track_press, on_track_release,
 };
-use crate::zoom::{FitTimeline, on_track_scroll};
+use crate::zoom::{FitTimeline, on_fit_timeline, on_track_scroll};
 use crate::{
     EditorScene, EditorState, SelectedAction, TimelineView, time_axis,
 };
@@ -36,8 +36,29 @@ use moxie_ui::elements::{
 };
 use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use moxie_ui::reactive::{
-    BevyUi, FynixHost, resource_changed, value_changed,
+    BevyUi, FynixHost, FynixSet, resource_changed, value_changed,
 };
+
+/// The timeline's resources and interaction systems.
+pub(crate) struct TimelinePlugin;
+
+impl Plugin for TimelinePlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<TimelineView>()
+            .init_resource::<BlockFoldState>()
+            .init_resource::<RebuildTick>()
+            .init_resource::<DelayPattern>()
+            .init_resource::<retime::Dragging>()
+            .init_resource::<reorder::Dragging>()
+            .add_systems(
+                Update,
+                (retime::cancel_on_escape, reorder::cancel_on_escape),
+            )
+            .add_systems(Update, reorder::preview.after(FynixSet))
+            .add_observer(reorder::on_drag_end)
+            .add_observer(on_fit_timeline);
+    }
+}
 
 /// Folded blocks, by path.
 #[derive(Resource, Default, Clone, PartialEq)]
@@ -252,43 +273,80 @@ impl Composer<FynixHost> for TrackArea {
         self,
         ui: &mut BevyUi,
     ) -> ElementHandle<FynixHost, Frame> {
-        ui.elem(elem!(
+        let mut root = ui.elem(elem!(
             Frame,
             width = percent(100),
             direction = FlexDirection::Column,
             flex_grow = 1.0f32
-        ))
-        .observe(on_track_press)
-        .observe(on_track_drag)
-        .observe(on_track_release)
-        .observe(on_track_click_release)
-        .observe(on_track_cancel)
-        .observe(on_track_scroll)
-        .with(|ui| {
-            ui.elem(elem!(PlayheadLine)).bind(
-                |line| line.left(),
-                resource_changed::<MotionGfxManager>(),
-                |WorldNodeRef { world, node }| {
-                    px(world
-                        .resource::<TimelineView>()
-                        .x_from_time(current_time(world, node)))
-                },
-            );
-        })
-        .with(|ui| {
-            ui.compose(TimeAxis);
-        })
-        .with(|ui| {
-            ui.elem(elem!(
-                ScrollArea,
-                width = percent(100),
-                flex_grow = 1.0f32
-            ))
-            .insert(TrackViewport)
-            .remove::<ScrollAreaBehavior>()
-            .watch(value_changed(block_view), build_block_boxes);
-        })
-        .handle()
+        ));
+        root.observe(on_track_press)
+            .observe(on_track_drag)
+            .observe(on_track_release)
+            .observe(on_track_click_release)
+            .observe(on_track_cancel)
+            .observe(on_track_scroll)
+            .with(|ui| {
+                ui.elem(elem!(PlayheadLine)).bind(
+                    |line| line.left(),
+                    resource_changed::<MotionGfxManager>(),
+                    |WorldNodeRef { world, node }| {
+                        px(world
+                            .resource::<TimelineView>()
+                            .x_from_time(current_time(world, node)))
+                    },
+                );
+            })
+            .with(|ui| {
+                ui.compose(TimeAxis);
+            })
+            .with(|ui| {
+                ui.elem(elem!(
+                    ScrollArea,
+                    width = percent(100),
+                    flex_grow = 1.0f32
+                ))
+                .insert(TrackViewport)
+                .remove::<ScrollAreaBehavior>()
+                .watch(value_changed(block_view), build_block_boxes);
+            });
+
+        // Siblings of the `.watch()`-owned `ScrollArea`, not children
+        // of it: a hint built inside that would be gone the next time
+        // the box list rebuilds. `reorder` shows and places them.
+        let track_area = root.id();
+        root.with(|ui| {
+            let insert = ui.theme.color.accent;
+            let merge = ui.theme.palette.purple;
+            let hint_z = ui.theme.layer.drop_hint;
+            let edge = px(ui.theme.space.edge);
+            let line = ui
+                .elem(elem!(
+                    Frame,
+                    position = PositionType::Absolute,
+                    display = Display::None,
+                    background = insert,
+                    z = Some(hint_z)
+                ))
+                .insert(Pickable::IGNORE)
+                .id();
+            let outline = ui
+                .elem(elem!(
+                    Frame,
+                    position = PositionType::Absolute,
+                    display = Display::None,
+                    background = merge.with_alpha(0.15),
+                    border = edge,
+                    border_color = merge,
+                    z = Some(hint_z)
+                ))
+                .insert(Pickable::IGNORE)
+                .id();
+            ui.world.insert_resource(reorder::Visuals::new(
+                track_area, line, outline,
+            ));
+        });
+
+        root.handle()
     }
 }
 
@@ -325,17 +383,27 @@ fn block_placements(world: &World, _: Entity) -> Vec<Placed> {
         .unwrap_or_default()
 }
 
+/// Counter bumped by every committed reorder.
+#[derive(Resource, Default)]
+pub(crate) struct RebuildTick(pub(crate) u64);
+
 /// The boxes plus which one, if any, is selected. The watcher's
 /// signal: a box rebuilds only when a node is added, removed,
-/// re-timed, re-nested, or selection moves onto or off it.
+/// re-timed, re-nested, reordered, or selection moves onto or off it.
 fn block_view(
     world: &World,
     node: Entity,
-) -> (Vec<Placed>, Option<Vec<usize>>) {
+) -> (Vec<Placed>, Option<Vec<usize>>, u64) {
     let selected = world
         .get_resource::<SelectedAction>()
         .and_then(|s| s.0.clone());
-    (block_placements(world, node), selected)
+    // Two siblings drawn the same size lay out identically whichever
+    // order they're in, so a swap leaves the placements elementwise
+    // equal and nothing else here would ask for the rebuild that
+    // rebinds each box to its new path.
+    let tick =
+        world.get_resource::<RebuildTick>().map_or(0, |tick| tick.0);
+    (block_placements(world, node), selected, tick)
 }
 
 /// A block's header: its name (or combinator, if unnamed) beside its
@@ -382,42 +450,73 @@ impl Composer<FynixHost> for BlockHeader {
         let chevron_color = theme.color.text_faint;
         let label_color = theme.color.text.with_alpha(0.8);
 
+        let background = if is_selected {
+            block_color.with_luminance(0.3).with_alpha(0.8)
+        } else {
+            block_color.with_alpha(0.03)
+        };
+
         let mut header = ui.elem(elem!(
             TimelineBlock,
             top = px(y),
             left = px(x),
             width = px(w),
             height = px(h),
-            background = block_color.with_alpha(0.03),
-            border = block_color.with_alpha(0.5)
+            background = background,
+            border = block_color.with_alpha(0.5),
+            selected = is_selected
         ));
-        header.insert(drag::BoxPath(path.clone())).with(move |ui| {
-            ui.elem(elem!(
-                !GhostButton,
-                width = percent(100),
-                height = px(18),
-                justify = JustifyContent::FlexStart,
-                padding = UiRect::axes(px(4), px(2)),
-                radius = Val::ZERO,
-                column_gap = px(4)
-            ))
-            .observe({
-                let path = path.clone();
-                move |_: On<Activate>,
+        header.insert(retime::BoxPath(path.clone())).with(
+            move |ui| {
+                let mut header_button = ui.elem(elem!(
+                    !GhostButton,
+                    width = percent(100),
+                    height = px(18),
+                    justify = JustifyContent::FlexStart,
+                    padding = UiRect::axes(px(4), px(2)),
+                    radius = Val::ZERO,
+                    column_gap = px(4)
+                ));
+                header_button.observe({
+                    let path = path.clone();
+                    move |_: On<Activate>,
                       mut selected: ResMut<SelectedAction>| {
                     selected.0 = Some(path.clone());
                 }
-            })
-            .with(move |ui| {
-                chevron(ui, path, folded, chevron_color);
-                ui.elem(elem!(
-                    Label,
-                    text = label,
-                    wrap = false,
-                    color = label_color
-                ));
-            });
-        });
+                });
+                reorder::body(&mut header_button, path.clone());
+                header_button.with(move |ui| {
+                    ui.elem(elem!(
+                    !TintButton::default(),
+                    icon = elem!(
+                        Icon,
+                        image = moxie_ui::icons::CHEVRON,
+                        size = px(7),
+                        color = chevron_color,
+                        rotation = if folded {
+                            CHEVRON_SHUT
+                        } else {
+                            CHEVRON_OPEN
+                        }
+                    )
+                ))
+                .observe(
+                    move |_: On<Activate>, mut commands: Commands| {
+                        let path = path.clone();
+                        commands.queue(move |world: &mut World| {
+                            toggle_folded(world, &path);
+                        });
+                    },
+                );
+                    ui.elem(elem!(
+                        Label,
+                        text = label,
+                        wrap = false,
+                        color = label_color
+                    ));
+                });
+            },
+        );
 
         header.handle()
     }
@@ -429,7 +528,7 @@ impl Composer<FynixHost> for BlockHeader {
 /// clicking either writes that path in; only the action also lights
 /// up under the cursor.
 fn build_block_boxes(ui: &mut BevyUi) {
-    let (placements, selected) = block_view(ui.world, ui.parent());
+    let (placements, selected, _) = block_view(ui.world, ui.parent());
     let theme = ui.theme;
     let pattern = ui.world.resource::<DelayPattern>().0.clone();
 
@@ -451,7 +550,7 @@ fn build_block_boxes(ui: &mut BevyUi) {
                 image = image,
                 color = theme.color.text_dim.with_alpha(0.35)
             ))
-            .insert(drag::GapPath(placed.path.clone()));
+            .insert(retime::GapPath(placed.path.clone()));
         }
 
         match placed.label {
@@ -473,7 +572,7 @@ fn build_block_boxes(ui: &mut BevyUi) {
                     edge_handle(
                         ui,
                         path,
-                        drag::Kind::Move,
+                        retime::Kind::Move,
                         placed.x,
                         placed.y,
                         placed.h,
@@ -512,7 +611,7 @@ fn build_block_boxes(ui: &mut BevyUi) {
                     TimelineAction,
                     label = elem!(
                         Label,
-                        text = label.clone(),
+                        text = label,
                         size = theme.text.small,
                         color = if placed.draft {
                             theme.color.critical.with_alpha(0.9)
@@ -530,7 +629,7 @@ fn build_block_boxes(ui: &mut BevyUi) {
                     border = border,
                     selected = is_selected
                 ));
-                clip.insert(drag::BoxPath(placed.path.clone()))
+                clip.insert(retime::BoxPath(placed.path.clone()))
                     .pointer_tags()
                     .observe({
                         let path = path.clone();
@@ -539,10 +638,11 @@ fn build_block_boxes(ui: &mut BevyUi) {
                             selected.0 = Some(path.clone());
                         }
                     });
+                reorder::body(&mut clip, path.clone());
                 edge_handle(
                     ui,
                     path.clone(),
-                    drag::Kind::Move,
+                    retime::Kind::Move,
                     placed.x,
                     placed.y,
                     placed.h,
@@ -550,8 +650,8 @@ fn build_block_boxes(ui: &mut BevyUi) {
                 edge_handle(
                     ui,
                     path,
-                    drag::Kind::Resize,
-                    placed.x + placed.w - drag::EDGE_HANDLE_PX,
+                    retime::Kind::Resize,
+                    placed.x + placed.w - retime::EDGE_HANDLE_PX,
                     placed.y,
                     placed.h,
                 );
@@ -560,40 +660,12 @@ fn build_block_boxes(ui: &mut BevyUi) {
     }
 }
 
-/// A block's fold toggle: positioned relative to its own corner
-/// rather than the placement's absolute coordinates, so it moves for
-/// free with whatever a live drag does to the block's own `Node`.
-fn chevron(
-    ui: &mut BevyUi,
-    path: Vec<usize>,
-    folded: bool,
-    color: Color,
-) {
-    ui.elem(elem!(
-        !TintButton::default(),
-        icon = elem!(
-            Icon,
-            image = moxie_ui::icons::CHEVRON,
-            size = px(7),
-            color = color,
-            rotation =
-                if folded { CHEVRON_SHUT } else { CHEVRON_OPEN }
-        )
-    ))
-    .observe(move |_: On<Activate>, mut commands: Commands| {
-        let path = path.clone();
-        commands.queue(move |world: &mut World| {
-            toggle_folded(world, &path);
-        });
-    });
-}
-
 /// A thin, absolutely positioned strip at one edge of a box, wired to
-/// `kind` via [`drag::edge`].
+/// `kind` via [`retime::edge`].
 fn edge_handle(
     ui: &mut BevyUi,
     path: Vec<usize>,
-    kind: drag::Kind,
+    kind: retime::Kind,
     x: f32,
     y: f32,
     h: f32,
@@ -603,11 +675,11 @@ fn edge_handle(
         Frame,
         position = PositionType::Absolute,
         inset = UiRect::new(px(x), auto(), px(y), auto()),
-        width = px(drag::EDGE_HANDLE_PX),
+        width = px(retime::EDGE_HANDLE_PX),
         height = px(h),
         hover_background = accent.with_alpha(0.35),
         press_background = accent.with_alpha(0.6)
     ));
     handle.pointer_tags();
-    drag::edge(&mut handle, path, kind);
+    retime::edge(&mut handle, path, kind);
 }

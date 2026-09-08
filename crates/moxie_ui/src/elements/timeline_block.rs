@@ -23,13 +23,14 @@ pub struct TimelineBlock {
     pub background: Color,
     #[elem(default = Color::NONE, patch = PatchBorderColor)]
     pub border: Color,
+    #[elem(patch = PatchSelected)]
+    pub selected: bool,
 }
 
 impl TimelineBlock {
     fn build(&self, build: &mut FynixBuild<'_, Self>) {
         build.insert((Node {
             position_type: PositionType::Absolute,
-            border: UiRect::all(px(1)),
             // Without this the header row stretches to the whole
             // block's height instead of sitting at its top.
             align_items: AlignItems::Start,
