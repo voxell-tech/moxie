@@ -463,7 +463,8 @@ impl Composer<FynixHost> for BlockHeader {
             width = px(w),
             height = px(h),
             background = background,
-            border = block_color.with_alpha(0.5)
+            border = block_color.with_alpha(0.5),
+            selected = is_selected
         ));
         header.insert(retime::BoxPath(path.clone())).with(
             move |ui| {

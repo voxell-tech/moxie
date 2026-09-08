@@ -209,6 +209,6 @@ field_patch!(PatchTrackWidth, Val, |patch, v| {
 
 // A timeline clip's border thickens when it is selected.
 field_patch!(PatchSelected, bool, |patch, v| {
-    let w = if *v { 2 } else { 1 };
+    let w = if *v { 3 } else { 1 };
     node(patch, move |n| n.border = UiRect::all(px(w)));
 });
