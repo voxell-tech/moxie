@@ -13,6 +13,7 @@
 
 mod enums;
 mod field;
+mod field_drag;
 mod handle;
 mod primitive;
 mod text;
@@ -26,12 +27,15 @@ use bevy::prelude::*;
 use bevy::reflect::{FromType, GetTypeRegistration, PartialReflect};
 use fynix::composer::Composer;
 use fynix::prelude::*;
-use moxie_asset::AssetKindAppExt;
+use moxie_asset::AssetKindAppExt as _;
 
 use crate::elements::{Frame, Label};
 use crate::fold;
 use crate::reactive::{BevyUi, FynixHost};
+
 pub use field::Field;
+use field_drag::FieldName;
+pub use field_drag::{DraggedField, FieldAnimatable};
 pub(crate) use tree::single_value;
 pub use tree::{InspectorFields, Section};
 
@@ -45,6 +49,9 @@ pub struct InspectPlugin;
 
 impl Plugin for InspectPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<FieldAnimatable>()
+            .init_resource::<DraggedField>();
+
         app.register_inspect::<bool>()
             .register_inspect::<f32>()
             .register_inspect::<f64>()
@@ -65,8 +72,9 @@ impl Plugin for InspectPlugin {
             .register_inspect::<String>()
             .register_inspect::<Name>()
             .register_inspect::<Handle<StandardMaterial>>()
-            .register_inspect::<Handle<Mesh>>()
-            .register_inspectable::<Name>()
+            .register_inspect::<Handle<Mesh>>();
+
+        app.register_inspectable::<Name>()
             .register_inspectable::<Visibility>()
             .register_inspectable::<Transform>()
             .register_inspectable::<Camera3d>()
@@ -78,8 +86,9 @@ impl Plugin for InspectPlugin {
             .register_inspectable::<Mesh3d>()
             .register_inspectable_as::<MeshMaterial3d<StandardMaterial>>(
                 "Standard Material",
-            )
-            .register_asset_kind::<StandardMaterial>(&["mat"]);
+            );
+
+        app.register_asset_kind::<StandardMaterial>(&["mat"]);
     }
 }
 
@@ -163,6 +172,13 @@ pub trait Source: Send + Sync + 'static {
 
     /// A copy of its own, for a widget that needs one per input.
     fn boxed(&self) -> Box<dyn Source>;
+
+    /// The component field this reads and writes, when it is one.
+    /// `None` for a source backed by something the editor keeps
+    /// elsewhere.
+    fn as_field(&self) -> Option<&Field> {
+        None
+    }
 }
 
 /// Reading and writing a source as a concrete type, which is what a
@@ -277,6 +293,10 @@ pub struct FieldRow<F: FnOnce(&mut BevyUi)> {
     pub bold: bool,
     pub depth: u32,
     pub value: F,
+    /// The component field this row edits, when it is one. An
+    /// animatable one (per [`FieldAnimatable`]) gets a draggable label;
+    /// `None` never does.
+    pub field: Option<Field>,
 }
 
 impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for FieldRow<F> {
@@ -292,6 +312,7 @@ impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for FieldRow<F> {
             bold,
             depth,
             value,
+            field,
         } = self;
 
         const VALUE_SHARE: f32 = 0.6;
@@ -316,15 +337,26 @@ impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for FieldRow<F> {
                 overflow = Overflow::clip_x(),
                 padding = UiRect::right(px(EDGE_PADDING))
             ))
-            .with(move |ui| {
-                ui.elem(elem!(
-                    Label,
-                    text = label,
-                    size = LABEL_SIZE,
-                    color = color,
-                    bold = bold,
-                    wrap = false
-                ));
+            .with(move |ui| match field {
+                Some(field) => {
+                    ui.compose(FieldName {
+                        field,
+                        text: label,
+                        size: LABEL_SIZE,
+                        color,
+                        bold,
+                    });
+                }
+                None => {
+                    ui.elem(elem!(
+                        Label,
+                        text = label,
+                        size = LABEL_SIZE,
+                        color = color,
+                        bold = bold,
+                        wrap = false
+                    ));
+                }
             });
             ui.elem(elem!(Frame, flex_grow = 1.0f32)).with(value);
         })

@@ -209,4 +209,8 @@ impl Source for Field {
     fn boxed(&self) -> Box<dyn Source> {
         Box::new(self.clone())
     }
+
+    fn as_field(&self) -> Option<&Field> {
+        Some(self)
+    }
 }

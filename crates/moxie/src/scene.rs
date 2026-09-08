@@ -7,7 +7,8 @@ use bevy::prelude::*;
 use bevy_motiongfx::prelude::*;
 use bevy_motiongfx::scene::asset::MotionGfxScene;
 use bevy_motiongfx::scene::backend::{
-    Backend, BackendRegistry, default_scene_registry,
+    Backend, BackendRegistry, SceneRegistryExt,
+    default_scene_registry,
 };
 use bevy_motiongfx::scene::value_pool::ValuePool;
 use motiongfx_scene::block::{ActionCmd, Block, Node};
@@ -32,14 +33,29 @@ pub struct EditorScene {
 
 impl EditorScene {
     pub fn new(scene: MotionGfxScene) -> Self {
-        Self {
-            scene,
-            registry: default_scene_registry(),
-        }
+        let mut registry = default_scene_registry();
+        // Per-axis, so one axis of a translation or scale can be
+        // animated on its own. Rotation stays whole-`Quat`: animating
+        // one quaternion component denormalises it.
+        registry
+            .register_bundle(path!(<Transform>::translation::x))
+            .register_bundle(path!(<Transform>::translation::y))
+            .register_bundle(path!(<Transform>::translation::z))
+            .register_bundle(path!(<Transform>::scale::x))
+            .register_bundle(path!(<Transform>::scale::y))
+            .register_bundle(path!(<Transform>::scale::z));
+
+        Self { scene, registry }
     }
 
     pub(crate) fn scene(&self) -> &MotionGfxScene {
         &self.scene
+    }
+
+    /// The registry that resolves this scene's field, op, and interp
+    /// names.
+    pub(crate) fn registry(&self) -> &BackendRegistry {
+        &self.registry
     }
 
     /// The scene, to change.

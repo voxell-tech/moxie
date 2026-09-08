@@ -353,6 +353,7 @@ fn build_leaf(
         color: muted,
         bold: false,
         depth,
+        field: Some(field.clone()),
         value: move |ui: &mut BevyUi| drawer.build(&field, ui),
     });
 }
@@ -379,6 +380,7 @@ fn build_variant(
             color: muted,
             bold: false,
             depth,
+            field: Some(field.clone()),
             value: move |ui: &mut BevyUi| {
                 ui.compose(enums::VariantPicker {
                     source: &field,

@@ -336,7 +336,7 @@ fn commit(world: &mut World, path: &[usize], kind: Kind, secs: f32) {
         return;
     };
     let Some(node) =
-        node_at_mut(&mut editor_scene.edit().0.animation, path)
+        node_at_mut(&mut editor_scene.edit().animation, path)
     else {
         return;
     };

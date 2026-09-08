@@ -156,6 +156,7 @@ fn build(ui: &mut BevyUi) {
             color: muted,
             bold: false,
             depth: 0,
+            field: None,
             value: move |ui: &mut BevyUi| {
                 ui.elem(elem!(
                     Frame,
@@ -194,6 +195,7 @@ fn build(ui: &mut BevyUi) {
             color: theme.color.text_dim,
             bold: false,
             depth: 0,
+            field: None,
             value: move |ui: &mut BevyUi| {
                 ui.compose(SegmentedControl {
                     options: vec![
@@ -222,6 +224,7 @@ fn build(ui: &mut BevyUi) {
             color: theme.color.text_dim,
             bold: false,
             depth: 0,
+            field: None,
             value: move |ui: &mut BevyUi| {
                 ui.elem(elem!(
                     Label,
@@ -242,6 +245,7 @@ fn build(ui: &mut BevyUi) {
             color: theme.color.text_dim,
             bold: false,
             depth: 0,
+            field: None,
             value: move |ui: &mut BevyUi| inspect_value(ui, &source),
         });
     }
@@ -253,6 +257,7 @@ fn build(ui: &mut BevyUi) {
             color: theme.color.text_dim,
             bold: false,
             depth: 0,
+            field: None,
             value: move |ui: &mut BevyUi| inspect_value(ui, &pooled),
         });
     }
@@ -421,7 +426,7 @@ impl Source for Pooled {
         else {
             return;
         };
-        let values = &mut editor.edit().0.values;
+        let values = &mut editor.edit().values;
 
         if let Some(slot) = values.f32.get_mut(&self.0) {
             let _ = slot.try_apply(value);

@@ -43,7 +43,7 @@ pub(crate) struct Dragging(Option<Gesture>);
 
 /// Where a dragged node lands when released.
 #[derive(Clone, PartialEq)]
-enum Target {
+pub(super) enum Target {
     /// Among `parent`'s children, at `index`.
     Insert { parent: Vec<usize>, index: usize },
     /// Onto `path`, wrapping the two of them in a new block under
@@ -98,6 +98,11 @@ impl Visuals {
             line,
             outline,
         }
+    }
+
+    /// The track-area frame the hints are parented to.
+    pub(super) fn area(&self) -> Entity {
+        self.area
     }
 }
 
@@ -259,7 +264,7 @@ pub(crate) fn preview(
 
 /// A cursor in logical screen space, mapped into the viewport's
 /// content space, where the `Placed`s live.
-fn to_content(
+pub(super) fn to_content(
     cursor: Vec2,
     node: &ComputedNode,
     transform: &UiGlobalTransform,
@@ -344,7 +349,7 @@ pub(crate) fn cancel_on_escape(
 //
 
 /// Where releasing at `cursor` would put the node at `dragged`.
-fn resolve(
+pub(super) fn resolve(
     cursor: Vec2,
     layout: &[Placed],
     root: &Block<Backend>,
@@ -485,7 +490,7 @@ fn commit(world: &mut World, from: &[usize], target: &Target) {
     };
     let moved = match target {
         Target::Insert { parent, index } => insert(
-            &mut editor_scene.edit().0.animation,
+            &mut editor_scene.edit().animation,
             from,
             parent,
             *index,
@@ -495,7 +500,7 @@ fn commit(world: &mut World, from: &[usize], target: &Target) {
             combinator,
             before,
         } => merge(
-            &mut editor_scene.edit().0.animation,
+            &mut editor_scene.edit().animation,
             from,
             path,
             combinator.clone(),
@@ -513,7 +518,7 @@ fn commit(world: &mut World, from: &[usize], target: &Target) {
         path.extend(tail);
         path
     });
-    prune_empty(&mut editor_scene.edit().0.animation, &mut kept);
+    prune_empty(&mut editor_scene.edit().animation, &mut kept);
 
     if let Some(mut selected) =
         world.get_resource_mut::<SelectedAction>()
@@ -709,7 +714,7 @@ fn block_at<'a>(
 }
 
 /// The same walk as [`block_at`], mutable.
-fn block_at_mut<'a>(
+pub(super) fn block_at_mut<'a>(
     root: &'a mut Block<Backend>,
     path: &[usize],
 ) -> Option<&'a mut Block<Backend>> {
@@ -743,7 +748,7 @@ fn delay_of(
 }
 
 /// Whether `path` is `prefix` itself or sits under it.
-fn under(path: &[usize], prefix: &[usize]) -> bool {
+pub(super) fn under(path: &[usize], prefix: &[usize]) -> bool {
     path.len() >= prefix.len() && path[..prefix.len()] == prefix[..]
 }
 
@@ -753,7 +758,7 @@ fn is_child_of(path: &[usize], parent: &[usize]) -> bool {
 }
 
 /// `placed`'s own rect.
-fn rect(placed: &Placed) -> Rect {
+pub(super) fn rect(placed: &Placed) -> Rect {
     Rect::new(
         placed.x,
         placed.y,
@@ -769,7 +774,7 @@ fn rect(placed: &Placed) -> Rect {
 /// Shows the landing hints `target` calls for and hides the rest. An
 /// insert draws the line; a merge outlines the node it lands on, or
 /// the half the dragged node takes for a chain.
-fn show_landing(
+pub(super) fn show_landing(
     nodes: &mut Query<&mut Node>,
     backgrounds: &mut Query<&mut BackgroundColor>,
     borders: &mut Query<&mut BorderColor>,
@@ -944,7 +949,10 @@ fn line_rect(
 }
 
 /// Hides both landing hints.
-fn hide_landing(nodes: &mut Query<&mut Node>, visuals: &Visuals) {
+pub(super) fn hide_landing(
+    nodes: &mut Query<&mut Node>,
+    visuals: &Visuals,
+) {
     for entity in [visuals.line, visuals.outline] {
         if let Ok(mut node) = nodes.get_mut(entity) {
             node.display = Display::None;

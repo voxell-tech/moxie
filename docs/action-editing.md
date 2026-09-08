@@ -1,9 +1,8 @@
 # Action editing
 
 Plan for the next round of timeline work: simpler block types, naming,
-collapsing, and a way to actually create an action from the editor -
-today nothing does; every `ActionCmd` in a scene comes from a
-hand-authored file. Mock: https://claude.ai/code/artifact/c8c57aa4-80dc-47b7-9971-6d8dd9c23d5f
+collapsing, and a way to actually create an action from the editor.
+Mock: https://claude.ai/code/artifact/c8c57aa4-80dc-47b7-9971-6d8dd9c23d5f
 
 ## Simplify `Combinator` to Chain / All / Flow
 
@@ -254,48 +253,67 @@ this flow; a manual "blank slot" affordance (block out timing before
 deciding what to animate) may still be worth keeping alongside this -
 open question.
 
-- [ ] Field eligibility (animatable, not just inspectable) decided at
-      row-*build* time, not drag-time: an ineligible field gets no
-      drag handle at all, not a refusal on drop. `moxie_ui`'s
-      `EntityInspector`/field-row builder has never known about
-      `SceneRegistry` and shouldn't start now (same boundary as the
-      rest of this session's reuse work) - the eligibility check and
-      the drag-start wiring both live in `moxie`, layered onto the
-      field rows `EntityInspector` already builds, not inside
-      `moxie_ui`'s generic `Inspect` widget system.
-- [ ] `SceneRegistry` needs a new read method - it currently only has
-      `register_*`, no way to ask "is this `FieldRef` registered."
-- [ ] Per-axis dragging for vector fields. `inspector/vector.rs`'s
-      `axes()` renders x/y/z as one combined `Inspect` leaf today, on
-      purpose, for editing ("the widget needs no way to address an
-      axis on its own"). The scene format already supports a sub-path
-      like `"translation::x"` (see `refs.rs`, `roundtrip.rs`) - the
-      gap is only the widget. Give each of the three number inputs
-      its own drag-start handle, composing the base path with
-      `::x`/`::y`/`::z`.
-- [ ] Cross-panel drag reuses the pattern `hierarchy/drag.rs` already
-      establishes: a `Resource` tracking what's held and where it'd
-      land, driven by Bevy's own `Pointer<DragStart/Drag/DragOver/
-      DragDrop/DragEnd>` events, which fire on whatever's under the
-      cursor regardless of which panel it's in. Needs a parallel
-      resource (or a generalized one) with drop-target observers added
-      to the timeline's scene area.
-- [ ] Live ghost during the drag: reuses the exact visuals already
-      built for action-to-action dragging (dashed accent border,
-      reduced opacity) rather than new vocabulary. The timeline's
-      `DragOver` handler computes the prospective start time from the
-      pointer's x (inverse of `px_for`) and draws the ghost there,
-      sized to a default duration.
-- [ ] Dropping onto/near an existing action should trigger the same
-      merge-into-All / snap-into-Chain restructuring already designed
-      for action-to-action dragging, rather than a separate drop path.
-      Open question: should a drop also be allowed to land anywhere on
-      empty timeline space, or only inside an existing block / on an
-      existing action?
-- [ ] On drop: `op` defaults to `AnimOp::To`, `value` captured from
-      the field's live value at drag-start (same capture as
-      graduation), duration defaults to some fixed constant until
-      there's a reason to make it drag-configurable.
+Mock: https://claude.ai/code/artifact/def661aa-b289-4b7d-adf5-44e7ac94c1ed
+
+Direction settled: drag the field's *label* (not a grip, not a
+modifier). An animatable label is a "special" element - a small
+keyframe diamond then the text, the pair a drag source - so eligible
+fields read differently at rest. Vector fields: the row label drags
+the whole vector; the tinted X/Y/Z letters each drag their own axis.
+
+- [x] `moxie_ui` extension point: `FieldRow` grew a `field:
+      Option<Field>`, and `FieldAnimatable` (a `fn(&World, &Field) ->
+      bool` the host sets) decides which labels turn into drag
+      sources. `Source::as_field()` recovers the `Field` behind a
+      type-erased source so `vector.rs`'s axis letters can do the
+      same. The drag itself is generic - `DraggedField(Option<Field>)`
+      + a cursor tag (`inspector/field_drag.rs`), reusing
+      `moxie_ui::drag`'s ghost. `moxie_ui` still knows nothing about
+      scenes.
+- [x] `moxie` side: `ui/inspector.rs`'s `is_animatable` resolves the
+      inspector `Field` to a `FieldRef` and asks the real scene
+      registry. Installed into `FieldAnimatable` in `UiPlugin`.
+- [x] `SceneRegistry` read method: `is_field_registered` /
+      `registered_fields`, added in the now-vendored `motiongfx`
+      (submodule under `vendor/`, `[patch.crates-io]` in the root
+      manifest).
+- [x] Per-axis fields: `EditorScene::new` registers
+      `Transform::translation::{x,y,z}` and `scale::{x,y,z}` on top of
+      `default_scene_registry`. Rotation stays whole-`Quat`. Whatever
+      is registered is exactly what the inspector offers.
+- [x] Cross-panel drag: Bevy's own `Pointer<DragDrop>` fires on the
+      timeline regardless of which panel the drag began in. A global
+      `create::on_drop` observer (like `reorder::on_drag_end`) reads
+      `DraggedField` and ignores every drop that isn't a held field
+      over the track viewport.
+- [x] Live landing hint: `create::preview` reuses `reorder`'s
+      `resolve` + `Visuals` + `show_landing` (widened to `pub(super)`)
+      - the same insert line / merge outline as action-to-action
+      dragging. No separate ghost clip yet; the cursor tag plus the
+      hint carry it.
+- [x] Drop targets: onto/near an action merges into `All` / snaps
+      into `Chain` (`reorder::Target`); a drop loose in a block or in
+      empty space at the root lands as a plain child there.
+- [x] On drop: `op = AnimOp::To`, `value` captured from the field's
+      **live value at drop time** (not drag-start - avoids storing a
+      `dyn PartialReflect` in the drag resource; the value barely
+      moves mid-drag), duration a fixed `DEFAULT_DURATION` (1s). The
+      new action lands selected, so the action panel opens on it.
+- [x] Value routing is a `ReflectSceneValue` type-data (vendored
+      `bevy_motiongfx`, `value_pool.rs`), one per `ValuePool` column,
+      registered by `register_scene_values(app)` off the same macro
+      that defines the columns. `insert_scene_value(pool, registry,
+      value)` looks it up by the value's own represented type - so a
+      `Quat`'s `x/y/z`-shaped dynamic is never taken for a `Vec3`, and
+      moxie adds no per-type list of its own (`moxie::ui::UiPlugin`
+      just calls `register_scene_values`).
+
+Not done, follow-ups: a dashed ghost *clip* (not just the hint); the
+new node's `delay` from the drop x inside `All`/`Flow` (v1 is
+index-only, like `reorder`'s own commit); auto-pinning the captured
+value as the stage seed for a first action; the reorder drop
+internals want extracting from `reorder.rs` into a shared
+`timeline/drop.rs` rather than the `pub(super)` widening.
 
 ## Editing the stage
 

@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# Vendored crates are their own workspaces; keep them out of this one.
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.0"
@@ -32,6 +34,13 @@ rfd = "0.15"
 
 [workspace.lints.clippy]
 redundant_type_annotations = "warn"
+
+
+[patch.crates-io]
+motiongfx = { path = "vendor/motiongfx/crates/motiongfx" }
+motiongfx_interp = { path = "vendor/motiongfx/crates/motiongfx_interp" }
+motiongfx_scene = { path = "vendor/motiongfx/crates/motiongfx_scene" }
+bevy_motiongfx = { path = "vendor/motiongfx/crates/bevy_motiongfx" }
 
 
 # Enable a small amount of optimization in the dev profile.

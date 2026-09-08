@@ -338,6 +338,7 @@ fn single(ui: &mut BevyUi, name: &str, field: Field) {
         color: primary,
         bold: true,
         depth: 0,
+        field: Some(field.clone()),
         value: move |ui: &mut BevyUi| inspect_value(ui, &field),
     });
 }
