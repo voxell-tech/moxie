@@ -6,6 +6,7 @@
 )]
 
 pub mod asset;
+pub mod drag;
 pub mod elements;
 pub mod fold;
 pub mod icons;

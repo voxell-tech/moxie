@@ -43,8 +43,6 @@ pub struct TimelineAction {
     pub press_fill: Option<Color>,
     #[elem(default = Color::NONE, patch = PatchBorderColor)]
     pub border: Color,
-    /// Thickens the border - the caller still chooses `border`'s
-    /// color (the theme's accent, typically).
     #[elem(patch = PatchSelected)]
     pub selected: bool,
 }
