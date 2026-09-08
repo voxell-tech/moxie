@@ -10,17 +10,17 @@
 //! mid-drag stays in step. A slim line or an outline marks where a
 //! release would land.
 
-use bevy::feathers::cursor::{EntityCursor, OverrideCursor};
+use bevy::feathers::cursor::OverrideCursor;
 use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
-use bevy::window::SystemCursorIcon;
 use bevy_fynix::{BevyFynix, WorldEntityMut};
 use bevy_motiongfx::scene::backend::Backend;
 use fynix::element::Element;
 use fynix::ui::ElementMut;
 use motiongfx_scene::block::{Block, Combinator, Node as SceneNode};
+use moxie_ui::drag::{grab, ungrab};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::FynixHost;
 use moxie_ui::theme::EditorTheme;
@@ -38,9 +38,6 @@ const EDGE_MARGIN_PX: f32 = 8.0;
 const CHAIN_BAND: f32 = 0.25;
 /// How far the merge outline sits outside the node it marks.
 const OUTLINE_GROW: f32 = 2.0;
-/// Cursor shown for the duration of a drag.
-const GRABBING: EntityCursor =
-    EntityCursor::System(SystemCursorIcon::Grabbing);
 
 /// The node being dragged, if any.
 #[derive(Resource, Default)]
@@ -162,7 +159,7 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
                     return;
                 };
 
-                override_cursor.0 = Some(GRABBING);
+                grab(&mut override_cursor);
                 dragging.0 = Some(Gesture {
                     path: path.clone(),
                     cursor,
@@ -309,7 +306,7 @@ fn end_drag(
     override_cursor: &mut OverrideCursor,
     commands: &mut Commands,
 ) {
-    release_cursor(override_cursor);
+    ungrab(override_cursor);
     commands.queue(|world: &mut World| {
         if let Some(mut tick) =
             world.get_resource_mut::<RebuildTick>()
@@ -982,13 +979,6 @@ fn hide_landing(nodes: &mut Query<&mut Node>, visuals: &Visuals) {
         if let Ok(mut node) = nodes.get_mut(entity) {
             node.display = Display::None;
         }
-    }
-}
-
-/// Drops the drag-wide cursor, if it's the one this set.
-fn release_cursor(cursor: &mut OverrideCursor) {
-    if cursor.0 == Some(GRABBING) {
-        cursor.0 = None;
     }
 }
 

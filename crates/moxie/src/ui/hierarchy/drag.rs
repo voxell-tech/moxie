@@ -16,6 +16,7 @@ use bevy::ui::{UiGlobalTransform, UiScale};
 use bevy_fynix::{BevyFynix, WorldEntityMut};
 use bevy_motiongfx::scene::id::EntityUid;
 use fynix::prelude::*;
+use moxie_ui::drag::{follow, ghost};
 use moxie_ui::elements::Button;
 use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::FynixHost;
@@ -27,10 +28,6 @@ const EDGE: f32 = 0.25;
 
 /// What [`logical_rect`] reads off a node to place it in pointer space.
 type NodeRect = (&'static ComputedNode, &'static UiGlobalTransform);
-
-/// Where the ghost sits relative to the cursor, so the cursor lands
-/// just inside it rather than on its corner.
-const GHOST_OFFSET: Vec2 = Vec2::new(-8.0, -9.0);
 
 /// The subject being dragged, where a drop would land it, and what is
 /// following the cursor meanwhile. Empty whenever nothing is being
@@ -169,11 +166,10 @@ pub(super) fn rows<'r, 'u, 'a>(
                 let Ok(mut node) = nodes.get_mut(ghost) else {
                     return;
                 };
-                let at = drag.pointer_location.position / scale.0
-                    + GHOST_OFFSET;
-
-                node.left = px(at.x);
-                node.top = px(at.y);
+                follow(
+                    &mut node,
+                    drag.pointer_location.position / scale.0,
+                );
             },
         )
         .observe(
@@ -241,37 +237,6 @@ fn commit_drop(
     commands.queue(move |world: &mut World| {
         apply(world, dragged, row, at);
     });
-}
-
-/// What follows the cursor while a row is being dragged.
-///
-/// [`Pickable::IGNORE`] because it sits directly under the cursor: seen
-/// by the pointer it would be the only thing ever dragged over, and no
-/// row would light up.
-fn ghost(at: Vec2, name: String, theme: &EditorTheme) -> impl Bundle {
-    (
-        Node {
-            position_type: PositionType::Absolute,
-            left: px(at.x + GHOST_OFFSET.x),
-            top: px(at.y + GHOST_OFFSET.y),
-            padding: UiRect::axes(px(6), px(2)),
-            border_radius: BorderRadius::all(px(3)),
-            ..default()
-        },
-        BackgroundColor(theme.color.accent.with_alpha(0.85)),
-        GlobalZIndex(theme.layer.drag),
-        Pickable::IGNORE,
-        children![(
-            Text::new(name),
-            TextFont {
-                font_size: FontSize::Px(12.0),
-                ..default()
-            },
-            TextColor(theme.palette.base[0]),
-            TextLayout::linebreak(LineBreak::NoWrap),
-            Pickable::IGNORE,
-        )],
-    )
 }
 
 /// Moves `dragged` to where `at` puts it relative to `row`.

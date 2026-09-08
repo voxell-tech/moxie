@@ -18,12 +18,9 @@ use bevy_fynix::{BevyFynix, WorldEntityMut};
 use fynix::element::Element;
 use fynix::ui::ElementMut;
 
+use crate::drag::{follow, ghost};
 use crate::reactive::FynixHost;
 use crate::theme::EditorTheme;
-
-/// Where the ghost sits relative to the cursor, so the cursor lands
-/// just inside it rather than on its corner.
-const GHOST_OFFSET: Vec2 = Vec2::new(-8.0, -9.0);
 
 /// The file being dragged, its kind, and what is following the cursor
 /// meanwhile. Empty whenever nothing is being dragged.
@@ -74,11 +71,10 @@ pub fn draggable<'r, 'u, 'a, E: Element<FynixHost>>(
             let Ok(mut node) = nodes.get_mut(ghost) else {
                 return;
             };
-            let at = drag.pointer_location.position / scale.0
-                + GHOST_OFFSET;
-
-            node.left = px(at.x);
-            node.top = px(at.y);
+            follow(
+                &mut node,
+                drag.pointer_location.position / scale.0,
+            );
         },
     )
     .observe(
@@ -91,36 +87,5 @@ pub fn draggable<'r, 'u, 'a, E: Element<FynixHost>>(
             dragging.path = None;
             dragging.kind = None;
         },
-    )
-}
-
-/// What follows the cursor while a file is being dragged.
-///
-/// [`Pickable::IGNORE`] because it sits directly under the cursor:
-/// seen by the pointer it would be the only thing ever dragged over,
-/// and no drop target would light up.
-fn ghost(at: Vec2, name: String, theme: &EditorTheme) -> impl Bundle {
-    (
-        Node {
-            position_type: PositionType::Absolute,
-            left: px(at.x + GHOST_OFFSET.x),
-            top: px(at.y + GHOST_OFFSET.y),
-            padding: UiRect::axes(px(6), px(2)),
-            border_radius: BorderRadius::all(px(3)),
-            ..default()
-        },
-        BackgroundColor(theme.color.accent.with_alpha(0.85)),
-        GlobalZIndex(theme.layer.drag),
-        Pickable::IGNORE,
-        children![(
-            Text::new(name),
-            TextFont {
-                font_size: FontSize::Px(12.0),
-                ..default()
-            },
-            TextColor(theme.palette.base[0]),
-            TextLayout::linebreak(LineBreak::NoWrap),
-            Pickable::IGNORE,
-        )],
     )
 }

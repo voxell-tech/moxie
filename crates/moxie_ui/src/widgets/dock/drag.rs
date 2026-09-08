@@ -1,10 +1,9 @@
 //! Drag/drop state machine: drag a tab to reorder it within a tab
 //! bar, merge it into another leaf, or split an area on drop.
 
-use bevy::feathers::cursor::{EntityCursor, OverrideCursor};
+use bevy::feathers::cursor::OverrideCursor;
 use bevy::prelude::*;
 use bevy::ui::{UiGlobalTransform, UiScale};
-use bevy::window::SystemCursorIcon;
 use bevy_fynix::BevyFynix;
 
 use super::area::DockArea;
@@ -12,6 +11,7 @@ use super::reconcile::NodeBinding;
 use super::registry::WindowRegistry;
 use super::tabs::DockTabRow;
 use super::tree::{DockTree, Edge as TreeEdge, TabId};
+use crate::drag::{grab, ungrab};
 use crate::layout::logical_rect;
 use crate::theme::EditorTheme;
 
@@ -160,11 +160,7 @@ fn on_drag_move(
                 find_parent_area(source_tab, &parent_query, &areas);
 
             // Drag underway: show the grabbing cursor everywhere.
-            if override_cursor.is_none() {
-                override_cursor.0 = Some(EntityCursor::System(
-                    SystemCursorIcon::Grabbing,
-                ));
-            }
+            grab(&mut override_cursor);
 
             // The ghost is the real tab tile, rebuilt via the shared
             // builder so it's identical; hide the original meanwhile.
@@ -440,7 +436,7 @@ fn on_drag_end(
             source_area,
             ..
         } => {
-            clear_grab_cursor(&mut override_cursor);
+            ungrab(&mut override_cursor);
             commands.entity(ghost_entity).despawn();
             // Reveal the original tab again (a consumed drop rebuilds
             // the leaf and despawns it anyway, so this is
@@ -506,7 +502,7 @@ fn cancel_drag_on_escape(
         ..
     } = state
     {
-        clear_grab_cursor(&mut override_cursor);
+        ungrab(&mut override_cursor);
         commands.entity(ghost_entity).despawn();
         commands
             .entity(source_tab)
@@ -528,15 +524,6 @@ fn ghost_node(cursor: Vec2) -> Node {
         top: px(cursor.y - 12.0),
         height: px(super::TAB_HEIGHT),
         ..default()
-    }
-}
-
-/// Drop the drag-wide grabbing cursor, if it's the one we set.
-fn clear_grab_cursor(override_cursor: &mut OverrideCursor) {
-    if override_cursor.0
-        == Some(EntityCursor::System(SystemCursorIcon::Grabbing))
-    {
-        override_cursor.0 = None;
     }
 }
 
