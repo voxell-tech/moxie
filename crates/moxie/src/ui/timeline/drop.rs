@@ -28,7 +28,7 @@ use moxie_ui::theme::EditorTheme;
 use super::drag::{BoxPath, GapPath};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
 use crate::block_layout::{self, HEADER_HEIGHT, Placed};
-use crate::{EditorScene, TimelineView};
+use crate::{EditorScene, SelectedAction, TimelineView};
 
 /// How close to a node's own edge a drop stops being about that node
 /// and starts being about the block around it.
@@ -503,8 +503,17 @@ fn settles_where_it_started(target: &Target, from: &[usize]) -> bool {
 // Committing.
 //
 
-/// Writes the drop's result back into the scene.
+/// Writes the drop's result back into the scene, following the
+/// selection if it named the moved node (or one inside it).
 fn commit(world: &mut World, from: &[usize], target: &Target) {
+    // The selection's tail past `from`, if it points into the moved
+    // node; re-based onto wherever the node lands.
+    let selected_tail = world
+        .get_resource::<SelectedAction>()
+        .and_then(|selected| selected.0.clone())
+        .filter(|path| under(path, from))
+        .map(|path| path[from.len()..].to_vec());
+
     let Some(mut editor_scene) =
         world.get_resource_mut::<EditorScene>()
     else {
@@ -529,24 +538,38 @@ fn commit(world: &mut World, from: &[usize], target: &Target) {
             *before,
         ),
     };
-    if moved.is_none() {
+    let Some(landed) = moved else {
         return;
-    }
+    };
+
     // After the move: pruning renumbers paths, and `target` was
     // resolved against the tree as it stood.
-    prune_empty(&mut editor_scene.edit().0.animation);
+    let mut kept = selected_tail.map(|tail| {
+        let mut path = landed;
+        path.extend(tail);
+        path
+    });
+    prune_empty(&mut editor_scene.edit().0.animation, &mut kept);
+
+    if let Some(mut selected) =
+        world.get_resource_mut::<SelectedAction>()
+        && selected.0.as_deref().is_some_and(|path| under(path, from))
+    {
+        selected.0 = kept;
+    }
     if let Some(mut tick) = world.get_resource_mut::<RebuildTick>() {
         tick.0 = tick.0.wrapping_add(1);
     }
 }
 
-/// Moves `from` to `index` among `parent`'s children.
+/// Moves `from` to `index` among `parent`'s children, returning where
+/// it landed.
 fn insert(
     root: &mut Block<Backend>,
     from: &[usize],
     parent: &[usize],
     index: usize,
-) -> Option<()> {
+) -> Option<Vec<usize>> {
     let (from_index, from_parent) = from.split_last()?;
     let node = take(root, from)?;
 
@@ -560,19 +583,23 @@ fn insert(
     };
 
     let block = block_at_mut(root, &parent)?;
-    block.children.insert(index.min(block.children.len()), node);
-    Some(())
+    let at = index.min(block.children.len());
+    block.children.insert(at, node);
+
+    let mut landed = parent;
+    landed.push(at);
+    Some(landed)
 }
 
 /// Wraps `from` and the node at `onto` in a new block, in `onto`'s
-/// place, `from` first when `before`.
+/// place, `from` first when `before`. Returns where `from` landed.
 fn merge(
     root: &mut Block<Backend>,
     from: &[usize],
     onto: &[usize],
     combinator: Combinator,
     before: bool,
-) -> Option<()> {
+) -> Option<Vec<usize>> {
     let mut node = take(root, from)?;
     let onto = after_removal(onto, from)?;
     let (onto_index, onto_parent) = onto.split_last()?;
@@ -604,19 +631,61 @@ fn merge(
             },
         },
     );
-    Some(())
+
+    let mut landed = onto_parent.to_vec();
+    landed.push(*onto_index);
+    landed.push(if before { 0 } else { 1 });
+    Some(landed)
 }
 
 /// Drops every empty block, innermost first so one emptied by losing
 /// its last nested block goes too. The root stays, empty or not.
-fn prune_empty(block: &mut Block<Backend>) {
-    block.children.retain_mut(|child| {
-        let SceneNode::Block { block, .. } = child else {
-            return true;
+/// `keep` is a path to carry through the renumbering, cleared if it
+/// pointed inside a pruned block.
+fn prune_empty(
+    block: &mut Block<Backend>,
+    keep: &mut Option<Vec<usize>>,
+) {
+    let mut i = 0;
+    while i < block.children.len() {
+        let SceneNode::Block { block: inner, .. } =
+            &mut block.children[i]
+        else {
+            i += 1;
+            continue;
         };
-        prune_empty(block);
-        !block.children.is_empty()
-    });
+
+        let mut inner_keep = match keep.as_deref() {
+            Some([first, rest @ ..]) if *first == i => {
+                Some(rest.to_vec())
+            }
+            _ => None,
+        };
+        prune_empty(inner, &mut inner_keep);
+        if keep.as_deref().and_then(<[usize]>::first) == Some(&i) {
+            match inner_keep {
+                Some(rest) => {
+                    let k = keep.as_mut().unwrap();
+                    k.truncate(1);
+                    k.extend(rest);
+                }
+                None => *keep = None,
+            }
+        }
+
+        if inner.children.is_empty() {
+            block.children.remove(i);
+            match keep.as_deref() {
+                Some([first, ..]) if *first == i => *keep = None,
+                Some([first, ..]) if *first > i => {
+                    keep.as_mut().unwrap()[0] -= 1;
+                }
+                _ => {}
+            }
+        } else {
+            i += 1;
+        }
+    }
 }
 
 /// Pulls the node at `path` out of the tree.
@@ -944,5 +1013,66 @@ fn hide_landing(nodes: &mut Query<&mut Node>, visuals: &Visuals) {
 fn release_cursor(cursor: &mut OverrideCursor) {
     if cursor.0 == Some(GRABBING) {
         cursor.0 = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::time::Duration;
+
+    use motiongfx_scene::block::{Block, Node as SceneNode};
+
+    use super::*;
+
+    fn leaf() -> SceneNode<Backend> {
+        SceneNode::Draft {
+            delay: None,
+            duration: Duration::ZERO,
+            name: None,
+        }
+    }
+
+    fn block(
+        children: Vec<SceneNode<Backend>>,
+    ) -> SceneNode<Backend> {
+        SceneNode::block(Block::chain(children))
+    }
+
+    #[test]
+    fn prune_shifts_kept_past_a_removed_sibling() {
+        let mut root = Block::chain(vec![block(vec![]), leaf()]);
+        let mut keep = Some(vec![1]);
+        prune_empty(&mut root, &mut keep);
+        assert_eq!(keep, Some(vec![0]));
+        assert_eq!(root.children.len(), 1);
+    }
+
+    #[test]
+    fn prune_leaves_kept_before_a_removed_sibling() {
+        let mut root = Block::chain(vec![leaf(), block(vec![])]);
+        let mut keep = Some(vec![0]);
+        prune_empty(&mut root, &mut keep);
+        assert_eq!(keep, Some(vec![0]));
+    }
+
+    #[test]
+    fn prune_clears_kept_inside_a_removed_block() {
+        let mut root =
+            Block::chain(vec![block(vec![block(vec![])]), leaf()]);
+        let mut keep = Some(vec![0, 0]);
+        prune_empty(&mut root, &mut keep);
+        assert_eq!(keep, None);
+        assert_eq!(root.children.len(), 1);
+    }
+
+    #[test]
+    fn prune_rebases_kept_in_a_surviving_nested_block() {
+        let mut root = Block::chain(vec![
+            block(vec![block(vec![]), leaf()]),
+            leaf(),
+        ]);
+        let mut keep = Some(vec![0, 1]);
+        prune_empty(&mut root, &mut keep);
+        assert_eq!(keep, Some(vec![0, 0]));
     }
 }
