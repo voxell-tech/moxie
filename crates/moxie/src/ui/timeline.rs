@@ -6,12 +6,7 @@ mod drag;
 mod drop;
 mod pattern;
 
-pub(crate) use drag::{Dragging, cancel_on_escape};
-pub(crate) use drop::{
-    Dragging as DropDragging,
-    cancel_on_escape as cancel_drop_on_escape,
-};
-pub(crate) use pattern::DelayPattern;
+use pattern::DelayPattern;
 
 use bevy_fynix::tag::TagExt as _;
 use core::time::Duration;
@@ -26,7 +21,7 @@ use crate::playback::{
     TogglePlayback, on_track_cancel, on_track_click_release,
     on_track_drag, on_track_press, on_track_release,
 };
-use crate::zoom::{FitTimeline, on_track_scroll};
+use crate::zoom::{FitTimeline, on_fit_timeline, on_track_scroll};
 use crate::{
     EditorScene, EditorState, SelectedAction, TimelineView, time_axis,
 };
@@ -43,6 +38,26 @@ use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use moxie_ui::reactive::{
     BevyUi, FynixHost, resource_changed, value_changed,
 };
+
+/// The timeline's resources and interaction systems.
+pub(crate) struct TimelinePlugin;
+
+impl Plugin for TimelinePlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<TimelineView>()
+            .init_resource::<BlockFoldState>()
+            .init_resource::<RebuildTick>()
+            .init_resource::<DelayPattern>()
+            .init_resource::<drag::Dragging>()
+            .init_resource::<drop::Dragging>()
+            .add_systems(
+                Update,
+                (drag::cancel_on_escape, drop::cancel_on_escape),
+            )
+            .add_observer(drop::on_drag_end)
+            .add_observer(on_fit_timeline);
+    }
+}
 
 /// Folded blocks, by path.
 #[derive(Resource, Default, Clone, PartialEq)]

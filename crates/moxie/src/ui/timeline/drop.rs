@@ -268,36 +268,45 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
                 );
             },
         )
-        .observe(
-            move |_: On<Pointer<DragEnd>>,
-                  visuals: Res<Visuals>,
-                  mut dragging: ResMut<Dragging>,
-                  mut visibility: Query<&mut Visibility>,
-                  mut nodes: Query<&mut Node>,
-                  mut override_cursor: ResMut<OverrideCursor>,
-                  mut commands: Commands| {
-                let Some(gesture) = dragging.0.take() else {
-                    return;
-                };
-                hide(&mut nodes, &visuals);
-                release_cursor(&mut override_cursor);
-                if let Ok(mut visibility) =
-                    visibility.get_mut(gesture.entity)
-                {
-                    *visibility = Visibility::Inherited;
-                }
+}
 
-                let Some(target) = gesture.target else {
-                    return;
-                };
-                if settles_where_it_started(&target, &gesture.path) {
-                    return;
-                }
-                commands.queue(move |world: &mut World| {
-                    commit(world, &gesture.path, &target);
-                });
-            },
-        )
+/// Ends the `body` drag in progress: clears the ghost and commits the
+/// drop, unless it settled where it started.
+///
+/// Global, not one observer per box: a child
+/// [`Button`](bevy::ui_widgets::Button) (the fold chevron among them)
+/// stops `DragEnd` propagating and would otherwise strand the gesture
+/// until Escape.
+pub(crate) fn on_drag_end(
+    _: On<Pointer<DragEnd>>,
+    visuals: Option<Res<Visuals>>,
+    mut dragging: ResMut<Dragging>,
+    mut visibility: Query<&mut Visibility>,
+    mut nodes: Query<&mut Node>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut commands: Commands,
+) {
+    let Some(gesture) = dragging.0.take() else {
+        return;
+    };
+    let Some(visuals) = visuals else {
+        return;
+    };
+    hide(&mut nodes, &visuals);
+    release_cursor(&mut override_cursor);
+    if let Ok(mut visibility) = visibility.get_mut(gesture.entity) {
+        *visibility = Visibility::Inherited;
+    }
+
+    let Some(target) = gesture.target else {
+        return;
+    };
+    if settles_where_it_started(&target, &gesture.path) {
+        return;
+    }
+    commands.queue(move |world: &mut World| {
+        commit(world, &gesture.path, &target);
+    });
 }
 
 /// Drops whatever's being dragged without committing it.

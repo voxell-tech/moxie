@@ -1,23 +1,15 @@
-//! Moving and resizing a node's box by dragging one of its edges.
+//! Moving and resizing a node's box by dragging one of its edges. The
+//! left edge edits `delay`, the right edge `duration` (leaves only -
+//! a block has no `duration`). Dedicated handles, not a
+//! direction-sensing body drag, leave the body free for `drop.rs`'s
+//! merge gesture.
 //!
-//! The left edge always edits `delay`, the right edge (an action or
-//! draft leaf only - a block has no `duration` of its own) always
-//! edits `duration`. Splitting the two into dedicated handles, rather
-//! than reading a body-drag's direction, leaves the box's body free
-//! for a future drag-to-merge/chain gesture without the two ever
-//! fighting over what a drag into another node's territory means.
-//!
-//! There's no stored position to drag, either way - the only knob
-//! either edit actually turns is `delay` or `duration`, everything
-//! else in `block_layout.rs` derives from those. Nothing writes
-//! [`EditorScene`] until [`DragEnd`]: `TrackViewport`'s box list
-//! watches it, so a write on every `Pointer<Drag>` would rebuild the
-//! very box being dragged out from under the gesture after one
-//! frame. Instead, each `Pointer<Drag>` lays out a scratch copy of
-//! the tree with the tentative edit applied and pushes the result
-//! straight onto the already-spawned box entities via [`BoxPath`],
-//! without touching the composer tree that owns them. Escape cancels,
-//! laying the untouched tree back out to undo the preview.
+//! Nothing writes [`EditorScene`] until [`DragEnd`]: the box list
+//! watches it, so a mid-drag write would rebuild the dragged box out
+//! from under the gesture. Each `Pointer<Drag>` instead lays out a
+//! scratch copy of the tree with the tentative edit and pushes the
+//! result onto the spawned entities by path. Escape re-lays the
+//! untouched tree to undo the preview.
 
 use core::time::Duration;
 
@@ -39,13 +31,13 @@ use super::BlockFoldState;
 use crate::block_layout::{self, Placed};
 use crate::{EditorScene, TimelineView};
 
-/// How wide an edge handle is.
+/// An edge handle's width.
 pub(crate) const EDGE_HANDLE_PX: f32 = 6.0;
 
 /// Never resized shorter than this.
 const MIN_DURATION: Duration = Duration::from_millis(50);
 
-/// What an edge handle edits.
+/// The field an edge handle edits.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Kind {
     /// The left edge: `delay`.
@@ -58,30 +50,34 @@ pub(crate) enum Kind {
 #[derive(Resource, Default)]
 pub(crate) struct Dragging(Option<Gesture>);
 
-/// One drag in progress: which node it edits, and what it would
-/// commit if released right now.
+/// One drag in progress.
 struct Gesture {
     path: Vec<usize>,
     kind: Kind,
     cursor_start: Vec2,
     /// `delay` (move) or `duration` (resize) before the drag started.
     base_secs: f32,
-    /// The same, live - what release would commit.
+    /// The same, live: what release commits.
     value_secs: f32,
 }
 
-/// Marks a box entity ([`TimelineAction`](moxie_ui::elements::TimelineAction)
-/// or [`TimelineBlock`](moxie_ui::elements::TimelineBlock)) with the
-/// path it was built for, so a live drag can retarget it by path
-/// without going through the composer tree that owns it.
+/// The path a box entity
+/// ([`TimelineAction`](moxie_ui::elements::TimelineAction) or
+/// [`TimelineBlock`](moxie_ui::elements::TimelineBlock)) was built for.
 #[derive(Component, Clone)]
 pub(crate) struct BoxPath(pub(crate) Vec<usize>);
 
-/// A path's box and its gap are two different entities, each needing
-/// its own retargeting, so this is its own component rather than
-/// [`BoxPath`] shared with [`TimelineGap`](moxie_ui::elements::TimelineGap).
+/// The same, for a path's
+/// [`TimelineGap`](moxie_ui::elements::TimelineGap).
 #[derive(Component, Clone)]
 pub(crate) struct GapPath(pub(crate) Vec<usize>);
+
+/// The path and edge a handle drags.
+#[derive(Component, Clone)]
+pub(crate) struct EdgePath {
+    pub(crate) path: Vec<usize>,
+    pub(crate) kind: Kind,
+}
 
 /// Makes `handle` an edge: dragging it edits `path`'s `delay`
 /// (`Kind::Move`) or `duration` (`Kind::Resize`).
@@ -92,6 +88,10 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
 ) -> &'r mut ElementMut<'u, 'a, FynixHost, E> {
     handle
         .insert(EntityCursor::System(SystemCursorIcon::EwResize))
+        .insert(EdgePath {
+            path: path.clone(),
+            kind,
+        })
         .observe(
             move |start: On<Pointer<DragStart>>,
                   scale: Res<UiScale>,
@@ -127,6 +127,10 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                   gaps: Query<
                 (&GapPath, &mut Node),
                 Without<BoxPath>,
+            >,
+                  edges: Query<
+                (&EdgePath, &mut Node),
+                (Without<BoxPath>, Without<GapPath>),
             >| {
                 let Some(gesture) = &mut dragging.0 else {
                     return;
@@ -152,6 +156,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                     gesture.value_secs,
                     boxes,
                     gaps,
+                    edges,
                 );
             },
         )
@@ -176,8 +181,8 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
         )
 }
 
-/// Drops whatever's being dragged without committing it, laying the
-/// untouched tree back out to undo whatever the drag previewed.
+/// Drops the drag without committing, re-laying the untouched tree to
+/// undo the preview.
 pub(crate) fn cancel_on_escape(
     keys: Res<ButtonInput<KeyCode>>,
     mut dragging: ResMut<Dragging>,
@@ -186,6 +191,10 @@ pub(crate) fn cancel_on_escape(
     view: Res<TimelineView>,
     boxes: Query<(&BoxPath, &mut Node)>,
     gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
+    edges: Query<
+        (&EdgePath, &mut Node),
+        (Without<BoxPath>, Without<GapPath>),
+    >,
 ) {
     if !keys.just_pressed(KeyCode::Escape) {
         return;
@@ -202,13 +211,12 @@ pub(crate) fn cancel_on_escape(
         gesture.base_secs,
         boxes,
         gaps,
+        edges,
     );
 }
 
-/// Lays `path`'s tree back out with `secs` applied to `kind`'s edit,
-/// and pushes the result onto whichever spawned box and gap entities
-/// [`BoxPath`]/[`GapPath`] match - a scratch copy, so nothing here
-/// ever touches the real [`EditorScene`].
+/// Lays out a scratch copy of the tree with `secs` applied to `kind`'s
+/// edit and pushes the result onto the spawned entities by path.
 fn relayout(
     editor_scene: &EditorScene,
     folded: &BlockFoldState,
@@ -218,6 +226,10 @@ fn relayout(
     secs: f32,
     boxes: Query<(&BoxPath, &mut Node)>,
     gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
+    edges: Query<
+        (&EdgePath, &mut Node),
+        (Without<BoxPath>, Without<GapPath>),
+    >,
 ) {
     let mut animation = editor_scene.scene().0.animation.clone();
     let Some(node) = node_at_mut(&mut animation, path) else {
@@ -225,16 +237,21 @@ fn relayout(
     };
     apply_edit(node, kind, secs);
 
-    let layout = block_layout::layout(&animation, view, folded.paths());
-    apply_layout(&layout, boxes, gaps);
+    let layout =
+        block_layout::layout(&animation, view, folded.paths());
+    apply_layout(&layout, boxes, gaps, edges);
 }
 
-/// Pushes `layout` onto whichever spawned box and gap entities
-/// [`BoxPath`]/[`GapPath`] match.
+/// Pushes `layout` onto the spawned box, gap and handle entities by
+/// path.
 fn apply_layout(
     layout: &[Placed],
     mut boxes: Query<(&BoxPath, &mut Node)>,
     mut gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
+    mut edges: Query<
+        (&EdgePath, &mut Node),
+        (Without<BoxPath>, Without<GapPath>),
+    >,
 ) {
     for (box_path, mut node) in &mut boxes {
         let Some(placed) =
@@ -254,11 +271,9 @@ fn apply_layout(
         else {
             continue;
         };
-        // A gap already spawned for this path, but the drag has
-        // since closed it, collapses to nothing rather than
-        // showing a stale width - a fresh gap the drag opens up
-        // where none existed has to wait for the next real
-        // rebuild, same as the edge handles and fold chevron.
+        // A gap the drag has since closed collapses to nothing
+        // rather than show a stale width. One the drag opens where
+        // none existed waits for the next real rebuild.
         let width = placed.gap_x.map_or(0.0, |gap_x| {
             node.left = px(gap_x);
             node.top = px(placed.y);
@@ -267,11 +282,24 @@ fn apply_layout(
         });
         node.width = px(width);
     }
+
+    for (edge, mut node) in &mut edges {
+        let Some(placed) =
+            layout.iter().find(|p| p.path == edge.path)
+        else {
+            continue;
+        };
+        node.top = px(placed.y);
+        node.height = px(placed.h);
+        node.left = px(match edge.kind {
+            Kind::Move => placed.x,
+            Kind::Resize => placed.x + placed.w - EDGE_HANDLE_PX,
+        });
+    }
 }
 
-/// `path`'s current `delay` (move) or `duration` (resize) - `None`
-/// for a resize on a block, which has no duration of its own to
-/// grab, or a path a concurrent edit has since made dangling.
+/// `path`'s current `delay` (move) or `duration` (resize). `None` for
+/// a resize on a block, or a dangling path.
 fn base_seconds(
     editor_scene: &EditorScene,
     path: &[usize],
@@ -306,8 +334,7 @@ fn duration_secs(node: &SceneNode<Backend>) -> Option<f32> {
     }
 }
 
-/// Writes the drag's result back into the scene: `path`'s `delay` for
-/// a move, its `duration` for a resize.
+/// Writes the drag's result into the scene.
 fn commit(world: &mut World, path: &[usize], kind: Kind, secs: f32) {
     let Some(mut editor_scene) =
         world.get_resource_mut::<EditorScene>()
