@@ -53,7 +53,6 @@ pub(crate) struct Dragging(Option<Gesture>);
 struct Gesture {
     path: Vec<usize>,
     kind: Kind,
-    cursor_start: Vec2,
     /// `delay` or `duration` at drag start.
     base_secs: f32,
     /// The same, live: what a release commits.
@@ -93,7 +92,6 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
         })
         .observe(
             move |start: On<Pointer<DragStart>>,
-                  scale: Res<UiScale>,
                   editor_scene: Res<EditorScene>,
                   mut dragging: ResMut<Dragging>| {
                 if start.button != PointerButton::Primary {
@@ -108,8 +106,6 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                 dragging.0 = Some(Gesture {
                     path: path.clone(),
                     kind,
-                    cursor_start: start.pointer_location.position
-                        / scale.0,
                     base_secs,
                     value_secs: base_secs,
                 });
@@ -134,9 +130,8 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                 let Some(gesture) = &mut dragging.0 else {
                     return;
                 };
-                let cursor = drag.pointer_location.position / scale.0;
-                let dx_secs = view
-                    .secs_from_dx(cursor.x - gesture.cursor_start.x);
+                let dx_secs =
+                    view.secs_from_dx(drag.distance.x / scale.0);
 
                 gesture.value_secs = match gesture.kind {
                     Kind::Move => {

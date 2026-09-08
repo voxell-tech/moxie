@@ -11,8 +11,8 @@
 //! release would land.
 
 use bevy::feathers::cursor::OverrideCursor;
-use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
-use bevy::picking::pointer::PointerButton;
+use bevy::picking::events::{DragEnd, DragStart, Pointer};
+use bevy::picking::pointer::{PointerButton, PointerLocation};
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
 use bevy_fynix::{BevyFynix, WorldEntityMut};
@@ -60,8 +60,6 @@ enum Target {
 /// One drag in progress.
 struct Gesture {
     path: Vec<usize>,
-    /// Last pointer position, logical screen space.
-    cursor: Vec2,
     /// Subtracted from the cursor, in content space, for the box's
     /// top-left.
     grab_offset: Vec2,
@@ -116,65 +114,62 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
     // Not `event_target()`: neither `Label` nor `Icon` ignores the
     // pointer, so a grab on the text or the chevron reports that
     // child instead of the box being wired here.
-    handle
-        .observe(
-            move |start: On<Pointer<DragStart>>,
-                  scale: Res<UiScale>,
-                  view: Res<TimelineView>,
-                  editor_scene: Res<EditorScene>,
-                  folded: Res<BlockFoldState>,
-                  q_viewport: Query<
-                (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
-                With<TrackViewport>,
-            >,
-                  mut dragging: ResMut<Dragging>,
-                  mut override_cursor: ResMut<OverrideCursor>| {
-                if start.button != PointerButton::Primary
-                    || path.is_empty()
-                {
-                    // The root has nowhere to land.
-                    return;
-                }
-                let Ok((node, transform, scroll)) =
-                    q_viewport.single()
-                else {
-                    return;
-                };
+    handle.observe(
+        move |start: On<Pointer<DragStart>>,
+              scale: Res<UiScale>,
+              view: Res<TimelineView>,
+              editor_scene: Res<EditorScene>,
+              folded: Res<BlockFoldState>,
+              q_viewport: Query<
+            (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+            With<TrackViewport>,
+        >,
+              mut dragging: ResMut<Dragging>,
+              mut override_cursor: ResMut<OverrideCursor>| {
+            if start.button != PointerButton::Primary
+                || path.is_empty()
+            {
+                // The root has nowhere to land.
+                return;
+            }
+            let Ok((node, transform, scroll)) = q_viewport.single()
+            else {
+                return;
+            };
 
-                let cursor = start.pointer_location.position / scale.0;
-                let content =
-                    to_content(cursor, node, transform, scroll);
+            let cursor = start.pointer_location.position / scale.0;
+            let content = to_content(cursor, node, transform, scroll);
 
-                let layout = block_layout::layout(
-                    &editor_scene.scene().0.animation,
-                    *view,
-                    folded.paths(),
-                );
-                let Some(origin) =
-                    layout.iter().find(|p| p.path == path).map(rect)
-                else {
-                    return;
-                };
+            let layout = block_layout::layout(
+                &editor_scene.scene().0.animation,
+                *view,
+                folded.paths(),
+            );
+            let Some(origin) =
+                layout.iter().find(|p| p.path == path).map(rect)
+            else {
+                return;
+            };
 
-                grab(&mut override_cursor);
-                dragging.0 = Some(Gesture {
-                    path: path.clone(),
-                    cursor,
-                    grab_offset: content - origin.min,
-                    target: None,
-                });
-            },
-        )
-        .observe(
-            move |drag: On<Pointer<Drag>>,
-                  scale: Res<UiScale>,
-                  mut dragging: ResMut<Dragging>| {
-                if let Some(gesture) = &mut dragging.0 {
-                    gesture.cursor =
-                        drag.pointer_location.position / scale.0;
-                }
-            },
-        )
+            grab(&mut override_cursor);
+            dragging.0 = Some(Gesture {
+                path: path.clone(),
+                grab_offset: content - origin.min,
+                target: None,
+            });
+        },
+    )
+}
+
+/// The mouse pointer in logical screen space, if it has a location.
+fn cursor(
+    pointers: &Query<&PointerLocation>,
+    scale: &UiScale,
+) -> Option<Vec2> {
+    pointers
+        .iter()
+        .find_map(|pointer| pointer.location())
+        .map(|location| location.position / scale.0)
 }
 
 /// The per-frame drag: lays the tree back out against the current
@@ -183,11 +178,13 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
 /// or a zoom mid-drag stays in step.
 pub(crate) fn preview(
     kernel: Res<BevyFynix<EditorTheme>>,
+    scale: Res<UiScale>,
     editor_scene: Res<EditorScene>,
     folded: Res<BlockFoldState>,
     visuals: Option<Res<Visuals>>,
     view: Res<TimelineView>,
     mut dragging: ResMut<Dragging>,
+    pointers: Query<&PointerLocation>,
     q_viewport: Query<
         (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
         With<TrackViewport>,
@@ -205,6 +202,9 @@ pub(crate) fn preview(
     else {
         return;
     };
+    let Some(cursor) = cursor(&pointers, &scale) else {
+        return;
+    };
     let Ok((vp_node, vp_transform, scroll)) = q_viewport.single()
     else {
         return;
@@ -217,8 +217,8 @@ pub(crate) fn preview(
     let drag_z = kernel.theme().layer.drag;
 
     let content = Vec2::new(
-        gesture.cursor.x - vp_rect.min.x,
-        gesture.cursor.y - vp_rect.min.y + scroll.y,
+        cursor.x - vp_rect.min.x,
+        cursor.y - vp_rect.min.y + scroll.y,
     );
     let root = &editor_scene.scene().0.animation;
     let layout = block_layout::layout(root, *view, folded.paths());
