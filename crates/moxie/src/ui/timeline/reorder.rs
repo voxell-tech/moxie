@@ -4,11 +4,9 @@
 //! at a path.
 //!
 //! The tree is written only when the drag ends. Until then the dragged
-//! box (and its subtree) is the preview, offset to follow the cursor
-//! while the rest of the layout keeps flowing under it. [`preview`]
-//! runs every frame, not just on pointer motion, so a pan or a zoom
-//! mid-drag stays in step. A slim line or an outline marks where a
-//! release would land.
+//! box and its subtree are the preview, offset by how far the cursor
+//! has moved, while the rest of the layout stays put. A slim line or
+//! an outline marks where a release would land.
 
 use bevy::feathers::cursor::OverrideCursor;
 use bevy::picking::events::{DragEnd, DragStart, Pointer};
@@ -60,9 +58,7 @@ enum Target {
 /// One drag in progress.
 struct Gesture {
     path: Vec<usize>,
-    /// Subtracted from the cursor, in content space, for the box's
-    /// top-left.
-    grab_offset: Vec2,
+    cursor_start: Vec2,
     target: Option<Target>,
 }
 
@@ -117,9 +113,6 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
     handle.observe(
         move |start: On<Pointer<DragStart>>,
               scale: Res<UiScale>,
-              view: Res<TimelineView>,
-              editor_scene: Res<EditorScene>,
-              folded: Res<BlockFoldState>,
               q_viewport: Query<
             (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
             With<TrackViewport>,
@@ -138,23 +131,12 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
             };
 
             let cursor = start.pointer_location.position / scale.0;
-            let content = to_content(cursor, node, transform, scroll);
-
-            let layout = block_layout::layout(
-                &editor_scene.scene().0.animation,
-                *view,
-                folded.paths(),
-            );
-            let Some(origin) =
-                layout.iter().find(|p| p.path == path).map(rect)
-            else {
-                return;
-            };
-
             grab(&mut override_cursor);
             dragging.0 = Some(Gesture {
                 path: path.clone(),
-                grab_offset: content - origin.min,
+                cursor_start: to_content(
+                    cursor, node, transform, scroll,
+                ),
                 target: None,
             });
         },
@@ -172,10 +154,8 @@ fn cursor(
         .map(|location| location.position / scale.0)
 }
 
-/// The per-frame drag: lays the tree back out against the current
-/// view, drags the box under the cursor, and marks where a release
-/// would land. Runs every frame, not just on pointer motion, so a pan
-/// or a zoom mid-drag stays in step.
+/// Each frame of a drag: lays the tree out, offsets the dragged
+/// subtree to the cursor, and marks where a release would land.
 pub(crate) fn preview(
     kernel: Res<BevyFynix<EditorTheme>>,
     scale: Res<UiScale>,
@@ -223,17 +203,10 @@ pub(crate) fn preview(
     let root = &editor_scene.scene().0.animation;
     let layout = block_layout::layout(root, *view, folded.paths());
 
-    // The whole subtree moves rigidly: every box and gap under the
-    // dragged path shifts by the same delta, so a block carries its
-    // children rather than sliding out of its own border.
-    let Some(origin) = layout
-        .iter()
-        .find(|placed| placed.path == gesture.path)
-        .map(rect)
-    else {
-        return;
-    };
-    let delta = (content - gesture.grab_offset) - origin.min;
+    // The whole subtree moves rigidly by how far the cursor has
+    // travelled, so a block carries its children rather than sliding
+    // out of its own border.
+    let delta = content - gesture.cursor_start;
     for (entity, box_path) in &q_boxes {
         if !under(&box_path.0, &gesture.path) {
             continue;
