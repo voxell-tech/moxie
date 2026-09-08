@@ -3,15 +3,18 @@
 //! block. Action leaves and block headers share this, each just a node
 //! at a path.
 //!
-//! The tree is written only when the drag ends, and nothing on screen
-//! moves while it runs. One layout, taken at drag start, describes the
-//! whole gesture; every move is a hit test against it.
+//! The tree is written only when the drag ends. Until then the dragged
+//! box (and its subtree) is the preview, offset to follow the cursor
+//! while the rest of the layout keeps flowing under it. [`preview`]
+//! runs every frame, not just on pointer motion, so a pan or a zoom
+//! mid-drag stays in step. A slim line or an outline marks where a
+//! release would land.
 
 use bevy::feathers::cursor::{EntityCursor, OverrideCursor};
 use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy::ui::{UiGlobalTransform, UiScale};
+use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
 use bevy::window::SystemCursorIcon;
 use bevy_fynix::{BevyFynix, WorldEntityMut};
 use bevy_motiongfx::scene::backend::Backend;
@@ -22,7 +25,8 @@ use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::FynixHost;
 use moxie_ui::theme::EditorTheme;
 
-use super::{BlockFoldState, RebuildTick};
+use super::drag::{BoxPath, GapPath};
+use super::{BlockFoldState, RebuildTick, TrackViewport};
 use crate::block_layout::{self, HEADER_HEIGHT, Placed};
 use crate::{EditorScene, TimelineView};
 
@@ -39,6 +43,8 @@ const OUTLINE_GROW: f32 = 2.0;
 /// Cursor shown for the duration of a drag.
 const GRABBING: EntityCursor =
     EntityCursor::System(SystemCursorIcon::Grabbing);
+/// The dragged box rides above its siblings.
+const DRAG_Z: i32 = 200;
 
 /// The node being dragged, if any.
 #[derive(Resource, Default)]
@@ -60,16 +66,14 @@ enum Target {
 
 /// One drag in progress.
 struct Gesture {
-    entity: Entity,
     path: Vec<usize>,
-    /// Every box as it stood when the drag started.
-    layout: Vec<Placed>,
-    /// Subtracted from a pointer position to reach the local space the
-    /// `Placed`s are in, scroll included.
-    conversion_offset: Vec2,
-    /// Added to a `Placed` position to reach `TrackArea`'s space, where
-    /// the visuals are laid out.
-    to_area: Vec2,
+    /// Last known pointer position, in logical screen space, updated on
+    /// pointer motion. [`preview`] re-maps it against the live view
+    /// every frame, so a pan or zoom without pointer motion still
+    /// tracks.
+    cursor: Vec2,
+    /// Subtracted from the cursor, in content space, to place the
+    /// dragged box's top-left.
     grab_offset: Vec2,
     target: Option<Target>,
 }
@@ -90,13 +94,11 @@ impl Axis {
     }
 }
 
-/// What a drag draws: the ghost of the dragged node and the landing
-/// hints.
+/// The landing hints, both children of `area` (the track area frame)
+/// so they outlive the box list's rebuilds.
 #[derive(Resource)]
 pub(crate) struct Visuals {
     area: Entity,
-    ghost: Entity,
-    ghost_label: Entity,
     line: Entity,
     outline: Entity,
 }
@@ -104,15 +106,11 @@ pub(crate) struct Visuals {
 impl Visuals {
     pub(super) fn new(
         area: Entity,
-        ghost: Entity,
-        ghost_label: Entity,
         line: Entity,
         outline: Entity,
     ) -> Self {
         Self {
             area,
-            ghost,
-            ghost_label,
             line,
             outline,
         }
@@ -120,39 +118,26 @@ impl Visuals {
 }
 
 /// Makes `handle` a node's own body: dragging it moves `path`
-/// elsewhere in the tree. `fill`/`border`/`label` are `path`'s own, so
-/// the floating ghost reads as the same box.
+/// elsewhere in the tree.
 pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
     handle: &'r mut ElementMut<'u, 'a, FynixHost, E>,
     path: Vec<usize>,
-    fill: Color,
-    border: Color,
-    label: String,
 ) -> &'r mut ElementMut<'u, 'a, FynixHost, E> {
     // Not `event_target()`: neither `Label` nor `Icon` ignores the
     // pointer, so a grab on the text or the chevron reports that
     // child instead of the box being wired here.
-    let entity = handle.id();
     handle
         .observe(
             move |start: On<Pointer<DragStart>>,
                   scale: Res<UiScale>,
                   view: Res<TimelineView>,
-                  kernel: Res<BevyFynix<EditorTheme>>,
-                  computed: Query<(
-                &ComputedNode,
-                &UiGlobalTransform,
-            )>,
                   editor_scene: Res<EditorScene>,
                   folded: Res<BlockFoldState>,
-                  visuals: Res<Visuals>,
+                  q_viewport: Query<
+                (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+                With<TrackViewport>,
+            >,
                   mut dragging: ResMut<Dragging>,
-                  mut visibility: Query<&mut Visibility>,
-                  mut nodes: Query<&mut Node>,
-                  mut backgrounds: Query<&mut BackgroundColor>,
-                  mut borders: Query<&mut BorderColor>,
-                  mut texts: Query<&mut Text>,
-                  mut text_colors: Query<&mut TextColor>,
                   mut override_cursor: ResMut<OverrideCursor>| {
                 if start.button != PointerButton::Primary
                     || path.is_empty()
@@ -160,11 +145,15 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
                     // The root has nowhere to land.
                     return;
                 }
-                let Ok((node, transform)) = computed.get(entity)
+                let Ok((node, transform, scroll)) =
+                    q_viewport.single()
                 else {
                     return;
                 };
-                let window = logical_rect(node, transform);
+
+                let cursor = start.pointer_location.position / scale.0;
+                let content =
+                    to_content(cursor, node, transform, scroll);
 
                 let layout = block_layout::layout(
                     &editor_scene.scene().0.animation,
@@ -177,50 +166,11 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
                     return;
                 };
 
-                // The dragged box against where the layout put it,
-                // giving the scroll without reading the `ScrollArea`.
-                let conversion_offset = window.min - origin.min;
-                let cursor = start.pointer_location.position
-                    / scale.0
-                    - conversion_offset;
-
-                let Ok((area, area_transform)) =
-                    computed.get(visuals.area)
-                else {
-                    return;
-                };
-                let to_area = conversion_offset
-                    - logical_rect(area, area_transform).min;
-
-                show_ghost(
-                    &mut nodes,
-                    &mut backgrounds,
-                    &mut borders,
-                    &mut texts,
-                    &mut text_colors,
-                    &visuals,
-                    origin,
-                    to_area,
-                    fill,
-                    border,
-                    label.clone(),
-                    kernel.theme().color.text.with_alpha(0.9),
-                );
-                if let Ok(mut visibility) = visibility.get_mut(entity)
-                {
-                    *visibility = Visibility::Hidden;
-                }
-                // Held for the whole gesture so nothing the pointer
-                // crosses, a resize handle above all, swaps the cursor.
                 override_cursor.0 = Some(GRABBING);
-
                 dragging.0 = Some(Gesture {
-                    entity,
                     path: path.clone(),
-                    layout,
-                    conversion_offset,
-                    to_area,
-                    grab_offset: cursor - origin.min,
+                    cursor,
+                    grab_offset: content - origin.min,
                     target: None,
                 });
             },
@@ -228,50 +178,152 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
         .observe(
             move |drag: On<Pointer<Drag>>,
                   scale: Res<UiScale>,
-                  kernel: Res<BevyFynix<EditorTheme>>,
-                  editor_scene: Res<EditorScene>,
-                  visuals: Res<Visuals>,
-                  mut dragging: ResMut<Dragging>,
-                  mut nodes: Query<&mut Node>,
-                  mut backgrounds: Query<&mut BackgroundColor>,
-                  mut borders: Query<&mut BorderColor>| {
-                let Some(gesture) = &mut dragging.0 else {
-                    return;
-                };
-                let cursor = drag.pointer_location.position / scale.0
-                    - gesture.conversion_offset;
-
-                if let Ok(mut ghost) = nodes.get_mut(visuals.ghost) {
-                    let at = cursor - gesture.grab_offset
-                        + gesture.to_area;
-                    ghost.left = px(at.x);
-                    ghost.top = px(at.y);
+                  mut dragging: ResMut<Dragging>| {
+                if let Some(gesture) = &mut dragging.0 {
+                    gesture.cursor =
+                        drag.pointer_location.position / scale.0;
                 }
-
-                let root = &editor_scene.scene().0.animation;
-                gesture.target = resolve(
-                    cursor,
-                    &gesture.layout,
-                    root,
-                    &gesture.path,
-                );
-                show_landing(
-                    &mut nodes,
-                    &mut backgrounds,
-                    &mut borders,
-                    &visuals,
-                    kernel.theme(),
-                    gesture.target.as_ref(),
-                    &gesture.layout,
-                    root,
-                    gesture.to_area,
-                );
             },
         )
 }
 
-/// Ends the `body` drag in progress: clears the ghost and commits the
-/// drop, unless it settled where it started.
+/// The per-frame drag: lays the tree back out against the current
+/// view, drags the box under the cursor, and marks where a release
+/// would land. Runs every frame, not just on pointer motion, so a pan
+/// or a zoom mid-drag stays in step.
+pub(crate) fn preview(
+    kernel: Res<BevyFynix<EditorTheme>>,
+    editor_scene: Res<EditorScene>,
+    folded: Res<BlockFoldState>,
+    visuals: Option<Res<Visuals>>,
+    view: Res<TimelineView>,
+    mut dragging: ResMut<Dragging>,
+    q_viewport: Query<
+        (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+        With<TrackViewport>,
+    >,
+    q_area: Query<(&ComputedNode, &UiGlobalTransform)>,
+    q_boxes: Query<(Entity, &BoxPath)>,
+    q_gaps: Query<(Entity, &GapPath), Without<BoxPath>>,
+    mut nodes: Query<&mut Node>,
+    mut backgrounds: Query<&mut BackgroundColor>,
+    mut borders: Query<&mut BorderColor>,
+    mut commands: Commands,
+) {
+    let (Some(gesture), Some(visuals)) =
+        (dragging.0.as_mut(), visuals)
+    else {
+        return;
+    };
+    let Ok((vp_node, vp_transform, scroll)) = q_viewport.single()
+    else {
+        return;
+    };
+    let Ok((area_node, area_transform)) = q_area.get(visuals.area)
+    else {
+        return;
+    };
+    let vp_rect = logical_rect(vp_node, vp_transform);
+
+    let content = Vec2::new(
+        gesture.cursor.x - vp_rect.min.x,
+        gesture.cursor.y - vp_rect.min.y + scroll.y,
+    );
+    let root = &editor_scene.scene().0.animation;
+    let layout = block_layout::layout(root, *view, folded.paths());
+
+    // The whole subtree moves rigidly: every box and gap under the
+    // dragged path shifts by the same delta, so a block carries its
+    // children rather than sliding out of its own border.
+    let Some(origin) = layout
+        .iter()
+        .find(|placed| placed.path == gesture.path)
+        .map(rect)
+    else {
+        return;
+    };
+    let delta = (content - gesture.grab_offset) - origin.min;
+    for (entity, box_path) in &q_boxes {
+        if !under(&box_path.0, &gesture.path) {
+            continue;
+        }
+        commands.entity(entity).insert(GlobalZIndex(DRAG_Z));
+        if let Some(placed) =
+            layout.iter().find(|p| p.path == box_path.0)
+            && let Ok(mut node) = nodes.get_mut(entity)
+        {
+            node.left = px(placed.x + delta.x);
+            node.top = px(placed.y + delta.y);
+        }
+    }
+    for (entity, gap_path) in &q_gaps {
+        if !under(&gap_path.0, &gesture.path) {
+            continue;
+        }
+        commands.entity(entity).insert(GlobalZIndex(DRAG_Z));
+        if let Some(Placed {
+            gap_x: Some(gap_x),
+            y,
+            ..
+        }) = layout.iter().find(|p| p.path == gap_path.0)
+            && let Ok(mut node) = nodes.get_mut(entity)
+        {
+            node.left = px(gap_x + delta.x);
+            node.top = px(y + delta.y);
+        }
+    }
+
+    gesture.target = resolve(content, &layout, root, &gesture.path);
+    let to_area = Vec2::new(
+        vp_rect.min.x - logical_rect(area_node, area_transform).min.x,
+        vp_rect.min.y
+            - scroll.y
+            - logical_rect(area_node, area_transform).min.y,
+    );
+    show_landing(
+        &mut nodes,
+        &mut backgrounds,
+        &mut borders,
+        &visuals,
+        kernel.theme(),
+        gesture.target.as_ref(),
+        &layout,
+        root,
+        to_area,
+    );
+}
+
+/// A cursor in logical screen space, mapped into the viewport's
+/// content space, where the `Placed`s live.
+fn to_content(
+    cursor: Vec2,
+    node: &ComputedNode,
+    transform: &UiGlobalTransform,
+    scroll: &ScrollPosition,
+) -> Vec2 {
+    let min = logical_rect(node, transform).min;
+    Vec2::new(cursor.x - min.x, cursor.y - min.y + scroll.y)
+}
+
+/// Common tail of a committed drop and a cancel: drop the drag-wide
+/// cursor and bump [`RebuildTick`], so the box list respawns and every
+/// dragged box loses both its preview offset and its raised z.
+fn end_drag(
+    override_cursor: &mut OverrideCursor,
+    commands: &mut Commands,
+) {
+    release_cursor(override_cursor);
+    commands.queue(|world: &mut World| {
+        if let Some(mut tick) =
+            world.get_resource_mut::<RebuildTick>()
+        {
+            tick.0 = tick.0.wrapping_add(1);
+        }
+    });
+}
+
+/// Ends the `body` drag in progress and commits the drop, unless it
+/// settled where it started.
 ///
 /// Global, not one observer per box: a child
 /// [`Button`](bevy::ui_widgets::Button) (the fold chevron among them)
@@ -281,7 +333,6 @@ pub(crate) fn on_drag_end(
     _: On<Pointer<DragEnd>>,
     visuals: Option<Res<Visuals>>,
     mut dragging: ResMut<Dragging>,
-    mut visibility: Query<&mut Visibility>,
     mut nodes: Query<&mut Node>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
@@ -289,14 +340,10 @@ pub(crate) fn on_drag_end(
     let Some(gesture) = dragging.0.take() else {
         return;
     };
-    let Some(visuals) = visuals else {
-        return;
-    };
-    hide(&mut nodes, &visuals);
-    release_cursor(&mut override_cursor);
-    if let Ok(mut visibility) = visibility.get_mut(gesture.entity) {
-        *visibility = Visibility::Inherited;
+    if let Some(visuals) = &visuals {
+        hide_landing(&mut nodes, visuals);
     }
+    end_drag(&mut override_cursor, &mut commands);
 
     let Some(target) = gesture.target else {
         return;
@@ -314,21 +361,18 @@ pub(crate) fn cancel_on_escape(
     keys: Res<ButtonInput<KeyCode>>,
     visuals: Res<Visuals>,
     mut dragging: ResMut<Dragging>,
-    mut visibility: Query<&mut Visibility>,
     mut nodes: Query<&mut Node>,
     mut override_cursor: ResMut<OverrideCursor>,
+    mut commands: Commands,
 ) {
     if !keys.just_pressed(KeyCode::Escape) {
         return;
     }
-    let Some(gesture) = dragging.0.take() else {
+    if dragging.0.take().is_none() {
         return;
-    };
-    hide(&mut nodes, &visuals);
-    release_cursor(&mut override_cursor);
-    if let Ok(mut visibility) = visibility.get_mut(gesture.entity) {
-        *visibility = Visibility::Inherited;
     }
+    hide_landing(&mut nodes, &visuals);
+    end_drag(&mut override_cursor, &mut commands);
 }
 
 //
@@ -400,8 +444,8 @@ fn resolve(
     }
 
     // Loose in the block, past the children the cursor has cleared.
-    // The dragged node still counts though its box is hidden, so the
-    // index is into the tree as it stands.
+    // The dragged node still counts, so the index is into the tree as
+    // it stands.
     let index = children
         .iter()
         .filter(|child| {
@@ -689,39 +733,6 @@ fn rect(placed: &Placed) -> Rect {
 // Drawing.
 //
 
-/// The floating copy of the node being dragged, hidden until a drag
-/// shows it.
-pub(super) fn hidden_ghost() -> impl Bundle {
-    (
-        Node {
-            position_type: PositionType::Absolute,
-            display: Display::None,
-            padding: UiRect::new(px(4), Val::ZERO, px(2), Val::ZERO),
-            overflow: Overflow::clip(),
-            border: UiRect::all(px(1)),
-            ..default()
-        },
-        BackgroundColor(Color::NONE),
-        BorderColor::all(Color::NONE),
-        GlobalZIndex(200),
-        Pickable::IGNORE,
-    )
-}
-
-/// The ghost's label, blank until a drag shows it.
-pub(super) fn hidden_ghost_label() -> impl Bundle {
-    (
-        Text::new(String::new()),
-        TextFont {
-            font_size: FontSize::Px(10.0),
-            ..default()
-        },
-        TextColor(Color::NONE),
-        TextLayout::linebreak(LineBreak::NoWrap),
-        Pickable::IGNORE,
-    )
-}
-
 /// The line marking where an insert would land, hidden until a drag
 /// shows it.
 pub(super) fn hidden_line(color: Color) -> impl Bundle {
@@ -920,47 +931,7 @@ fn line_rect(
     Some(band_across(content, axis, at))
 }
 
-/// Reveals and places the ghost at `origin`, reading as `label` in
-/// `fill`/`border`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "one write per component the ghost paints itself with"
-)]
-fn show_ghost(
-    nodes: &mut Query<&mut Node>,
-    backgrounds: &mut Query<&mut BackgroundColor>,
-    borders: &mut Query<&mut BorderColor>,
-    texts: &mut Query<&mut Text>,
-    text_colors: &mut Query<&mut TextColor>,
-    visuals: &Visuals,
-    origin: Rect,
-    to_area: Vec2,
-    fill: Color,
-    border: Color,
-    label: String,
-    text_color: Color,
-) {
-    if let Ok(mut node) = nodes.get_mut(visuals.ghost) {
-        node.display = Display::Flex;
-        node.left = px(origin.min.x + to_area.x);
-        node.top = px(origin.min.y + to_area.y);
-        node.width = px(origin.width());
-        node.height = px(origin.height());
-    }
-    if let Ok(mut background) = backgrounds.get_mut(visuals.ghost) {
-        background.0 = fill;
-    }
-    if let Ok(mut border_color) = borders.get_mut(visuals.ghost) {
-        *border_color = BorderColor::all(border);
-    }
-    if let Ok(mut text) = texts.get_mut(visuals.ghost_label) {
-        text.0 = label;
-    }
-    if let Ok(mut color) = text_colors.get_mut(visuals.ghost_label) {
-        color.0 = text_color;
-    }
-}
-
+/// Hides both landing hints.
 fn hide_landing(nodes: &mut Query<&mut Node>, visuals: &Visuals) {
     for entity in [visuals.line, visuals.outline] {
         if let Ok(mut node) = nodes.get_mut(entity) {
@@ -973,13 +944,5 @@ fn hide_landing(nodes: &mut Query<&mut Node>, visuals: &Visuals) {
 fn release_cursor(cursor: &mut OverrideCursor) {
     if cursor.0 == Some(GRABBING) {
         cursor.0 = None;
-    }
-}
-
-/// Hides the ghost and both landing hints.
-fn hide(nodes: &mut Query<&mut Node>, visuals: &Visuals) {
-    hide_landing(nodes, visuals);
-    if let Ok(mut node) = nodes.get_mut(visuals.ghost) {
-        node.display = Display::None;
     }
 }

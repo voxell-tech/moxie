@@ -36,7 +36,7 @@ use moxie_ui::elements::{
 };
 use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use moxie_ui::reactive::{
-    BevyUi, FynixHost, resource_changed, value_changed,
+    BevyUi, FynixHost, FynixSet, resource_changed, value_changed,
 };
 
 /// The timeline's resources and interaction systems.
@@ -54,6 +54,7 @@ impl Plugin for TimelinePlugin {
                 Update,
                 (drag::cancel_on_escape, drop::cancel_on_escape),
             )
+            .add_systems(Update, drop::preview.after(FynixSet))
             .add_observer(drop::on_drag_end)
             .add_observer(on_fit_timeline);
     }
@@ -314,17 +315,9 @@ impl Composer<FynixHost> for TrackArea {
         // Permanent children of `TrackArea` itself, not the
         // `ScrollArea`: anything spawned inside a `.watch()`-owned
         // node is gone the next time that node rebuilds, and a live
-        // drag's visuals need to survive every one of those.
+        // drag's hints need to survive every one of those.
         let insert = ui.theme.color.accent;
         let merge = ui.theme.palette.purple;
-        let ghost = ui
-            .world
-            .spawn((drop::hidden_ghost(), ChildOf(track_area)))
-            .id();
-        let ghost_label = ui
-            .world
-            .spawn((drop::hidden_ghost_label(), ChildOf(ghost)))
-            .id();
         let line = ui
             .world
             .spawn((drop::hidden_line(insert), ChildOf(track_area)))
@@ -334,11 +327,7 @@ impl Composer<FynixHost> for TrackArea {
             .spawn((drop::hidden_outline(merge), ChildOf(track_area)))
             .id();
         ui.world.insert_resource(drop::Visuals::new(
-            track_area,
-            ghost,
-            ghost_label,
-            line,
-            outline,
+            track_area, line, outline,
         ));
 
         handle
@@ -454,8 +443,6 @@ impl Composer<FynixHost> for BlockHeader {
             background = block_color.with_alpha(0.03),
             border = block_color.with_alpha(0.5)
         ));
-        let ghost_fill = block_color.with_alpha(0.35);
-        let ghost_border = block_color.with_alpha(0.7);
         header.insert(drag::BoxPath(path.clone())).with(move |ui| {
             let mut header_button = ui.elem(elem!(
                 !GhostButton,
@@ -473,13 +460,7 @@ impl Composer<FynixHost> for BlockHeader {
                     selected.0 = Some(path.clone());
                 }
             });
-            drop::body(
-                &mut header_button,
-                path.clone(),
-                ghost_fill,
-                ghost_border,
-                label.clone(),
-            );
+            drop::body(&mut header_button, path.clone());
             header_button.with(move |ui| {
                 ui.elem(elem!(
                     !TintButton::default(),
@@ -601,12 +582,11 @@ fn build_block_boxes(ui: &mut BevyUi) {
                 } else {
                     Color::NONE
                 };
-                let label_text = label.clone();
                 let mut clip = ui.elem(elem!(
                     TimelineAction,
                     label = elem!(
                         Label,
-                        text = label_text,
+                        text = label,
                         size = theme.text.small,
                         color = if placed.draft {
                             theme.color.critical.with_alpha(0.9)
@@ -633,13 +613,7 @@ fn build_block_boxes(ui: &mut BevyUi) {
                             selected.0 = Some(path.clone());
                         }
                     });
-                drop::body(
-                    &mut clip,
-                    path.clone(),
-                    fill,
-                    border,
-                    label,
-                );
+                drop::body(&mut clip, path.clone());
                 edge_handle(
                     ui,
                     path.clone(),
