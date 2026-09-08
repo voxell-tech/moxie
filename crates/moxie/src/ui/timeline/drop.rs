@@ -1,13 +1,11 @@
-//! Dragging a node's body somewhere else in the tree: between two of
-//! a block's children, or onto another node to wrap the pair in a new
-//! block. An action leaf and a block header share this, both being
-//! just a node at a path as far as a drop cares.
+//! Dragging a node's body elsewhere in the tree: between two of a
+//! block's children, or onto another node to wrap the pair in a new
+//! block. Action leaves and block headers share this, each just a node
+//! at a path.
 //!
-//! The tree is written only once the drag ends, and no box on screen
-//! moves while it runs - where a release would land shows as a slim
-//! line, an outline around the node a merge would absorb, or both. So
-//! one layout, taken when the drag starts, describes the whole gesture
-//! and every move is a hit test against it.
+//! The tree is written only when the drag ends, and nothing on screen
+//! moves while it runs. One layout, taken at drag start, describes the
+//! whole gesture; every move is a hit test against it.
 
 use bevy::feathers::cursor::{EntityCursor, OverrideCursor};
 use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
@@ -38,8 +36,7 @@ const CHAIN_BAND: f32 = 0.25;
 const LINE_PX: f32 = 2.0;
 /// How far the merge outline sits outside the node it marks.
 const OUTLINE_GROW: f32 = 2.0;
-/// Shown for as long as a drag runs, over any cursor the pointer
-/// crosses on its way.
+/// Cursor shown for the duration of a drag.
 const GRABBING: EntityCursor =
     EntityCursor::System(SystemCursorIcon::Grabbing);
 
@@ -65,16 +62,13 @@ enum Target {
 struct Gesture {
     entity: Entity,
     path: Vec<usize>,
-    /// Every box as it stood when the drag started. Nothing on screen
-    /// moves until the drop commits, so this holds for the whole
-    /// gesture.
+    /// Every box as it stood when the drag started.
     layout: Vec<Placed>,
-    /// Subtracted from a pointer position to land in the local space
-    /// every `Placed` here is in, the viewport's own scroll included.
+    /// Subtracted from a pointer position to reach the local space the
+    /// `Placed`s are in, scroll included.
     conversion_offset: Vec2,
-    /// Added to a `Placed` position to land where the visuals are
-    /// laid out, which is `TrackArea`'s box rather than the scrolled
-    /// viewport the boxes themselves sit in.
+    /// Added to a `Placed` position to reach `TrackArea`'s space, where
+    /// the visuals are laid out.
     to_area: Vec2,
     grab_offset: Vec2,
     target: Option<Target>,
@@ -96,10 +90,8 @@ impl Axis {
     }
 }
 
-/// What a drag draws: the floating copy of the node under the cursor,
-/// and the landing hints. All are children of `area`, one tier above
-/// the viewport every `Placed` is local to, so `area`'s own rect is
-/// what turns one space into the other.
+/// What a drag draws: the ghost of the dragged node and the landing
+/// hints.
 #[derive(Resource)]
 pub(crate) struct Visuals {
     area: Entity,
@@ -165,7 +157,7 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
                 if start.button != PointerButton::Primary
                     || path.is_empty()
                 {
-                    // The root is the tree, it has nowhere to land.
+                    // The root has nowhere to land.
                     return;
                 }
                 let Ok((node, transform)) = computed.get(entity)
@@ -185,9 +177,8 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
                     return;
                 };
 
-                // The dragged box drawn against where the layout put
-                // it, which is the scroll this needs without having
-                // to read it off the `ScrollArea`.
+                // The dragged box against where the layout put it,
+                // giving the scroll without reading the `ScrollArea`.
                 let conversion_offset = window.min - origin.min;
                 let cursor = start.pointer_location.position
                     / scale.0
@@ -219,10 +210,8 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
                 {
                     *visibility = Visibility::Hidden;
                 }
-                // Held for the whole gesture, so whatever the pointer
-                // crosses - an edge handle's resize cursor, most of
-                // all - cannot answer with a cursor the drop has no
-                // use for.
+                // Held for the whole gesture so nothing the pointer
+                // crosses, a resize handle above all, swaps the cursor.
                 override_cursor.0 = Some(GRABBING);
 
                 dragging.0 = Some(Gesture {
@@ -346,10 +335,10 @@ fn resolve(
 ) -> Option<Target> {
     let parent = innermost_block(cursor, layout, dragged)?;
     let axis = axis_of(root, &parent)?;
-    let children: Vec<&Placed> = layout
+    let children = layout
         .iter()
         .filter(|placed| is_child_of(&placed.path, &parent))
-        .collect();
+        .collect::<Vec<_>>();
 
     let combinator = block_at(root, &parent)?.combinator.clone();
 
@@ -360,9 +349,8 @@ fn resolve(
         }
         let index = child.path[parent.len()];
 
-        // Near the node's own edge the drop is about the block around
-        // it, not the node - which is what leaves plain reordering
-        // reachable on every node, however wide or narrow it is.
+        // Near the node's edge the drop targets the block around it,
+        // keeping plain reordering reachable on any node.
         if !core_of(bounds).contains(cursor) {
             return Some(Target::Insert {
                 index: if axis.of(cursor) < axis.of(bounds.center()) {
@@ -374,9 +362,8 @@ fn resolve(
             });
         }
 
-        // Always on x, never on `axis`: a chain means one runs after
-        // the other, and later is to the right whatever direction the
-        // block around them happens to stack.
+        // Always x, never `axis`: a chain runs one after the other,
+        // and later is rightward however the block stacks.
         let core = core_of(bounds);
         let (wanted, before) = match (cursor.x - core.min.x)
             / core.width().max(1.0)
@@ -388,9 +375,8 @@ fn resolve(
             _ => (Combinator::All, false),
         };
 
-        // The block around them already runs its children that way,
-        // so sitting beside this one is the same timing with none of
-        // the nesting.
+        // The surrounding block already runs its children this way, so
+        // a sibling is the same timing without the nesting.
         if wanted == combinator {
             return Some(Target::Insert {
                 index: if before { index } else { index + 1 },
@@ -404,10 +390,9 @@ fn resolve(
         });
     }
 
-    // Loose in the block, past however many children the cursor has
-    // cleared. The dragged node still counts here even though its own
-    // box is hidden, which is what keeps this an index into the tree
-    // as it stands rather than into what's left once it moves.
+    // Loose in the block, past the children the cursor has cleared.
+    // The dragged node still counts though its box is hidden, so the
+    // index is into the tree as it stands.
     let index = children
         .iter()
         .filter(|child| {
@@ -418,8 +403,7 @@ fn resolve(
 }
 
 /// The deepest block whose content area holds `cursor`. A block's
-/// header strip belongs to its parent, so hovering that targets the
-/// block itself rather than its inside.
+/// header strip belongs to its parent.
 fn innermost_block(
     cursor: Vec2,
     layout: &[Placed],
@@ -439,10 +423,9 @@ fn innermost_block(
         .map(|placed| placed.path.clone())
 }
 
-/// The part of `bounds` a drop reads as landing on the node itself,
-/// the margin around it belonging to the block the node sits in. The
-/// margin gives up rather than swallow a node whole, so even the
-/// narrowest one keeps a core to aim at.
+/// The part of `bounds` a drop reads as the node itself; the margin
+/// around it targets the enclosing block. Capped so even a narrow node
+/// keeps a core.
 fn core_of(bounds: Rect) -> Rect {
     let margin = Vec2::new(
         EDGE_MARGIN_PX.min(bounds.width() / 4.0),
@@ -496,8 +479,8 @@ fn commit(world: &mut World, from: &[usize], target: &Target) {
     if moved.is_none() {
         return;
     }
-    // After the move, not before it: pruning renumbers paths, and
-    // `target` was resolved against the tree as it stood.
+    // After the move: pruning renumbers paths, and `target` was
+    // resolved against the tree as it stood.
     prune_empty(&mut editor_scene.edit().0.animation);
     if let Some(mut tick) = world.get_resource_mut::<RebuildTick>() {
         tick.0 = tick.0.wrapping_add(1);
@@ -515,8 +498,8 @@ fn insert(
     let node = take(root, from)?;
 
     let parent = after_removal(parent, from)?;
-    // Pulling the node out already closed up the spot it left, so an
-    // index past it in that same block now names one place too far.
+    // Removing the node closed the gap it left, so an index past it in
+    // the same block is now one too far.
     let index = if parent == from_parent && index > *from_index {
         index - 1
     } else {
@@ -547,9 +530,8 @@ fn merge(
     }
     let mut host = block.children.remove(*onto_index);
 
-    // The pair starts where the node they replace started, so that
-    // node's delay moves out to the wrapper and neither one keeps a
-    // head start the merge never asked for.
+    // The pair starts where the replaced node did: its delay moves out
+    // to the wrapper, and neither child keeps a head start.
     let delay = delay_of(&mut host).take();
     *delay_of(&mut node) = None;
 
@@ -572,9 +554,8 @@ fn merge(
     Some(())
 }
 
-/// Drops every block left holding nothing, innermost first so one
-/// emptied by losing its last nested block goes with it. The tree's
-/// own root stays, empty or not - it is the timeline itself.
+/// Drops every empty block, innermost first so one emptied by losing
+/// its last nested block goes too. The root stays, empty or not.
 fn prune_empty(block: &mut Block<Backend>) {
     block.children.retain_mut(|child| {
         let SceneNode::Block { block, .. } = child else {
@@ -624,8 +605,7 @@ fn after_removal(
 // Tree walking.
 //
 
-/// The block `path` names - `root` itself for an empty one, since the
-/// tree's own root has no `Node` wrapping it to walk through.
+/// The block `path` names; `root` itself for an empty path.
 fn block_at<'a>(
     root: &'a Block<Backend>,
     path: &[usize],
@@ -642,7 +622,7 @@ fn block_at<'a>(
     Some(block)
 }
 
-/// The same walk, to change what it lands on.
+/// The same walk as [`block_at`], mutable.
 fn block_at_mut<'a>(
     root: &'a mut Block<Backend>,
     path: &[usize],
@@ -719,7 +699,7 @@ pub(super) fn hidden_ghost() -> impl Bundle {
     )
 }
 
-/// The ghost's own name, a child of it - blank until a drag shows it.
+/// The ghost's label, blank until a drag shows it.
 pub(super) fn hidden_ghost_label() -> impl Bundle {
     (
         Text::new(String::new()),
@@ -766,9 +746,8 @@ pub(super) fn hidden_outline(color: Color) -> impl Bundle {
 }
 
 /// Shows the landing hints `target` calls for and hides the rest. An
-/// insert draws the line alone; a merge outlines the node it lands on,
-/// and a chaining one draws the line too, against the side the dragged
-/// node takes.
+/// insert draws the line; a merge outlines the node it lands on, or
+/// the half the dragged node takes for a chain.
 fn show_landing(
     nodes: &mut Query<&mut Node>,
     backgrounds: &mut Query<&mut BackgroundColor>,
@@ -811,31 +790,43 @@ fn show_landing(
                     theme.palette.purple
                 }
             };
+            // A chain lands to one side, so the outline covers that
+            // half. An overlap takes the whole node.
+            let marked = if *combinator == Combinator::Chain {
+                let mid = bounds.center().x;
+                if *before {
+                    Rect::new(
+                        bounds.min.x,
+                        bounds.min.y,
+                        mid,
+                        bounds.max.y,
+                    )
+                } else {
+                    Rect::new(
+                        mid,
+                        bounds.min.y,
+                        bounds.max.x,
+                        bounds.max.y,
+                    )
+                }
+            } else {
+                bounds
+            };
+
             paint(backgrounds, borders, visuals.outline, color);
             place(
                 nodes,
                 visuals.outline,
-                bounds.inflate(OUTLINE_GROW),
+                marked.inflate(OUTLINE_GROW),
                 to_area,
             );
-
-            if *combinator == Combinator::Chain {
-                let at =
-                    if *before { bounds.min.x } else { bounds.max.x };
-                place(
-                    nodes,
-                    visuals.line,
-                    band_across(bounds, Axis::X, at),
-                    to_area,
-                );
-            }
         }
         None => {}
     }
 }
 
-/// Reveals `entity` at `bounds`, taken from a `Placed` and so needing
-/// `to_area` to land where the visuals are laid out.
+/// Reveals `entity` at `bounds`, offset by `to_area` into the visuals'
+/// space.
 fn place(
     nodes: &mut Query<&mut Node>,
     entity: Entity,
@@ -851,8 +842,7 @@ fn place(
     }
 }
 
-/// Recolors `entity`, which the merge outline needs since what it
-/// marks is not always the same kind of block.
+/// Recolors `entity`.
 fn paint(
     backgrounds: &mut Query<&mut BackgroundColor>,
     borders: &mut Query<&mut BorderColor>,
@@ -885,10 +875,9 @@ fn band_across(bounds: Rect, axis: Axis, at: f32) -> Rect {
     }
 }
 
-/// The line for an insert at `index` among `parent`'s children,
-/// centered in the gap it would open between its two neighbours. It
-/// sits flush against whichever one it has when there is only one, and
-/// at the block's own leading edge when there are none.
+/// The insert line at `index` among `parent`'s children: centered in
+/// the gap between neighbours, flush against a lone neighbour, or at
+/// the block's leading edge when there are none.
 fn line_rect(
     parent: &[usize],
     index: usize,
@@ -903,11 +892,11 @@ fn line_rect(
         block.max.x,
         block.max.y,
     );
-    let children: Vec<Rect> = layout
+    let children = layout
         .iter()
         .filter(|placed| is_child_of(&placed.path, parent))
         .map(rect)
-        .collect();
+        .collect::<Vec<_>>();
 
     let before =
         index.checked_sub(1).and_then(|index| children.get(index));
