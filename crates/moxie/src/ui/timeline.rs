@@ -176,10 +176,10 @@ impl Composer<FynixHost> for ControlBar {
                         |input| input.value(),
                         value_changed(|world, _| current_time(world)),
                         |WorldNodeRef { world, .. }| {
-                            let centis =
-                                current_time(world).as_millis() / 10;
+                            let secs =
+                                current_time(world).as_secs_f32();
                             NumberInputValue::F32(
-                                centis as f32 / 100.0,
+                                (secs * 100.0).round() / 100.0,
                             )
                         },
                     );
