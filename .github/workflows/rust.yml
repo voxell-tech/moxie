@@ -20,12 +20,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: moxie
-      # `motiongfx_interp` is patched to a sibling checkout - see Cargo.toml.
-      - uses: actions/checkout@v4
-        with:
-          repository: voxell-tech/motiongfx
-          ref: moxie
-          path: motiongfx
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -42,11 +36,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: moxie
-      - uses: actions/checkout@v4
-        with:
-          repository: voxell-tech/motiongfx
-          ref: moxie
-          path: motiongfx
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -63,11 +52,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: moxie
-      - uses: actions/checkout@v4
-        with:
-          repository: voxell-tech/motiongfx
-          ref: moxie
-          path: motiongfx
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -85,11 +69,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: moxie
-      - uses: actions/checkout@v4
-        with:
-          repository: voxell-tech/motiongfx
-          ref: moxie
-          path: motiongfx
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -108,11 +87,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: moxie
-      - uses: actions/checkout@v4
-        with:
-          repository: voxell-tech/motiongfx
-          ref: moxie
-          path: motiongfx
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -130,11 +104,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: moxie
-      - uses: actions/checkout@v4
-        with:
-          repository: voxell-tech/motiongfx
-          ref: moxie
-          path: motiongfx
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
