@@ -64,6 +64,13 @@ pub struct Frame {
         on(Hovered, read = Self::hovered),
     ))]
     pub background: Color,
+    /// A uniform border on every edge; needs [`border_color`] to show.
+    ///
+    /// [`border_color`]: Frame::border_color
+    #[elem(default = ::ZERO, patch = PatchBorder)]
+    pub border: Val,
+    #[elem(default = ::NONE, patch = PatchBorderColor)]
+    pub border_color: Color,
     /// What `background` travels to under the cursor; `None` rests.
     #[elem(ignore)]
     pub hover_background: Option<Color>,

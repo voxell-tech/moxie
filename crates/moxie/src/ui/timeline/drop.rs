@@ -45,6 +45,10 @@ const GRABBING: EntityCursor =
     EntityCursor::System(SystemCursorIcon::Grabbing);
 /// The dragged box rides above its siblings.
 const DRAG_Z: i32 = 200;
+/// The landing hints ride below the dragged box, above the rest.
+pub(super) const HINT_Z: i32 = 150;
+/// The merge outline's border thickness.
+pub(super) const OUTLINE_BORDER_PX: f32 = 2.0;
 
 /// The node being dragged, if any.
 #[derive(Resource, Default)]
@@ -801,38 +805,6 @@ fn rect(placed: &Placed) -> Rect {
 //
 // Drawing.
 //
-
-/// The line marking where an insert would land, hidden until a drag
-/// shows it.
-pub(super) fn hidden_line(color: Color) -> impl Bundle {
-    (
-        Node {
-            position_type: PositionType::Absolute,
-            display: Display::None,
-            ..default()
-        },
-        BackgroundColor(color),
-        GlobalZIndex(150),
-        Pickable::IGNORE,
-    )
-}
-
-/// The outline marking the node a merge would absorb, hidden until a
-/// drag shows it.
-pub(super) fn hidden_outline(color: Color) -> impl Bundle {
-    (
-        Node {
-            position_type: PositionType::Absolute,
-            display: Display::None,
-            border: UiRect::all(px(2)),
-            ..default()
-        },
-        BackgroundColor(color.with_alpha(0.15)),
-        BorderColor::all(color),
-        GlobalZIndex(150),
-        Pickable::IGNORE,
-    )
-}
 
 /// Shows the landing hints `target` calls for and hides the rest. An
 /// insert draws the line; a merge outlines the node it lands on, or

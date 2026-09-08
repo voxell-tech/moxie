@@ -309,28 +309,42 @@ impl Composer<FynixHost> for TrackArea {
                 .remove::<ScrollAreaBehavior>()
                 .watch(value_changed(block_view), build_block_boxes);
             });
+
+        // Siblings of the `.watch()`-owned `ScrollArea`, not children
+        // of it: a hint built inside that would be gone the next time
+        // the box list rebuilds. `drop.rs` shows and places them.
         let track_area = root.id();
-        let handle = root.handle();
+        root.with(|ui| {
+            let insert = ui.theme.color.accent;
+            let merge = ui.theme.palette.purple;
+            let line = ui
+                .elem(elem!(
+                    Frame,
+                    position = PositionType::Absolute,
+                    display = Display::None,
+                    background = insert,
+                    z = Some(drop::HINT_Z)
+                ))
+                .insert(Pickable::IGNORE)
+                .id();
+            let outline = ui
+                .elem(elem!(
+                    Frame,
+                    position = PositionType::Absolute,
+                    display = Display::None,
+                    background = merge.with_alpha(0.15),
+                    border = px(drop::OUTLINE_BORDER_PX),
+                    border_color = merge,
+                    z = Some(drop::HINT_Z)
+                ))
+                .insert(Pickable::IGNORE)
+                .id();
+            ui.world.insert_resource(drop::Visuals::new(
+                track_area, line, outline,
+            ));
+        });
 
-        // Permanent children of `TrackArea` itself, not the
-        // `ScrollArea`: anything spawned inside a `.watch()`-owned
-        // node is gone the next time that node rebuilds, and a live
-        // drag's hints need to survive every one of those.
-        let insert = ui.theme.color.accent;
-        let merge = ui.theme.palette.purple;
-        let line = ui
-            .world
-            .spawn((drop::hidden_line(insert), ChildOf(track_area)))
-            .id();
-        let outline = ui
-            .world
-            .spawn((drop::hidden_outline(merge), ChildOf(track_area)))
-            .id();
-        ui.world.insert_resource(drop::Visuals::new(
-            track_area, line, outline,
-        ));
-
-        handle
+        root.handle()
     }
 }
 
@@ -434,13 +448,19 @@ impl Composer<FynixHost> for BlockHeader {
         let chevron_color = theme.color.text_faint;
         let label_color = theme.color.text.with_alpha(0.8);
 
+        let background = if is_selected {
+            block_color.with_luminance(0.3).with_alpha(0.8)
+        } else {
+            block_color.with_alpha(0.03)
+        };
+
         let mut header = ui.elem(elem!(
             TimelineBlock,
             top = px(y),
             left = px(x),
             width = px(w),
             height = px(h),
-            background = block_color.with_alpha(0.03),
+            background = background,
             border = block_color.with_alpha(0.5)
         ));
         header.insert(drag::BoxPath(path.clone())).with(move |ui| {

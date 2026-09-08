@@ -97,6 +97,7 @@ set_node!(PatchJustify, JustifyContent, |n, v| n.justify_content =
     *v);
 set_node!(PatchPosition, PositionType, |n, v| n.position_type = *v);
 set_node!(PatchDisplay, Display, |n, v| n.display = *v);
+set_node!(PatchBorder, Val, |n, v| n.border = UiRect::all(*v));
 set_node!(PatchOverflow, Overflow, |n, v| n.overflow = *v);
 set_node!(PatchTop, Val, |n, v| n.top = *v);
 set_node!(PatchLeft, Val, |n, v| n.left = *v);
