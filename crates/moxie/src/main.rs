@@ -5,7 +5,6 @@
 
 use bevy::asset::UnapprovedPathMode;
 use bevy::{prelude::*, window::WindowResolution};
-use bevy_motiongfx::BevyMotionGfxPlugin;
 use moxie::MoxiePlugin;
 use moxie_asset::register_absolute_source;
 
@@ -28,7 +27,6 @@ fn main() {
                     }),
                     ..default()
                 }),
-            BevyMotionGfxPlugin,
             MoxiePlugin,
         ))
         .add_systems(Startup, setup)

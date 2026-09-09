@@ -37,10 +37,6 @@ pub(crate) struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        // The value types a dropped field can capture into a scene -
-        // one per `ValuePool` column.
-        bevy_motiongfx::scene::value_pool::register_scene_values(app);
-
         app.add_plugins((MoxieUiPlugin, timeline::TimelinePlugin))
             .insert_resource(moxie_ui::inspector::FieldAnimatable(
                 Some(inspector::is_animatable),
