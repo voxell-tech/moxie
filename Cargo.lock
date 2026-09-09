@@ -3750,8 +3750,10 @@ version = "0.3.1"
 dependencies = [
  "field_path",
  "hashbrown 0.17.1",
+ "indexmap",
  "motiongfx_interp",
  "nonempty",
+ "tracing",
  "typarena",
 ]
 
