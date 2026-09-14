@@ -19,8 +19,7 @@ use motiongfx_scene::scene::{Scene, Stage};
 ///
 /// The action panel edits the tree, the timeline panel's row layout
 /// reads it, and `recompile_dirty_scene` turns it back into a
-/// timeline whenever it changes, triggered by Bevy's own change
-/// detection on this resource, not a flag of its own.
+/// timeline whenever [`Self::edit`] lands a write.
 ///
 /// Public (unlike most of this crate's state) because the example
 /// binaries build it directly, in place of `motiongfx`'s imperative
@@ -29,6 +28,8 @@ use motiongfx_scene::scene::{Scene, Stage};
 pub struct EditorScene {
     scene: MotionGfxScene,
     registry: BackendRegistry,
+    /// Bumped by every [`Self::edit`] - what [`scene_dirty`] diffs.
+    edits: u64,
 }
 
 impl EditorScene {
@@ -45,7 +46,11 @@ impl EditorScene {
             .register_bundle(path!(<Transform>::scale::y))
             .register_bundle(path!(<Transform>::scale::z));
 
-        Self { scene, registry }
+        Self {
+            scene,
+            registry,
+            edits: 0,
+        }
     }
 
     pub(crate) fn scene(&self) -> &MotionGfxScene {
@@ -60,8 +65,19 @@ impl EditorScene {
 
     /// The scene, to change.
     pub(crate) fn edit(&mut self) -> &mut MotionGfxScene {
+        self.edits = self.edits.wrapping_add(1);
         &mut self.scene
     }
+}
+
+/// Whether [`EditorScene::edit`] wrote since this last checked.
+pub(crate) fn scene_dirty(
+    scene: Res<EditorScene>,
+    mut seen: Local<Option<u64>>,
+) -> bool {
+    let dirty = *seen != Some(scene.edits);
+    *seen = Some(scene.edits);
+    dirty
 }
 
 impl Default for EditorScene {
@@ -83,8 +99,8 @@ impl Default for EditorScene {
 /// preserving its playhead, or spawning that entity on the first
 /// compile.
 ///
-/// Scheduled with `run_if(resource_changed::<EditorScene>)`, so this
-/// only runs when [`EditorScene::edit`] actually landed a write.
+/// Scheduled with `run_if(scene_dirty)`, so this only runs when
+/// [`EditorScene::edit`] landed a write.
 pub(crate) fn recompile_dirty_scene(world: &mut World) {
     world.resource_scope::<EditorScene, _>(|world, mut editor_scene| {
         world.resource_scope::<MotionGfxManager, _>(
