@@ -2,9 +2,11 @@
 //! component of one entity, each under a collapsible header.
 
 use bevy::prelude::*;
-use bevy_motiongfx::scene::id::EntityUid;
+use bevy_motiongfx::scene::backend::Backend;
+use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
 use fynix::composer::Composer;
 use fynix::prelude::*;
+use motiongfx_scene::block::{Block, Node};
 use motiongfx_scene::refs::{FieldRef, TypeName};
 use moxie_ui::elements::{EntityInspector, Label, ScrollArea};
 use moxie_ui::inspector::Field;
@@ -26,6 +28,44 @@ pub(crate) fn is_animatable(world: &World, field: &Field) -> bool {
     };
     world.get_resource::<EditorScene>().is_some_and(|scene| {
         scene.registry().is_field_registered(&field_ref)
+    })
+}
+
+/// Whether `field` already drives a [`Node::Action`] somewhere in the
+/// scene - what turns its label's diamond blue instead of neutral
+/// ([`moxie_ui::inspector::FieldHasAction`]).
+pub(crate) fn has_action(world: &World, field: &Field) -> bool {
+    let Some(uid) = world.get::<EntityUid>(field.entity()).copied()
+    else {
+        return false;
+    };
+    let Some(field_ref) = field_ref_of(world, field) else {
+        return false;
+    };
+    world.get_resource::<EditorScene>().is_some_and(|scene| {
+        block_drives(
+            &scene.scene().0.animation,
+            SceneUid::Entity(uid),
+            &field_ref,
+        )
+    })
+}
+
+/// Whether `block`, or a block nested under it, holds an action for
+/// `subject`/`field`.
+fn block_drives(
+    block: &Block<Backend>,
+    subject: SceneUid,
+    field: &FieldRef,
+) -> bool {
+    block.children.iter().any(|child| match child {
+        Node::Block { block, .. } => {
+            block_drives(block, subject, field)
+        }
+        Node::Action { action, .. } => {
+            action.subject == subject && action.field == *field
+        }
+        Node::Draft { .. } => false,
     })
 }
 

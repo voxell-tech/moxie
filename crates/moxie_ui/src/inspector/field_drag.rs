@@ -18,8 +18,8 @@ use fynix::prelude::*;
 
 use super::Field;
 use crate::drag::{follow, ghost};
-use crate::elements::{Frame, Label};
-use crate::reactive::{BevyUi, FynixHost};
+use crate::elements::{Frame, FrameCursor, Label};
+use crate::reactive::{BevyUi, FynixHost, value_changed};
 use crate::theme::EditorTheme;
 
 /// The host's answer to "can this field be animated?", set from the
@@ -31,6 +31,19 @@ pub struct FieldAnimatable(pub Option<fn(&World, &Field) -> bool>);
 impl FieldAnimatable {
     /// Whether `field` is animatable per the host's check.
     pub fn allows(&self, world: &World, field: &Field) -> bool {
+        self.0.is_some_and(|check| check(world, field))
+    }
+}
+
+/// The host's answer to "does this field already drive an action?",
+/// set from the editor's scene tree. `None` (the default) never marks
+/// a field as already animated.
+#[derive(Resource, Default)]
+pub struct FieldHasAction(pub Option<fn(&World, &Field) -> bool>);
+
+impl FieldHasAction {
+    /// Whether `field` already has an action, per the host's check.
+    pub fn check(&self, world: &World, field: &Field) -> bool {
         self.0.is_some_and(|check| check(world, field))
     }
 }
@@ -73,6 +86,11 @@ impl Composer<FynixHost> for FieldName {
             .world
             .resource::<FieldAnimatable>()
             .allows(ui.world, &field);
+        let has_action = |world: &World, field: &Field| {
+            world.resource::<FieldHasAction>().check(world, field)
+        };
+        let accent = ui.theme.color.accent;
+        let neutral = ui.theme.color.fill;
 
         let mut row = ui.elem(elem!(
             Frame,
@@ -80,12 +98,21 @@ impl Composer<FynixHost> for FieldName {
             align = AlignItems::Center,
             column_gap = px(5)
         ));
+        // `field` moves into the drag wiring below; these clones let
+        // the diamond keep re-checking `FieldHasAction` on every
+        // later poll.
+        let diamond_field = field.clone();
+        let bind_field = field.clone();
         if animatable {
             draggable_field(&mut row, field, text.clone());
         }
         row.with(move |ui| {
             if animatable {
-                let fill = ui.theme.color.fill;
+                let fill = if has_action(ui.world, &diamond_field) {
+                    accent
+                } else {
+                    neutral
+                };
                 ui.elem(elem!(
                     Frame,
                     width = px(6),
@@ -93,9 +120,22 @@ impl Composer<FynixHost> for FieldName {
                     margin = UiRect::horizontal(px(2)),
                     background = fill,
                 ))
-                .insert(UiTransform::from_rotation(
-                    Rot2::degrees(45.0),
-                ));
+                .insert(UiTransform::from_rotation(Rot2::degrees(
+                    45.0,
+                )))
+                .bind(
+                    |frame| frame.background(),
+                    value_changed(move |world, _| {
+                        has_action(world, &bind_field)
+                    }),
+                    move |WorldNodeRef { world, .. }| {
+                        if has_action(world, &diamond_field) {
+                            accent
+                        } else {
+                            neutral
+                        }
+                    },
+                );
             }
             ui.elem(elem!(
                 Label,

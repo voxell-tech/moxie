@@ -41,6 +41,9 @@ impl Plugin for UiPlugin {
             .insert_resource(moxie_ui::inspector::FieldAnimatable(
                 Some(inspector::is_animatable),
             ))
+            .insert_resource(moxie_ui::inspector::FieldHasAction(
+                Some(inspector::has_action),
+            ))
             .init_resource::<EditorState>()
             .init_resource::<SelectedAction>()
             .init_resource::<SelectedEntity>()

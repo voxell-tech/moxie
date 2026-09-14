@@ -35,7 +35,7 @@ use crate::reactive::{BevyUi, FynixHost};
 
 pub use field::Field;
 use field_drag::FieldName;
-pub use field_drag::{DraggedField, FieldAnimatable};
+pub use field_drag::{DraggedField, FieldAnimatable, FieldHasAction};
 pub(crate) use tree::single_value;
 pub use tree::{InspectorFields, Section};
 
@@ -50,6 +50,7 @@ pub struct InspectPlugin;
 impl Plugin for InspectPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FieldAnimatable>()
+            .init_resource::<FieldHasAction>()
             .init_resource::<DraggedField>();
 
         app.register_inspect::<bool>()
