@@ -37,6 +37,7 @@ impl Composer<FynixHost> for TopBar {
             ui.compose(Menu {
                 name: "File",
                 entries: vec![
+                    ("New", project::new_scene),
                     ("Open", project::load_scene),
                     ("Save", project::save_scene),
                 ],
