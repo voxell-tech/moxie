@@ -171,7 +171,12 @@ impl DropdownList {
         // menu shares one look, so this repaints it with ours.
         let panel = build.theme.color.panel;
         let padding = build.theme.space.menu_padding;
-        build.entity_mut().insert(BackgroundColor(panel));
+        let hairline = build.theme.color.hairline;
+        let border = build.theme.space.hairline;
+        build.entity_mut().insert((
+            BackgroundColor(panel),
+            BorderColor::all(hairline),
+        ));
         // The rest of the node belongs to the popup scene, and writing
         // it whole would undo the placement.
         if let Some(mut layout) = build.entity_mut().get_mut::<Node>()
@@ -179,6 +184,7 @@ impl DropdownList {
             layout.min_width = self.width;
             layout.border_radius = BorderRadius::all(self.radius);
             layout.padding = UiRect::all(px(padding));
+            layout.border = UiRect::all(px(border));
             layout.overflow = Overflow::clip();
         }
     }
@@ -323,6 +329,8 @@ impl Style for MenuSurface {
         frame.padding = UiRect::all(px(theme.space.menu_padding));
         frame.background = theme.color.panel;
         frame.radius = px(theme.space.menu_radius);
+        frame.border = px(theme.space.hairline);
+        frame.border_color = theme.color.hairline;
         frame.overflow = Overflow::clip();
         frame.z = Some(theme.layer.context_menu);
     }
