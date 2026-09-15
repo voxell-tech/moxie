@@ -30,8 +30,8 @@ use super::{
 };
 use crate::icons;
 use crate::inspector::{
-    Field, FieldRow, InspectorFields, ReflectInspectable, Section,
-    inspect_value, single_value,
+    Field, FieldRow, InspectorFields, ReflectInspectGroup,
+    ReflectInspectable, Section, inspect_value, single_value,
 };
 use crate::reactive::{BevyUi, FynixHost, value_changed};
 use crate::theme::EditorTheme;
@@ -184,7 +184,7 @@ impl Composer<FynixHost> for AddComponent {
         let width = Dropdown::width_for(
             &options
                 .iter()
-                .map(|(_, name)| name.to_string())
+                .map(|(_, name, _)| name.to_string())
                 .collect::<Vec<_>>(),
             12.0,
         );
@@ -219,7 +219,19 @@ impl Composer<FynixHost> for AddComponent {
                             return;
                         }
 
-                        for (component, name) in options {
+                        // `None` sorts first, so an ungrouped run
+                        // never gets mistaken for one under its own
+                        // (absent) heading.
+                        let mut shown_group: Option<
+                            Option<&'static str>,
+                        > = None;
+                        for (component, name, group) in options {
+                            if shown_group != Some(group) {
+                                shown_group = Some(group);
+                                if let Some(group) = group {
+                                    group_heading(ui, theme, group);
+                                }
+                            }
                             add_component_item(
                                 ui, theme, entity, component, &name,
                             );
@@ -229,6 +241,27 @@ impl Composer<FynixHost> for AddComponent {
             })
             .handle()
     }
+}
+
+/// A group's own name, heading the run of [`add_component_item`]s
+/// under it.
+fn group_heading(ui: &mut BevyUi, theme: &EditorTheme, name: &str) {
+    ui.elem(elem!(
+        Frame,
+        width = percent(100),
+        padding = UiRect::new(px(8), px(8), px(4), px(4)),
+        background = theme.color.fill
+    ))
+    .with(move |ui| {
+        ui.elem(elem!(
+            Label,
+            text = name.to_string(),
+            size = theme.text.small,
+            bold = true,
+            wrap = false,
+            color = theme.color.text_dim
+        ));
+    });
 }
 
 /// One entry in [`AddComponent`]'s list. Picking it inserts the
@@ -262,17 +295,24 @@ fn add_component_item(
 /// `entity` does not already carry, with a registered
 /// [`ReflectDefault`] to construct one with.
 ///
-/// Sorted by name, for the same reason [`inspectable`] is.
+/// Sorted by [`with_inspect_group`](
+/// crate::inspector::InspectAppExt::with_inspect_group)'s group
+/// (ungrouped first), then by name within it, for the same reason
+/// [`inspectable`] sorts by name.
 fn addable(
     world: &World,
     entity: Entity,
-) -> Vec<(TypeId, Cow<'static, str>)> {
+) -> Vec<(TypeId, Cow<'static, str>, Option<&'static str>)> {
     let Ok(entity_ref) = world.get_entity(entity) else {
         return Vec::new();
     };
 
     let registry = world.resource::<AppTypeRegistry>().read();
-    let mut out: Vec<(TypeId, Cow<'static, str>)> = registry
+    let mut out: Vec<(
+        TypeId,
+        Cow<'static, str>,
+        Option<&'static str>,
+    )> = registry
         .iter()
         .filter(|registration| {
             registration.data::<ReflectInspectable>().is_some()
@@ -284,11 +324,20 @@ fn addable(
             if reflect_component.contains(entity_ref) {
                 return None;
             }
-            Some((registration.type_id(), display_name(registration)))
+            let group = registration
+                .data::<ReflectInspectGroup>()
+                .map(|group| group.0);
+            Some((
+                registration.type_id(),
+                display_name(registration),
+                group,
+            ))
         })
         .collect();
 
-    out.sort_by_key(|(_, name)| name.clone());
+    out.sort_by(|(_, a_name, a_group), (_, b_name, b_group)| {
+        a_group.cmp(b_group).then_with(|| a_name.cmp(b_name))
+    });
     out
 }
 
