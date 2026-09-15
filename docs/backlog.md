@@ -15,7 +15,24 @@ those as moxie_ui elements styled off `EditorTheme`, then drop
 - [ ] Fork feathers; build our own `NumberField` (drag/type/format
       interaction) as a moxie_ui element, styled off `EditorTheme`.
 - [ ] Build our own dropdown popup (placement, dismissal, keyboard
-      nav) as a moxie_ui element, styled off `EditorTheme`.
+      nav) as a moxie_ui element, styled off `EditorTheme`. Not just
+      styling: `DropdownMenu`/`DropdownList` (`moxie_ui/src/elements/
+      dropdown.rs`) apply `bsn!{@FeathersMenu}`/`bsn!{@FeathersMenuPopup}`,
+      which is where the open/close behavior actually lives -
+      `bevy_feathers::controls::menu`'s `on_menu_event` observer is
+      what toggles the popup's `Visibility` on a `MenuEvent`, not
+      `bevy_ui_widgets` itself (that crate only fires the event and
+      handles focus/keyboard). Dropping Feathers here means writing
+      that observer ourselves, then `DropdownList` can collapse onto
+      a plain `Frame` styled with `MenuSurface`
+      (`elements/dropdown.rs`) - the same surface `context_menu.rs`
+      already uses - instead of hand-patching Feathers' scene output
+      with `EditorTheme` colors/radius/padding after the fact.
+      `bevy_ui_widgets::popover::Popover` (edge-avoiding placement) is
+      already proven decoupled from Feathers: `context_menu.rs`
+      anchors on it directly without going through
+      `FeathersMenuPopup`, so the placement half of this is already
+      done - only the open/close visibility wiring is left.
 - [ ] Drop `UiTheme`/`ThemeProps`/feathers tokens once nothing reads
       them.
 - [ ] `Label`'s `None => ThemedText` fallback should default to
