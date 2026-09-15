@@ -1,19 +1,23 @@
-//! A right-click menu: a small popup of actions at the cursor,
-//! dismissed by clicking anywhere else.
-//!
-//! Spawned as plain bundles rather than through [`crate::reactive`]'s
-//! composer: it is a one-shot popup with nothing to react to once
-//! built, the same reasoning [`crate::drag::ghost`] follows.
+//! A right-click menu: a small popup of [`DropdownItem`] rows at the
+//! cursor, dismissed by clicking anywhere else - the same row element
+//! every other menu in the app uses (`Dropdown`'s own list, the enum
+//! variant picker, `AddComponent`, the top bar's File menu), so a
+//! right-click menu reads like the rest rather than like a one-off.
 
-use bevy::picking::events::{Out, Over, Pointer, Press};
+use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::{PointerButton, PointerLocation};
 use bevy::prelude::*;
 use bevy::ui::UiScale;
-use bevy_fynix::{BevyFynix, WorldEntityMut};
+use bevy::ui_widgets::Activate;
+use bevy_fynix::WorldEntityMut;
+use bevy_fynix::tag::TagExt as _;
+use fynix::prelude::*;
 
+use crate::elements::{DropdownItem, Frame, Label, Overlay};
+use crate::reactive::{BevyUi, watch_root};
 use crate::theme::EditorTheme;
 
-/// The open menu's own nodes, so a second right-click - or the
+/// The open menu's own root, so a second right-click - or the
 /// catch-all overlay behind it - can close it before anything else
 /// happens.
 #[derive(Component)]
@@ -21,71 +25,36 @@ struct ContextMenuRoot;
 
 /// Adds one row to a [`context_menu`], to run `on_click` and close
 /// the menu when picked.
-pub struct ContextMenuBuilder<'w> {
-    world: &'w mut World,
-    list: Entity,
-    theme: EditorTheme,
+pub struct ContextMenuBuilder<'u, 'a> {
+    ui: &'u mut BevyUi<'a>,
 }
 
-impl ContextMenuBuilder<'_> {
+impl ContextMenuBuilder<'_, '_> {
     pub fn item(
         &mut self,
         label: impl Into<String>,
-        on_click: impl Fn(&mut World) + Send + Sync + 'static,
+        on_click: impl Fn(&mut World) + Send + Sync + Clone + 'static,
     ) {
-        let text = self.theme.color.text;
-        let hover = self.theme.color.hover;
+        let text = self.ui.theme.color.text;
 
-        let mut row = self.world.spawn((
-            ChildOf(self.list),
-            Node {
-                width: percent(100),
-                padding: UiRect::axes(px(10), px(5)),
-                ..default()
-            },
-            BackgroundColor(Color::NONE),
-            children![(
-                Text::new(label.into()),
-                TextFont {
-                    font_size: FontSize::Px(12.0),
-                    ..default()
-                },
-                TextColor(text),
-                TextLayout::linebreak(LineBreak::NoWrap),
-                Pickable::IGNORE,
-            )],
-        ));
-        let node = row.id();
-
-        row
+        self.ui
+            .elem(elem!(
+                DropdownItem,
+                label = elem!(
+                    Label,
+                    text = label.into(),
+                    wrap = false,
+                    color = text
+                )
+            ))
+            .pointer_tags()
             .observe(
-                move |_: On<Pointer<Over>>,
-                      mut backgrounds: Query<
-                    &mut BackgroundColor,
-                >| {
-                    if let Ok(mut background) =
-                        backgrounds.get_mut(node)
-                    {
-                        background.0 = hover;
-                    }
-                },
-            )
-            .observe(
-                move |_: On<Pointer<Out>>,
-                      mut backgrounds: Query<
-                    &mut BackgroundColor,
-                >| {
-                    if let Ok(mut background) =
-                        backgrounds.get_mut(node)
-                    {
-                        background.0 = Color::NONE;
-                    }
-                },
-            )
-            .observe(
-                move |_: On<Pointer<Press>>, world: &mut World| {
-                    despawn_context_menu(world);
-                    on_click(world);
+                move |_: On<Activate>, mut commands: Commands| {
+                    let on_click = on_click.clone();
+                    commands.queue(despawn_context_menu);
+                    commands.queue(move |world: &mut World| {
+                        on_click(world);
+                    });
                 },
             );
     }
@@ -95,28 +64,32 @@ impl ContextMenuBuilder<'_> {
 /// reusable for delete, duplicate, or whatever else a row offers.
 pub fn context_menu(
     elem: &mut impl WorldEntityMut,
-    build: impl Fn(&mut ContextMenuBuilder) + Send + Sync + 'static,
+    build: impl Fn(&mut ContextMenuBuilder)
+    + Send
+    + Sync
+    + Clone
+    + 'static,
 ) {
     elem.observe(
-        move |press: On<Pointer<Press>>, world: &mut World| {
+        move |press: On<Pointer<Press>>,
+              scale: Res<UiScale>,
+              pointers: Query<&PointerLocation>,
+              mut commands: Commands| {
             if press.button != PointerButton::Secondary {
                 return;
             }
-
-            let scale = world.resource::<UiScale>().0;
-            let Some(at) = world
-                .query::<&PointerLocation>()
-                .iter(world)
+            let Some(at) = pointers
+                .iter()
                 .find_map(|pointer| pointer.location())
-                .map(|location| location.position / scale)
+                .map(|location| location.position / scale.0)
             else {
                 return;
             };
-            let theme =
-                world.resource::<BevyFynix<EditorTheme>>().theme();
-            let theme = theme.clone();
 
-            spawn_context_menu(world, at, theme, &build);
+            let build = build.clone();
+            commands.queue(move |world: &mut World| {
+                spawn_context_menu(world, at, build);
+            });
         },
     );
 }
@@ -135,48 +108,57 @@ fn despawn_context_menu(world: &mut World) {
 fn spawn_context_menu(
     world: &mut World,
     at: Vec2,
-    theme: EditorTheme,
-    build: &(impl Fn(&mut ContextMenuBuilder) + Send + Sync + 'static),
+    build: impl Fn(&mut ContextMenuBuilder)
+    + Send
+    + Sync
+    + Clone
+    + 'static,
 ) {
     despawn_context_menu(world);
 
-    // Catches a click anywhere else, closing the menu without acting
-    // on whatever it landed on.
-    world
+    // A `Node` of its own, same as the app's own UI root: without
+    // one this is a plain entity, and every UI child parented under
+    // it inherits no layout at all. No `UiTargetCamera` needed -
+    // like a drag ghost or drop overlay, it falls back to whichever
+    // camera is marked `IsDefaultUiCamera`.
+    let root = world
         .spawn((
+            ContextMenuRoot,
             Node {
-                position_type: PositionType::Absolute,
-                left: px(0),
-                top: px(0),
                 width: percent(100),
                 height: percent(100),
                 ..default()
             },
-            GlobalZIndex(theme.layer.context_menu - 1),
-            ContextMenuRoot,
-        ))
-        .observe(|_: On<Pointer<Press>>, world: &mut World| {
-            despawn_context_menu(world);
-        });
-
-    let list = world
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(at.x),
-                top: px(at.y),
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::all(px(4)),
-                min_width: px(120),
-                border_radius: BorderRadius::all(px(4)),
-                ..default()
-            },
-            BackgroundColor(theme.color.panel),
-            GlobalZIndex(theme.layer.context_menu),
-            ContextMenuRoot,
         ))
         .id();
+    watch_root::<EditorTheme>(world, root, move |ui: &mut BevyUi| {
+        let layer = ui.theme.layer.context_menu;
 
-    let mut builder = ContextMenuBuilder { world, list, theme };
-    build(&mut builder);
+        // Catches a click anywhere else, closing the menu without
+        // acting on whatever it landed on.
+        ui.elem(elem!(Overlay, catches = true, z = layer - 1))
+            .observe(
+                |_: On<Pointer<Press>>, mut commands: Commands| {
+                    commands.queue(despawn_context_menu);
+                },
+            );
+
+        let background = ui.theme.color.panel;
+        let build = build.clone();
+        ui.elem(elem!(
+            Frame,
+            position = PositionType::Absolute,
+            inset = UiRect::new(px(at.x), auto(), px(at.y), auto()),
+            min_width = px(120),
+            direction = FlexDirection::Column,
+            padding = UiRect::all(px(4)),
+            background = background,
+            radius = px(4),
+            z = Some(layer)
+        ))
+        .with(move |ui| {
+            let mut builder = ContextMenuBuilder { ui };
+            build(&mut builder);
+        });
+    });
 }
