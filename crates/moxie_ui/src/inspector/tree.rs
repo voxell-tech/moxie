@@ -33,7 +33,11 @@ struct ClosedSections(HashSet<(TypeId, String)>);
 #[derive(Clone, PartialEq)]
 enum Entry {
     /// A registered widget draws it.
-    Leaf { path: String, type_id: TypeId },
+    Leaf {
+        path: String,
+        name: String,
+        type_id: TypeId,
+    },
     /// A struct, its fields under a folding header.
     Group {
         path: String,
@@ -55,6 +59,12 @@ enum Entry {
 /// One field: a leaf if a widget is registered for its type, a
 /// collapsible group if it is a struct with none of its own, or
 /// dropped if it's neither.
+///
+/// A single-field tuple struct - a newtype, with no field name of its
+/// own to head a group with - never gets one: this recurses straight
+/// into that one field instead, at the correctly nested path but
+/// still labelled by the newtype's own name. Chained newtypes (a
+/// newtype wrapping a newtype) unwrap all the way through.
 fn push_entry(
     registry: &TypeRegistry,
     value: &dyn PartialReflect,
@@ -68,6 +78,7 @@ fn push_entry(
     {
         out.push(Entry::Leaf {
             path: path.to_string(),
+            name: name.to_string(),
             type_id,
         });
         return;
@@ -82,6 +93,15 @@ fn push_entry(
             pick,
             children: collect_entries(registry, value, path),
         });
+        return;
+    }
+
+    if let ReflectRef::TupleStruct(tuple) = value.reflect_ref()
+        && tuple.field_len() == 1
+    {
+        if let Some(inner) = tuple.field(0) {
+            push_entry(registry, inner, &join(path, "0"), name, out);
+        }
         return;
     }
 
@@ -201,6 +221,7 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
         {
             out.push(Entry::Leaf {
                 path: String::new(),
+                name: String::new(),
                 type_id,
             });
         } else if let Some(variants) = enums::variants(value) {
@@ -311,9 +332,11 @@ fn build_entries(
 ) {
     for entry in entries {
         match entry {
-            Entry::Leaf { path, type_id } => {
-                build_leaf(ui, root, path, type_id, depth)
-            }
+            Entry::Leaf {
+                path,
+                name,
+                type_id,
+            } => build_leaf(ui, root, path, name, type_id, depth),
             Entry::Group { path, name, .. } => {
                 build_group(ui, root, path, name, depth)
             }
@@ -334,6 +357,7 @@ fn build_leaf(
     ui: &mut BevyUi,
     root: &Field,
     path: String,
+    name: String,
     type_id: TypeId,
     depth: u32,
 ) {
@@ -346,7 +370,7 @@ fn build_leaf(
     // Dimmer than the value it labels: the field name is a caption,
     // not the content.
     let muted = ui.theme.color.text_dim;
-    let label = leaf_name(&path).to_string();
+    let label = name;
     let field = root.child(&path);
     ui.compose(FieldRow {
         label,
