@@ -277,29 +277,7 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
         // its own guard.
         let registry = world.resource::<AppTypeRegistry>().read();
 
-        if let Some(type_id) =
-            value.get_represented_type_info().map(|i| i.type_id())
-            && registry
-                .get_type_data::<ReflectInspect>(type_id)
-                .is_some()
-        {
-            out.push(Entry::Leaf {
-                path: String::new(),
-                name: String::new(),
-                type_id,
-            });
-        } else if let Some(variants) = enums::variants(value) {
-            out.push(Entry::Variant {
-                path: String::new(),
-                name: String::new(),
-                variants,
-                pick: enums::constructible(value, &registry),
-                single_tuple_field: enums::is_single_tuple_variant(
-                    value,
-                ),
-                children: variant_children(&registry, value, ""),
-            });
-        } else {
+        if !push_common(&registry, value, "", "", &mut out) {
             out = collect_entries(&registry, value, "");
         }
     });
@@ -493,8 +471,9 @@ fn build_variant(
         return;
     }
 
-    // The root has no name to head a group with, see `entries`.
-    if path.is_empty() {
+    // Nothing named this - the walk's own root, or a single-field
+    // tuple struct spliced into it; see `entries` and `push_common`.
+    if name.is_empty() {
         ui.compose(enums::VariantPicker {
             source: &field,
             variants,
