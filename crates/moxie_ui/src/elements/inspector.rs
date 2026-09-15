@@ -159,6 +159,7 @@ impl Composer<FynixHost> for EntityInspector {
                     continue;
                 }
 
+                let deletable = !essential(component);
                 ui.compose(Section {
                     name: name.to_string(),
                     body: move |ui: &mut BevyUi| {
@@ -178,6 +179,9 @@ impl Composer<FynixHost> for EntityInspector {
                         FynixHost,
                         Button,
                     >| {
+                        if !deletable {
+                            return;
+                        }
                         let row = header.id();
                         header.with(move |ui| {
                             // Eats whatever room the label leaves, so
@@ -421,6 +425,10 @@ fn remove_component(
     entity: Entity,
     component: TypeId,
 ) {
+    if essential(component) {
+        return;
+    }
+
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
 
@@ -435,6 +443,15 @@ fn remove_component(
         return;
     };
     reflect_component.remove(&mut entity);
+}
+
+/// Whether every fresh entity carries `component` already, so
+/// removing it would leave the entity in a state nothing spawns it
+/// into on its own.
+fn essential(component: TypeId) -> bool {
+    component == TypeId::of::<Name>()
+        || component == TypeId::of::<Transform>()
+        || component == TypeId::of::<Visibility>()
 }
 
 /// A whole component on one row, named where a group of fields would
