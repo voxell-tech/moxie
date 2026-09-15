@@ -136,6 +136,9 @@ pub struct Spacing {
     /// across `menu_padding`, not a number of its own; see
     /// `toolbars.md` in the Apple HIG.
     pub menu_radius: f32,
+    /// How close a menu is allowed to sit to the window's edge before
+    /// it flips to the other side.
+    pub menu_margin: f32,
 }
 
 /// `GlobalZIndex` levels, so a drag's chrome stacks the same way
@@ -211,6 +214,7 @@ impl Default for EditorTheme {
                 // Concentric with `menu_item_radius` across
                 // `menu_padding`: 6.0 + 4.0.
                 menu_radius: 10.0,
+                menu_margin: 8.0,
             },
             text: TextScale {
                 small: 10.0,

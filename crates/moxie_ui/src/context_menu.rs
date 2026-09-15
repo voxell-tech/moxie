@@ -8,10 +8,13 @@ use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::{PointerButton, PointerLocation};
 use bevy::prelude::*;
 use bevy::ui::UiScale;
+use bevy::ui_widgets::popover::{
+    Popover, PopoverAlign, PopoverPlacement, PopoverSide,
+};
 use bevy_fynix::WorldEntityMut;
 use fynix::prelude::*;
 
-use crate::elements::{MenuSurface, Overlay, menu_item};
+use crate::elements::{Frame, MenuSurface, Overlay, menu_item};
 use crate::reactive::{BevyUi, watch_root};
 use crate::theme::EditorTheme;
 
@@ -110,6 +113,7 @@ fn spawn_context_menu(
         .id();
     watch_root::<EditorTheme>(world, root, move |ui: &mut BevyUi| {
         let layer = ui.theme.layer.context_menu;
+        let margin = ui.theme.space.menu_margin;
 
         ui.elem(elem!(Overlay, catches = true, z = layer - 1))
             .observe(
@@ -119,13 +123,47 @@ fn spawn_context_menu(
             );
 
         let build = build.clone();
+        // A zero-size anchor at the click point, so `Popover` can
+        // measure the menu against it and flip toward whichever
+        // corner actually has room - the same placement system
+        // `FeathersMenuPopup` uses, just without a button to hang
+        // off.
         ui.elem(elem!(
-            !MenuSurface,
+            Frame,
+            position = PositionType::Absolute,
             inset = UiRect::new(px(at.x), auto(), px(at.y), auto()),
         ))
         .with(move |ui| {
-            let mut builder = ContextMenuBuilder { ui };
-            build(&mut builder);
+            ui.elem(elem!(!MenuSurface))
+                .insert(Popover {
+                    positions: vec![
+                        PopoverPlacement {
+                            side: PopoverSide::Bottom,
+                            align: PopoverAlign::Start,
+                            gap: 0.0,
+                        },
+                        PopoverPlacement {
+                            side: PopoverSide::Bottom,
+                            align: PopoverAlign::End,
+                            gap: 0.0,
+                        },
+                        PopoverPlacement {
+                            side: PopoverSide::Top,
+                            align: PopoverAlign::Start,
+                            gap: 0.0,
+                        },
+                        PopoverPlacement {
+                            side: PopoverSide::Top,
+                            align: PopoverAlign::End,
+                            gap: 0.0,
+                        },
+                    ],
+                    window_margin: margin,
+                })
+                .with(move |ui| {
+                    let mut builder = ContextMenuBuilder { ui };
+                    build(&mut builder);
+                });
         });
     });
 }
