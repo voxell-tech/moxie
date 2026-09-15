@@ -16,7 +16,7 @@
 
 use bevy::prelude::*;
 use bevy::reflect::enums::{
-    DynamicEnum, DynamicVariant, VariantInfo,
+    DynamicEnum, DynamicVariant, VariantInfo, VariantType,
 };
 use bevy::reflect::std_traits::ReflectDefault;
 use bevy::reflect::structs::DynamicStruct;
@@ -56,6 +56,18 @@ pub(super) fn variants(
         return None;
     };
     Some(info.variant_names().iter().map(|n| n.to_string()).collect())
+}
+
+/// Whether `value`'s active variant is a one-field tuple variant, the
+/// enum counterpart of a single-field tuple struct.
+pub(super) fn is_single_tuple_variant(
+    value: &dyn PartialReflect,
+) -> bool {
+    let ReflectRef::Enum(value) = value.reflect_ref() else {
+        return false;
+    };
+    value.variant_type() == VariantType::Tuple
+        && value.field_len() == 1
 }
 
 /// Whether every variant of `value`'s type can be switched into.

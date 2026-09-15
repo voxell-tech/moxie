@@ -19,7 +19,7 @@ use fynix::records::BuildFn;
 
 use super::{Field, FieldRow, ReflectInspect, enums};
 use crate::elements::{Button, Frame, Icon, Label, TintButton};
-use crate::fold::{CHEVRON_SHUT, Foldable, FoldsOn};
+use crate::fold::{self, CHEVRON_SHUT, Foldable, FoldsOn};
 use crate::icons;
 use crate::reactive::{BevyUi, FynixHost};
 
@@ -52,26 +52,22 @@ enum Entry {
         variants: Vec<String>,
         /// Only unit variants can be picked; see [`enums`].
         pick: bool,
+        /// The active variant is a one-field tuple variant.
+        single_tuple_field: bool,
         children: Vec<Entry>,
     },
 }
 
-/// One field: a leaf if a widget is registered for its type, a
-/// collapsible group if it is a struct with none of its own, or
-/// dropped if it's neither.
-///
-/// A single-field tuple struct - a newtype, with no field name of its
-/// own to head a group with - never gets one: this recurses straight
-/// into that one field instead, at the correctly nested path but
-/// still labelled by the newtype's own name. Chained newtypes (a
-/// newtype wrapping a newtype) unwrap all the way through.
-fn push_entry(
+/// The leaf, enum, and single-field-tuple-struct handling shared by
+/// [`push_entry`] and [`push_unnamed`]. `false` leaves a struct or
+/// multi-field tuple struct for the caller.
+fn push_common(
     registry: &TypeRegistry,
     value: &dyn PartialReflect,
     path: &str,
     name: &str,
     out: &mut Vec<Entry>,
-) {
+) -> bool {
     if let Some(type_id) =
         value.get_represented_type_info().map(|i| i.type_id())
         && registry.get_type_data::<ReflectInspect>(type_id).is_some()
@@ -81,7 +77,7 @@ fn push_entry(
             name: name.to_string(),
             type_id,
         });
-        return;
+        return true;
     }
 
     if let Some(variants) = enums::variants(value) {
@@ -91,17 +87,43 @@ fn push_entry(
             name: name.to_string(),
             variants,
             pick,
-            children: collect_entries(registry, value, path),
+            single_tuple_field: enums::is_single_tuple_variant(value),
+            children: variant_children(registry, value, path),
         });
-        return;
+        return true;
     }
 
     if let ReflectRef::TupleStruct(tuple) = value.reflect_ref()
         && tuple.field_len() == 1
     {
         if let Some(inner) = tuple.field(0) {
-            push_entry(registry, inner, &join(path, "0"), name, out);
+            push_unnamed(
+                registry,
+                inner,
+                &join(path, "0"),
+                name,
+                out,
+            );
         }
+        return true;
+    }
+
+    false
+}
+
+/// One field: a leaf if a widget is registered for its type, a
+/// collapsible group if it is a struct with none of its own, or
+/// dropped if it's neither. A single-field tuple struct has no field
+/// name to head a group with, so it recurses into that field instead;
+/// see [`push_unnamed`].
+fn push_entry(
+    registry: &TypeRegistry,
+    value: &dyn PartialReflect,
+    path: &str,
+    name: &str,
+    out: &mut Vec<Entry>,
+) {
+    if push_common(registry, value, path, name, out) {
         return;
     }
 
@@ -120,6 +142,48 @@ fn push_entry(
             });
         }
     }
+}
+
+/// As [`push_entry`], but for a value with no field name of its own -
+/// the sole field of a tuple struct or a one-field tuple enum variant.
+/// A struct here is spliced in directly instead of wrapped, the same
+/// as the walk's own root.
+fn push_unnamed(
+    registry: &TypeRegistry,
+    value: &dyn PartialReflect,
+    path: &str,
+    name: &str,
+    out: &mut Vec<Entry>,
+) {
+    if push_common(registry, value, path, name, out) {
+        return;
+    }
+
+    if matches!(
+        value.reflect_ref(),
+        ReflectRef::Struct(_) | ReflectRef::TupleStruct(_)
+    ) {
+        out.extend(collect_entries(registry, value, path));
+    }
+}
+
+/// A variant's own fields. A one-field tuple variant's sole field is
+/// spliced in directly rather than nested under an index; see
+/// [`push_unnamed`].
+fn variant_children(
+    registry: &TypeRegistry,
+    value: &dyn PartialReflect,
+    path: &str,
+) -> Vec<Entry> {
+    if enums::is_single_tuple_variant(value)
+        && let ReflectRef::Enum(value) = value.reflect_ref()
+        && let Some(inner) = value.field_at(0)
+    {
+        let mut out = Vec::new();
+        push_unnamed(registry, inner, &join(path, "0"), "", &mut out);
+        return out;
+    }
+    collect_entries(registry, value, path)
 }
 
 /// The entries for `value`'s own fields, one level down from `prefix`.
@@ -230,7 +294,10 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
                 name: String::new(),
                 variants,
                 pick: enums::constructible(value, &registry),
-                children: collect_entries(&registry, value, ""),
+                single_tuple_field: enums::is_single_tuple_variant(
+                    value,
+                ),
+                children: variant_children(&registry, value, ""),
             });
         } else {
             out = collect_entries(&registry, value, "");
@@ -345,9 +412,18 @@ fn build_entries(
                 name,
                 variants,
                 pick,
+                single_tuple_field,
                 children,
             } => build_variant(
-                ui, root, path, name, variants, pick, children, depth,
+                ui,
+                root,
+                path,
+                name,
+                variants,
+                pick,
+                single_tuple_field,
+                children,
+                depth,
             ),
         }
     }
@@ -391,6 +467,7 @@ fn build_variant(
     name: String,
     variants: Vec<String>,
     pick: bool,
+    single_tuple_field: bool,
     children: Vec<Entry>,
     depth: u32,
 ) {
@@ -424,6 +501,32 @@ fn build_variant(
             pick,
         });
         build_entries(ui, root, children, depth);
+        return;
+    }
+
+    // A one-field tuple variant needs no header either, just the
+    // fold's usual indent under the picker row.
+    if single_tuple_field {
+        let label = name;
+        ui.compose(FieldRow {
+            label,
+            color: muted,
+            bold: false,
+            depth,
+            field: Some(field.clone()),
+            value: move |ui: &mut BevyUi| {
+                ui.compose(enums::VariantPicker {
+                    source: &field,
+                    variants,
+                    pick,
+                });
+            },
+        });
+
+        let root = root.clone();
+        fold::indent(ui, None, move |ui| {
+            build_entries(ui, &root, children.clone(), depth + 1)
+        });
         return;
     }
 
