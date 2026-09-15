@@ -24,8 +24,8 @@ use fynix::prelude::*;
 use fynix::records::{BuildFn, ChangedFn};
 
 use super::{
-    Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Icon,
-    Label, TintButton, menu_item,
+    Button, Dropdown, DropdownItem, DropdownList, DropdownMenu,
+    Frame, Icon, Label, TintButton, menu_item,
 };
 use crate::context_menu::context_menu;
 use crate::icons;
@@ -144,22 +144,46 @@ impl Composer<FynixHost> for EntityInspector {
                     }
                 }
 
-                card(ui, entity, component, move |ui| {
-                    ui.compose(Section::new(
-                        name.to_string(),
-                        // The whole component, at the empty path.
-                        // See `entries` in `tree.rs`, which never
-                        // wraps the root in a group of its own
-                        // either.
-                        (entity, component, String::new()),
-                        move |ui: &mut BevyUi| {
+                let deletable = !essential(ui.world, component);
+                card(ui, move |ui| {
+                    ui.compose(Section {
+                        name: name.to_string(),
+                        body: move |ui: &mut BevyUi| {
                             ui.compose(ComponentInspector {
                                 entity,
                                 component,
                                 depth: 1,
                             });
                         },
-                    ));
+                        // The whole component, at the empty path.
+                        // See `entries` in `tree.rs`, which never
+                        // wraps the root in a group of its own
+                        // either.
+                        section: (entity, component, String::new()),
+                        on_header: move |mut header: ElementMut<
+                            '_,
+                            '_,
+                            FynixHost,
+                            Button,
+                        >| {
+                            if !deletable {
+                                return;
+                            }
+                            context_menu(&mut header, move |menu| {
+                                let critical =
+                                    menu.theme().color.critical;
+                                menu.item(
+                                    Some((icons::TRASH, critical)),
+                                    "Delete",
+                                    move |world| {
+                                        remove_component(
+                                            world, entity, component,
+                                        );
+                                    },
+                                );
+                            });
+                        },
+                    });
                 });
             }
 
@@ -409,21 +433,17 @@ fn essential(world: &World, component: TypeId) -> bool {
     })
 }
 
-/// One component's own card: a sunken surface around `content`,
-/// right-clickable anywhere on it for "Delete" once the component
-/// isn't [`essential`] - like Unity's per-component panel.
+/// One component's own card: a raised surface around `content`, like
+/// Unity's per-component panel.
 fn card(
     ui: &mut BevyUi,
-    entity: Entity,
-    component: TypeId,
     content: impl FnOnce(&mut BevyUi) + Send + Sync + 'static,
 ) {
-    let background = ui.theme.color.bg;
+    let background = ui.theme.color.surface;
     let radius = ui.theme.space.card_radius;
     let padding = ui.theme.space.card_padding;
-    let deletable = !essential(ui.world, component);
 
-    let mut card = ui.elem(elem!(
+    ui.elem(elem!(
         Frame,
         width = percent(100),
         direction = FlexDirection::Column,
@@ -431,21 +451,8 @@ fn card(
         radius = px(radius),
         padding = UiRect::all(px(padding)),
         overflow = Overflow::clip()
-    ));
-    card.with(content);
-
-    if deletable {
-        context_menu(&mut card, move |menu| {
-            let critical = menu.theme().color.critical;
-            menu.item(
-                Some((icons::TRASH, critical)),
-                "Delete",
-                move |world| {
-                    remove_component(world, entity, component);
-                },
-            );
-        });
-    }
+    ))
+    .with(content);
 }
 
 /// The entity bevy is currently keeping `resource` on.
