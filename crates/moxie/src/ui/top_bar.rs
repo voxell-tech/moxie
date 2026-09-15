@@ -3,18 +3,16 @@
 
 use bevy::prelude::*;
 use bevy::ui_widgets::{
-    Activate, ActivateOnPress, MenuButton as MenuButtonBehavior,
+    ActivateOnPress, MenuButton as MenuButtonBehavior,
 };
 use bevy_fynix::WorldEntityMut;
-use bevy_fynix::tag::TagExt as _;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 use moxie_ui::elements::{
-    Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Label,
-    MenuButton,
+    Dropdown, DropdownList, DropdownMenu, Frame, Label, MenuButton,
+    menu_item,
 };
 use moxie_ui::reactive::{BevyUi, FynixHost};
-use moxie_ui::theme::EditorTheme;
 
 use crate::project;
 
@@ -61,7 +59,6 @@ impl Composer<FynixHost> for Menu {
         ui: &mut BevyUi,
     ) -> ElementHandle<FynixHost, DropdownMenu> {
         let Self { name, entries } = self;
-        let theme = ui.theme;
         // Sized to the longest entry, so the list clears its own text
         // whichever menu it belongs to.
         let width = Dropdown::width_for(
@@ -74,18 +71,15 @@ impl Composer<FynixHost> for Menu {
 
         ui.elem(elem!(DropdownMenu))
             .with(move |ui| {
-                title(ui, theme, name);
+                title(ui, name);
 
-                ui.elem(elem!(
-                    DropdownList,
-                    width = width,
-                    radius = Val::ZERO
-                ))
-                .with(move |ui| {
-                    for (entry, run) in entries {
-                        item(ui, theme, entry, run);
-                    }
-                });
+                ui.elem(elem!(DropdownList, width = width)).with(
+                    move |ui| {
+                        for (entry, run) in entries {
+                            menu_item(ui, None, entry, run);
+                        }
+                    },
+                );
             })
             .handle()
     }
@@ -95,42 +89,18 @@ impl Composer<FynixHost> for Menu {
 ///
 /// A button rather than a [`Dropdown`]: an entry in a menu bar is a
 /// word, not a form control, so it wears no chevron.
-fn title(ui: &mut BevyUi, theme: &EditorTheme, name: &str) {
+fn title(ui: &mut BevyUi, name: &str) {
+    let text = ui.theme.color.text;
     ui.elem(elem!(
         !MenuButton,
         label = elem!(
             Label,
             text = name.to_string(),
             wrap = false,
-            color = theme.color.text
+            color = text
         )
     ))
     // What the menu's own observer reaches this through to open the
     // list beneath it.
     .insert((MenuButtonBehavior, ActivateOnPress));
-}
-
-/// One row of the open menu. Picking it closes the list, and runs
-/// `run` once the click's own commands have been applied.
-fn item(
-    ui: &mut BevyUi,
-    theme: &EditorTheme,
-    entry: &str,
-    run: fn(&mut World),
-) {
-    ui.elem(elem!(
-        DropdownItem,
-        radius = Val::ZERO,
-        hover_fill = theme.color.hover,
-        label = elem!(
-            Label,
-            text = entry.to_string(),
-            wrap = false,
-            color = theme.color.text
-        )
-    ))
-    .pointer_tags()
-    .observe(move |_: On<Activate>, mut commands: Commands| {
-        commands.queue(run);
-    });
 }

@@ -16,7 +16,7 @@
 
 use bevy::prelude::*;
 use bevy::reflect::enums::{
-    DynamicEnum, DynamicVariant, VariantInfo,
+    DynamicEnum, DynamicVariant, VariantInfo, VariantType,
 };
 use bevy::reflect::std_traits::ReflectDefault;
 use bevy::reflect::structs::DynamicStruct;
@@ -24,21 +24,18 @@ use bevy::reflect::tuple::DynamicTuple;
 use bevy::reflect::{
     PartialReflect, ReflectRef, TypeInfo, TypeRegistry,
 };
-use bevy::ui_widgets::Activate;
 use bevy_fynix::tag::TagExt as _;
 
-use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 
 use super::{Source, when_changed};
 use crate::elements::{
-    Dropdown, DropdownCursor, DropdownItem, DropdownList,
-    DropdownMenu, Frame, Icon, Label, LabelCursor,
+    Dropdown, DropdownCursor, DropdownList, DropdownMenu, Frame,
+    Icon, Label, LabelCursor, menu_item,
 };
 use crate::icons;
 use crate::reactive::{BevyUi, FynixHost};
-use crate::theme::EditorTheme;
 
 /// Every variant of `value`'s type, if it is an enum at all.
 ///
@@ -56,6 +53,18 @@ pub(super) fn variants(
         return None;
     };
     Some(info.variant_names().iter().map(|n| n.to_string()).collect())
+}
+
+/// Whether `value`'s active variant is a one-field tuple variant, the
+/// enum counterpart of a single-field tuple struct.
+pub(super) fn is_single_tuple_variant(
+    value: &dyn PartialReflect,
+) -> bool {
+    let ReflectRef::Enum(value) = value.reflect_ref() else {
+        return false;
+    };
+    value.variant_type() == VariantType::Tuple
+        && value.field_len() == 1
 }
 
 /// Whether every variant of `value`'s type can be switched into.
@@ -172,7 +181,6 @@ impl Composer<FynixHost> for VariantPicker<'_> {
             pick,
         } = self;
 
-        let theme = ui.theme;
         let current = active(source, ui.world)
             .unwrap_or_else(|| "-".to_string());
         let source = source.boxed();
@@ -183,13 +191,13 @@ impl Composer<FynixHost> for VariantPicker<'_> {
         ui.elem(elem!(Frame, align = AlignItems::Center))
             .with(move |ui| {
                 if !pick {
-                    name(ui, &*source, theme, current);
+                    name(ui, &*source, current);
                     return;
                 }
 
                 ui.elem(elem!(DropdownMenu)).with(move |ui| {
-                    control(ui, &*source, theme, current, width);
-                    list(ui, &*source, theme, variants, width);
+                    control(ui, &*source, current, width);
+                    list(ui, &*source, variants, width);
                 });
             })
             .handle()
@@ -197,53 +205,41 @@ impl Composer<FynixHost> for VariantPicker<'_> {
 }
 
 /// Just the active variant, for an enum that cannot be moved.
-fn name(
-    ui: &mut BevyUi,
-    source: &dyn Source,
-    theme: &EditorTheme,
-    current: String,
-) {
+fn name(ui: &mut BevyUi, source: &dyn Source, current: String) {
     let shown = source.boxed();
+    let text = ui.theme.color.text;
 
-    ui.elem(elem!(
-        Label,
-        text = current,
-        wrap = false,
-        color = theme.color.text
-    ))
-    .bind(
-        |label| label.text(),
-        when_changed(source),
-        move |WorldNodeRef { world, .. }| {
-            active(&*shown, world).unwrap_or_default()
-        },
-    );
+    ui.elem(elem!(Label, text = current, wrap = false, color = text))
+        .bind(
+            |label| label.text(),
+            when_changed(source),
+            move |WorldNodeRef { world, .. }| {
+                active(&*shown, world).unwrap_or_default()
+            },
+        );
 }
 
 /// The shut control, showing whichever variant is active.
 fn control(
     ui: &mut BevyUi,
     source: &dyn Source,
-    theme: &EditorTheme,
     current: String,
     width: Val,
 ) {
     let shown = source.boxed();
+    let text = ui.theme.color.text;
+    let text_dim = ui.theme.color.text_dim;
 
     ui.elem(elem!(
         Dropdown,
         min_width = width,
         max_width = width,
-        label = elem!(
-            Label,
-            text = current,
-            wrap = false,
-            color = theme.color.text
-        ),
+        label =
+            elem!(Label, text = current, wrap = false, color = text),
         chevron = elem!(
             Icon,
             image = icons::CHEVRON,
-            color = theme.color.text_dim,
+            color = text_dim,
             size = px(9),
             rotation = 180.0f32
         )
@@ -262,7 +258,6 @@ fn control(
 fn list(
     ui: &mut BevyUi,
     source: &dyn Source,
-    theme: &EditorTheme,
     variants: Vec<String>,
     width: Val,
 ) {
@@ -270,46 +265,53 @@ fn list(
 
     ui.elem(elem!(DropdownList, width = width)).with(move |ui| {
         for variant in variants {
-            option(ui, &*source, theme, variant);
+            option(ui, &*source, variant);
         }
     });
 }
 
-fn option(
-    ui: &mut BevyUi,
-    source: &dyn Source,
-    theme: &EditorTheme,
-    variant: String,
-) {
-    let chosen = variant.clone();
-    let edited = source.boxed();
+/// A boxed [`Source`] cloned through [`Source::boxed`] rather than
+/// derived - a trait object isn't `Clone` on its own - so `option`'s
+/// row can hand [`menu_item`] a closure it's free to run more than
+/// once.
+struct ClonableSource(Box<dyn Source>);
 
-    ui.elem(elem!(
-        DropdownItem,
-        label = elem!(
-            Label,
-            text = variant,
-            wrap = false,
-            color = theme.color.text
-        )
-    ))
-    .pointer_tags()
-    .observe(move |_: On<Activate>, mut commands: Commands| {
-        let (source, variant) = (edited.boxed(), chosen.clone());
+impl Clone for ClonableSource {
+    fn clone(&self) -> Self {
+        Self(self.0.boxed())
+    }
+}
 
-        commands.queue(move |world: &mut World| {
-            let Some(value) = source.get(world) else {
-                return;
-            };
-            let dynamic = {
-                let registry =
-                    world.resource::<AppTypeRegistry>().read();
-                constructed(&*value, &registry, &variant)
-            };
-            if let Some(dynamic) = dynamic {
-                source
-                    .set(world, &DynamicEnum::new(variant, dynamic));
-            }
-        });
+impl ClonableSource {
+    // Methods of its own rather than reaching into `.0` at the call
+    // site: a closure only using the field, not the struct, captures
+    // just that field - `Box<dyn Source>` on its own, which isn't
+    // `Clone`.
+    fn get(&self, world: &World) -> Option<Box<dyn PartialReflect>> {
+        self.0.get(world)
+    }
+
+    fn set(&self, world: &mut World, value: &dyn PartialReflect) {
+        self.0.set(world, value);
+    }
+}
+
+fn option(ui: &mut BevyUi, source: &dyn Source, variant: String) {
+    let source = ClonableSource(source.boxed());
+
+    menu_item(ui, None, variant.clone(), move |world| {
+        let Some(value) = source.get(world) else {
+            return;
+        };
+        let dynamic = {
+            let registry = world.resource::<AppTypeRegistry>().read();
+            constructed(&*value, &registry, &variant)
+        };
+        if let Some(dynamic) = dynamic {
+            source.set(
+                world,
+                &DynamicEnum::new(variant.clone(), dynamic),
+            );
+        }
     });
 }

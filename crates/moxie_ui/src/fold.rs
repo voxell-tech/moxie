@@ -32,6 +32,77 @@ pub const CHEVRON_OPEN: f32 = 180.0;
 /// The rail's own width, one level of a body's indent.
 pub const RAIL_WIDTH: f32 = 1.0;
 
+/// The rail and indent a [`Foldable`]'s body sits under - what
+/// [`Foldable`] itself draws its own body with, and what any other
+/// nested-but-unfoldable content can share.
+///
+/// `node`'s [`Folded`] marker hides this and delays building `body`
+/// until first shown; `None` builds immediately and never hides, for
+/// content with nothing to fold.
+pub(crate) fn indent(
+    ui: &mut BevyUi,
+    node: Option<Entity>,
+    body: impl BuildFn<FynixHost>,
+) {
+    let toggle_size = ui.theme.space.fold_toggle;
+    let step = ui.theme.space.fold_indent;
+
+    let mut row = ui.elem(elem!(
+        Frame,
+        width = percent(100),
+        direction = FlexDirection::Row,
+        align = AlignItems::Stretch,
+        padding = UiRect::left(px(toggle_size / 2.0))
+    ));
+    if let Some(node) = node {
+        row.bind(
+            |frame| frame.display(),
+            component_changed_on::<Folded>(node),
+            move |WorldNodeRef { world, .. }| {
+                if is_folded(world, node) {
+                    Display::None
+                } else {
+                    Display::Flex
+                }
+            },
+        );
+    }
+
+    row.with(move |ui| {
+        let rail = ui.theme.palette.base[2];
+        ui.elem(elem!(
+            Frame,
+            width = px(RAIL_WIDTH),
+            background = rail
+        ));
+
+        let mut content = ui.elem(elem!(
+            Frame,
+            direction = FlexDirection::Column,
+            flex_grow = 1.0f32,
+            padding = UiRect::left(px(step))
+        ));
+        match node {
+            Some(node) => {
+                content.watch(
+                    component_changed_on::<Folded>(node),
+                    move |ui| {
+                        // Stays empty while folded, rather than
+                        // building what nothing has opened yet.
+                        if is_folded(ui.world, node) {
+                            return;
+                        }
+                        body(ui);
+                    },
+                );
+            }
+            None => {
+                content.with(body);
+            }
+        }
+    });
+}
+
 /// On a [`Foldable`]'s own node while its body is hidden. Private to
 /// this row's own reactivity. A caller after something that survives
 /// this node being rebuilt wants [`Foldable::open`]/`on_toggle`
@@ -127,7 +198,6 @@ where
 
         let muted = ui.theme.color.text_dim;
         let toggle_size = ui.theme.space.fold_toggle;
-        let indent = ui.theme.space.fold_indent;
         let chevron = enabled && folds_on == FoldsOn::Chevron;
 
         let mut root = ui.elem(elem!(
@@ -182,63 +252,7 @@ where
                 );
             });
 
-            // Set in under the chevron's own middle, so the rail runs
-            // down through it.
-            ui.elem(elem!(
-                Frame,
-                width = percent(100),
-                direction = FlexDirection::Row,
-                align = AlignItems::Stretch,
-                padding = UiRect::new(
-                    px(toggle_size / 2.0),
-                    Val::ZERO,
-                    Val::ZERO,
-                    Val::ZERO
-                )
-            ))
-            .bind(
-                |frame| frame.display(),
-                component_changed_on::<Folded>(node),
-                move |WorldNodeRef { world, .. }| {
-                    if is_folded(world, node) {
-                        Display::None
-                    } else {
-                        Display::Flex
-                    }
-                },
-            )
-            .with(move |ui| {
-                let rail = ui.theme.palette.base[2];
-                // The rail. Stretched to the block's height, not
-                // sized by hand.
-                ui.elem(elem!(
-                    Frame,
-                    width = px(RAIL_WIDTH),
-                    background = rail
-                ));
-                ui.elem(elem!(
-                    Frame,
-                    direction = FlexDirection::Column,
-                    flex_grow = 1.0f32,
-                    padding = UiRect::new(
-                        px(indent),
-                        Val::ZERO,
-                        Val::ZERO,
-                        Val::ZERO
-                    )
-                ))
-                .watch(
-                    component_changed_on::<Folded>(node),
-                    move |ui| {
-                        // Stays empty while folded, rather than
-                        // building what nothing has opened yet.
-                        if is_folded(ui.world, node) {
-                            return;
-                        }
-                        body(ui);
-                    },
-                );
-            });
+            indent(ui, Some(node), body);
         })
         .handle()
     }

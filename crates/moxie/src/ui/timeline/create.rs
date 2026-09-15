@@ -67,6 +67,7 @@ pub(super) fn preview(
     mut nodes: Query<&mut Node>,
     mut backgrounds: Query<&mut BackgroundColor>,
     mut borders: Query<&mut BorderColor>,
+    mut was_dragging: Local<bool>,
 ) {
     let Some(visuals) = visuals else {
         return;
@@ -76,12 +77,19 @@ pub(super) fn preview(
     };
 
     if dragged.field.is_none() {
-        // The drag may have ended without a `DragDrop` over the
-        // track (e.g. released elsewhere) - `on_drop` never ran to
-        // hide the hint this hovering left showing.
-        clear(&mut nodes);
+        // Gated on the edge, not the level: this branch runs on
+        // every frame nothing is field-dragged, and `reorder` shares
+        // this `Visuals` for its own hint.
+        if *was_dragging {
+            // The drag may have ended without a `DragDrop` over the
+            // track (e.g. released elsewhere) - `on_drop` never ran
+            // to hide the hint this hovering left showing.
+            clear(&mut nodes);
+        }
+        *was_dragging = false;
         return;
     }
+    *was_dragging = true;
     let (Some(cursor), Ok((vp_node, vp_transform, scroll))) =
         (cursor(&pointers, &scale), q_viewport.single())
     else {
@@ -130,13 +138,12 @@ pub(super) fn preview(
 /// whatever is under the cursor, and a child button would stop it
 /// propagating from a per-entity observer.
 pub(super) fn on_drop(
-    _: On<Pointer<DragDrop>>,
+    drop: On<Pointer<DragDrop>>,
     scale: Res<UiScale>,
     view: Res<TimelineView>,
     folded: Res<BlockFoldState>,
     visuals: Option<Res<reorder::Visuals>>,
     mut dragged: ResMut<DraggedField>,
-    pointers: Query<&PointerLocation>,
     q_viewport: Query<
         (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
         With<TrackViewport>,
@@ -152,8 +159,8 @@ pub(super) fn on_drop(
     if let Some(visuals) = &visuals {
         reorder::hide_landing(&mut nodes, visuals);
     }
-    let (Some(cursor), Ok((vp_node, vp_transform, scroll))) =
-        (cursor(&pointers, &scale), q_viewport.single())
+    let cursor = drop.pointer_location.position / scale.0;
+    let Ok((vp_node, vp_transform, scroll)) = q_viewport.single()
     else {
         return;
     };

@@ -13,17 +13,20 @@ mod drag;
 pub(crate) use drag::Dragging;
 
 use bevy::ecs::query::QueryState;
+use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
 use bevy::ui_widgets::Activate;
 use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::id::EntityUid;
 use fynix::composer::Composer;
 use fynix::prelude::*;
+use moxie_ui::context_menu::context_menu;
 use moxie_ui::elements::{
     Button, ButtonCursor, Frame, FrameCursor, GhostButton, Icon,
     Label, LabelCursor, Panel, ScrollArea, TintButton,
 };
 use moxie_ui::fold::{Foldable, FoldsOn};
+use moxie_ui::inspector::ReflectEssential;
 use moxie_ui::reactive::{
     BevyUi, FynixHost, component_changed_on, value_changed,
 };
@@ -149,17 +152,67 @@ fn spawn_new_entity(world: &mut World) {
         return;
     };
 
-    let entity = world
-        .spawn((
-            EntityUid::new(),
-            Name::new("Entity"),
-            Transform::default(),
-            Visibility::default(),
-            ChildOf(root),
-        ))
-        .id();
+    let entity = world.spawn((EntityUid::new(), ChildOf(root))).id();
+    insert_essential(world, entity);
 
     world.insert_resource(SelectedEntity(Some(entity)));
+}
+
+/// Inserts every [`register_essential`](
+/// moxie_ui::inspector::InspectAppExt::register_essential)
+/// component's default value onto `entity` - `Name`, `Transform`,
+/// `Visibility` today, whatever the registry answers for tomorrow.
+fn insert_essential(world: &mut World, entity: Entity) {
+    let registry = world.resource::<AppTypeRegistry>().clone();
+    let registry = registry.read();
+
+    let essentials = registry
+        .iter()
+        .filter_map(|registration| {
+            Some((
+                registration.data::<ReflectComponent>()?,
+                registration.data::<ReflectEssential>()?.spawn(),
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    let Ok(mut entity) = world.get_entity_mut(entity) else {
+        return;
+    };
+    for (reflect_component, value) in &essentials {
+        reflect_component.insert(
+            &mut entity,
+            value.as_partial_reflect(),
+            &registry,
+        );
+    }
+}
+
+/// Despawns `entity` and everything under it, and clears the
+/// selection if it pointed there.
+fn despawn_entity(world: &mut World, entity: Entity) {
+    // Ahead of the despawn: `world.despawn` takes the whole subtree
+    // with it, so a selected descendant is no longer reachable to
+    // check for afterward.
+    let selected = world.resource::<SelectedEntity>().0;
+    let clears = selected
+        .is_some_and(|selected| under(world, entity, selected));
+
+    world.despawn(entity);
+
+    if clears {
+        world.resource_mut::<SelectedEntity>().0 = None;
+    }
+}
+
+/// Whether `entity` is `ancestor` itself or sits somewhere under it.
+fn under(world: &World, ancestor: Entity, entity: Entity) -> bool {
+    if ancestor == entity {
+        return true;
+    }
+    world.get::<Children>(ancestor).is_some_and(|children| {
+        children.iter().any(|child| under(world, child, entity))
+    })
 }
 
 fn build_roots(ui: &mut BevyUi) {
@@ -356,6 +409,17 @@ impl Composer<FynixHost> for Subtree {
                             name_of(world, entity)
                         },
                     );
+
+                context_menu(&mut header, move |menu| {
+                    let critical = menu.theme().color.critical;
+                    menu.item(
+                        Some((moxie_ui::icons::TRASH, critical)),
+                        "Delete",
+                        move |world| {
+                            despawn_entity(world, entity);
+                        },
+                    );
+                });
             },
             body: move |ui: &mut BevyUi| {
                 ui.elem(elem!(

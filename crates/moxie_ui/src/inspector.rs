@@ -24,6 +24,7 @@ use std::any::TypeId;
 
 use bevy::light::CascadeShadowConfig;
 use bevy::prelude::*;
+use bevy::reflect::std_traits::ReflectDefault;
 use bevy::reflect::{FromType, GetTypeRegistration, PartialReflect};
 use bevy::sprite::Anchor;
 use bevy::text::{LetterSpacing, LineHeight};
@@ -81,25 +82,41 @@ impl Plugin for InspectPlugin {
 
         app.register_inspectable::<Name>()
             .register_inspectable::<Visibility>()
-            .register_inspectable::<Transform>()
+            .register_inspectable::<Transform>();
+
+        app.register_essential_with::<Name>(|| {
+            Box::new(Name::new("New Entity"))
+        })
+        .register_essential::<Visibility>()
+        .register_essential::<Transform>();
+
+        app.with_inspect_group("Text")
             .register_inspectable::<Text2d>()
             .register_inspectable::<TextFont>()
             .register_inspectable::<TextColor>()
             .register_inspectable::<TextLayout>()
             .register_inspectable::<LineHeight>()
             .register_inspectable::<LetterSpacing>()
-            .register_inspectable::<Anchor>()
+            .register_inspectable::<Anchor>();
+
+        app.with_inspect_group("2D Mesh")
             .register_inspectable::<Mesh2d>()
             .register_inspectable_as::<MeshMaterial2d<ColorMaterial>>(
                 "Color Material",
-            )
+            );
+
+        app.with_inspect_group("Cameras")
             .register_inspectable::<Camera3d>()
-            .register_inspectable::<Camera2d>()
+            .register_inspectable::<Camera2d>();
+
+        app.with_inspect_group("Lighting")
             .register_inspectable::<CascadeShadowConfig>()
             .register_inspectable::<DirectionalLight>()
             .register_inspectable::<PointLight>()
             .register_inspectable::<RectLight>()
-            .register_inspectable::<SpotLight>()
+            .register_inspectable::<SpotLight>();
+
+        app.with_inspect_group("3D Mesh")
             .register_inspectable::<Mesh3d>()
             .register_inspectable_as::<MeshMaterial3d<StandardMaterial>>(
                 "PBR Material",
@@ -136,6 +153,39 @@ pub trait InspectAppExt {
         &mut self,
         name: &'static str,
     ) -> &mut Self;
+
+    /// A scope for tagging the [`InspectGroup::register_inspectable`]
+    /// calls chained off it with `name`, so `AddComponent`'s menu
+    /// lists them together.
+    fn with_inspect_group(
+        &mut self,
+        name: &'static str,
+    ) -> InspectGroup<'_>;
+
+    /// Marks `T` a component no fresh entity is ever without: also
+    /// registers `T`'s [`ReflectDefault`], what actually spawns it on
+    /// one, and [`EntityInspector`](crate::elements::EntityInspector)
+    /// never offers to delete it.
+    fn register_essential<
+        T: Component
+            + Reflect
+            + TypePath
+            + GetTypeRegistration
+            + Default,
+    >(
+        &mut self,
+    ) -> &mut Self;
+
+    /// As [`register_essential`](Self::register_essential), spawning
+    /// `T` with `spawn` instead of [`Default::default`] - a
+    /// reasonable non-empty [`Name`] for a fresh entity, say, rather
+    /// than an empty string.
+    fn register_essential_with<
+        T: Component + Reflect + TypePath + GetTypeRegistration,
+    >(
+        &mut self,
+        spawn: fn() -> Box<dyn Reflect>,
+    ) -> &mut Self;
 }
 
 impl InspectAppExt for App {
@@ -170,6 +220,126 @@ impl InspectAppExt for App {
                 .insert(ReflectInspectable { name: Some(name) });
         }
         self
+    }
+
+    fn with_inspect_group(
+        &mut self,
+        name: &'static str,
+    ) -> InspectGroup<'_> {
+        InspectGroup { app: self, name }
+    }
+
+    fn register_essential<
+        T: Component
+            + Reflect
+            + TypePath
+            + GetTypeRegistration
+            + Default,
+    >(
+        &mut self,
+    ) -> &mut Self {
+        self.register_type::<T>()
+            .register_type_data::<T, ReflectDefault>()
+            .register_type_data::<T, ReflectEssential>()
+    }
+
+    fn register_essential_with<
+        T: Component + Reflect + TypePath + GetTypeRegistration,
+    >(
+        &mut self,
+        spawn: fn() -> Box<dyn Reflect>,
+    ) -> &mut Self {
+        self.register_type::<T>();
+        let registry =
+            self.world().resource::<AppTypeRegistry>().clone();
+        let mut registry = registry.write();
+        if let Some(registration) =
+            registry.get_mut(TypeId::of::<T>())
+        {
+            registration.insert(ReflectEssential { spawn });
+        }
+        self
+    }
+}
+
+/// Which group of `AddComponent`'s menu a component belongs to; see
+/// [`InspectAppExt::with_inspect_group`].
+#[derive(Clone)]
+pub struct ReflectInspectGroup(pub &'static str);
+
+/// Marks a component no fresh entity is ever without; see
+/// [`InspectAppExt::register_essential`] and
+/// [`InspectAppExt::register_essential_with`].
+#[derive(Clone, Copy)]
+pub struct ReflectEssential {
+    // A bare fn, not a boxed closure: like `ReflectDefault`, the
+    // value it produces carries all the state it needs, so there is
+    // nothing for the function itself to capture.
+    spawn: fn() -> Box<dyn Reflect>,
+}
+
+impl ReflectEssential {
+    /// The value a fresh entity gets for this component.
+    pub fn spawn(&self) -> Box<dyn Reflect> {
+        (self.spawn)()
+    }
+}
+
+impl<T: Component + Reflect + Default> FromType<T>
+    for ReflectEssential
+{
+    fn from_type() -> Self {
+        Self {
+            spawn: || Box::new(T::default()),
+        }
+    }
+}
+
+/// A scope from [`InspectAppExt::with_inspect_group`], for tagging
+/// several [`register_inspectable`](Self::register_inspectable) calls
+/// at once.
+pub struct InspectGroup<'a> {
+    app: &'a mut App,
+    name: &'static str,
+}
+
+impl InspectGroup<'_> {
+    /// As [`InspectAppExt::register_inspectable`], tagged with this
+    /// scope's group.
+    pub fn register_inspectable<
+        T: Component + Reflect + TypePath + GetTypeRegistration,
+    >(
+        &mut self,
+    ) -> &mut Self {
+        self.app.register_inspectable::<T>();
+        self.tag::<T>();
+        self
+    }
+
+    /// As [`InspectAppExt::register_inspectable_as`], tagged with
+    /// this scope's group.
+    pub fn register_inspectable_as<
+        T: Component + Reflect + TypePath + GetTypeRegistration,
+    >(
+        &mut self,
+        name: &'static str,
+    ) -> &mut Self {
+        self.app.register_inspectable_as::<T>(name);
+        self.tag::<T>();
+        self
+    }
+
+    /// Inserts [`ReflectInspectGroup`] onto `T`'s already-registered
+    /// entry.
+    fn tag<T: TypePath + GetTypeRegistration>(&mut self) {
+        let registry =
+            self.app.world().resource::<AppTypeRegistry>().clone();
+        let mut registry = registry.write();
+        if let Some(registration) =
+            registry.get_mut(TypeId::of::<T>())
+        {
+            registration.insert(ReflectInspectGroup(self.name));
+        }
     }
 }
 

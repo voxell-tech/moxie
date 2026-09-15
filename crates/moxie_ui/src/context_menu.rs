@@ -1,0 +1,166 @@
+//! A right-click menu: a small popup of [`menu_item`] rows at the
+//! cursor, dismissed by clicking anywhere else - the same row every
+//! other menu in the app uses, so a right-click menu reads like the
+//! rest rather than like a one-off.
+
+use bevy::picking::events::{Pointer, Press};
+use bevy::picking::pointer::PointerButton;
+use bevy::prelude::*;
+use bevy::ui::UiScale;
+use bevy::ui_widgets::popover::{
+    Popover, PopoverAlign, PopoverPlacement, PopoverSide,
+};
+use bevy_fynix::WorldEntityMut;
+use fynix::prelude::*;
+
+use crate::elements::{Frame, MenuSurface, Overlay, menu_item};
+use crate::reactive::{BevyUi, watch_root};
+use crate::theme::EditorTheme;
+
+/// The open menu's own root, so a second right-click or the overlay
+/// behind it can close it.
+#[derive(Component)]
+struct ContextMenuRoot;
+
+/// Adds one row to a [`context_menu`], to run `on_click` and close
+/// the menu when picked.
+pub struct ContextMenuBuilder<'u, 'a> {
+    ui: &'u mut BevyUi<'a>,
+}
+
+impl ContextMenuBuilder<'_, '_> {
+    pub fn theme(&self) -> &EditorTheme {
+        self.ui.theme
+    }
+
+    pub fn item(
+        &mut self,
+        icon: Option<(&str, Color)>,
+        label: impl Into<String>,
+        on_click: impl Fn(&mut World) + Send + Sync + Clone + 'static,
+    ) {
+        menu_item(self.ui, icon, label, move |world| {
+            despawn_context_menu(world);
+            on_click(world);
+        });
+    }
+}
+
+/// Makes `elem` open `build`'s rows at the cursor on right-click -
+/// reusable for delete, duplicate, or whatever else a row offers.
+pub fn context_menu(
+    elem: &mut impl WorldEntityMut,
+    build: impl Fn(&mut ContextMenuBuilder)
+    + Send
+    + Sync
+    + Clone
+    + 'static,
+) {
+    elem.observe(
+        move |press: On<Pointer<Press>>,
+              scale: Res<UiScale>,
+              mut commands: Commands| {
+            if press.button != PointerButton::Secondary {
+                return;
+            }
+            let at = press.pointer_location.position / scale.0;
+
+            let build = build.clone();
+            commands.queue(move |world: &mut World| {
+                spawn_context_menu(world, at, build);
+            });
+        },
+    );
+}
+
+/// Closes whatever [`context_menu`] is currently open, if any.
+fn despawn_context_menu(world: &mut World) {
+    let open = world
+        .query_filtered::<Entity, With<ContextMenuRoot>>()
+        .iter(world)
+        .collect::<Vec<Entity>>();
+    for entity in open {
+        world.despawn(entity);
+    }
+}
+
+fn spawn_context_menu(
+    world: &mut World,
+    at: Vec2,
+    build: impl Fn(&mut ContextMenuBuilder)
+    + Send
+    + Sync
+    + Clone
+    + 'static,
+) {
+    despawn_context_menu(world);
+
+    // A `Node` of its own, like the app's own UI root - without one
+    // its children inherit no layout at all. Falls back to whichever
+    // camera is `IsDefaultUiCamera`, same as a drag ghost.
+    let root = world
+        .spawn((
+            ContextMenuRoot,
+            Node {
+                width: percent(100),
+                height: percent(100),
+                ..default()
+            },
+        ))
+        .id();
+    watch_root::<EditorTheme>(world, root, move |ui: &mut BevyUi| {
+        let layer = ui.theme.layer.context_menu;
+        let margin = ui.theme.space.menu_margin;
+
+        ui.elem(elem!(Overlay, catches = true, z = layer - 1))
+            .observe(
+                |_: On<Pointer<Press>>, mut commands: Commands| {
+                    commands.queue(despawn_context_menu);
+                },
+            );
+
+        let build = build.clone();
+        // A zero-size anchor at the click point, so `Popover` can
+        // measure the menu against it and flip toward whichever
+        // corner actually has room - the same placement system
+        // `FeathersMenuPopup` uses, just without a button to hang
+        // off.
+        ui.elem(elem!(
+            Frame,
+            position = PositionType::Absolute,
+            inset = UiRect::new(px(at.x), auto(), px(at.y), auto()),
+        ))
+        .with(move |ui| {
+            ui.elem(elem!(!MenuSurface))
+                .insert(Popover {
+                    positions: vec![
+                        PopoverPlacement {
+                            side: PopoverSide::Bottom,
+                            align: PopoverAlign::Start,
+                            gap: 0.0,
+                        },
+                        PopoverPlacement {
+                            side: PopoverSide::Bottom,
+                            align: PopoverAlign::End,
+                            gap: 0.0,
+                        },
+                        PopoverPlacement {
+                            side: PopoverSide::Top,
+                            align: PopoverAlign::Start,
+                            gap: 0.0,
+                        },
+                        PopoverPlacement {
+                            side: PopoverSide::Top,
+                            align: PopoverAlign::End,
+                            gap: 0.0,
+                        },
+                    ],
+                    window_margin: margin,
+                })
+                .with(move |ui| {
+                    let mut builder = ContextMenuBuilder { ui };
+                    build(&mut builder);
+                });
+        });
+    });
+}

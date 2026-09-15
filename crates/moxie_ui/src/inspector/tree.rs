@@ -19,7 +19,7 @@ use fynix::records::BuildFn;
 
 use super::{Field, FieldRow, ReflectInspect, enums};
 use crate::elements::{Button, Frame, Icon, Label, TintButton};
-use crate::fold::{CHEVRON_SHUT, Foldable, FoldsOn};
+use crate::fold::{self, CHEVRON_SHUT, Foldable, FoldsOn};
 use crate::icons;
 use crate::reactive::{BevyUi, FynixHost};
 
@@ -33,7 +33,11 @@ struct ClosedSections(HashSet<(TypeId, String)>);
 #[derive(Clone, PartialEq)]
 enum Entry {
     /// A registered widget draws it.
-    Leaf { path: String, type_id: TypeId },
+    Leaf {
+        path: String,
+        name: String,
+        type_id: TypeId,
+    },
     /// A struct, its fields under a folding header.
     Group {
         path: String,
@@ -48,29 +52,32 @@ enum Entry {
         variants: Vec<String>,
         /// Only unit variants can be picked; see [`enums`].
         pick: bool,
+        /// The active variant is a one-field tuple variant.
+        single_tuple_field: bool,
         children: Vec<Entry>,
     },
 }
 
-/// One field: a leaf if a widget is registered for its type, a
-/// collapsible group if it is a struct with none of its own, or
-/// dropped if it's neither.
-fn push_entry(
+/// The leaf, enum, and single-field-tuple-struct handling shared by
+/// [`push_entry`] and [`push_unnamed`]. `false` leaves a struct or
+/// multi-field tuple struct for the caller.
+fn push_common(
     registry: &TypeRegistry,
     value: &dyn PartialReflect,
     path: &str,
     name: &str,
     out: &mut Vec<Entry>,
-) {
+) -> bool {
     if let Some(type_id) =
         value.get_represented_type_info().map(|i| i.type_id())
         && registry.get_type_data::<ReflectInspect>(type_id).is_some()
     {
         out.push(Entry::Leaf {
             path: path.to_string(),
+            name: name.to_string(),
             type_id,
         });
-        return;
+        return true;
     }
 
     if let Some(variants) = enums::variants(value) {
@@ -80,8 +87,43 @@ fn push_entry(
             name: name.to_string(),
             variants,
             pick,
-            children: collect_entries(registry, value, path),
+            single_tuple_field: enums::is_single_tuple_variant(value),
+            children: variant_children(registry, value, path),
         });
+        return true;
+    }
+
+    if let ReflectRef::TupleStruct(tuple) = value.reflect_ref()
+        && tuple.field_len() == 1
+    {
+        if let Some(inner) = tuple.field(0) {
+            push_unnamed(
+                registry,
+                inner,
+                &join(path, "0"),
+                name,
+                out,
+            );
+        }
+        return true;
+    }
+
+    false
+}
+
+/// One field: a leaf if a widget is registered for its type, a
+/// collapsible group if it is a struct with none of its own, or
+/// dropped if it's neither. A single-field tuple struct has no field
+/// name to head a group with, so it recurses into that field instead;
+/// see [`push_unnamed`].
+fn push_entry(
+    registry: &TypeRegistry,
+    value: &dyn PartialReflect,
+    path: &str,
+    name: &str,
+    out: &mut Vec<Entry>,
+) {
+    if push_common(registry, value, path, name, out) {
         return;
     }
 
@@ -100,6 +142,48 @@ fn push_entry(
             });
         }
     }
+}
+
+/// As [`push_entry`], but for a value with no field name of its own -
+/// the sole field of a tuple struct or a one-field tuple enum variant.
+/// A struct here is spliced in directly instead of wrapped, the same
+/// as the walk's own root.
+fn push_unnamed(
+    registry: &TypeRegistry,
+    value: &dyn PartialReflect,
+    path: &str,
+    name: &str,
+    out: &mut Vec<Entry>,
+) {
+    if push_common(registry, value, path, name, out) {
+        return;
+    }
+
+    if matches!(
+        value.reflect_ref(),
+        ReflectRef::Struct(_) | ReflectRef::TupleStruct(_)
+    ) {
+        out.extend(collect_entries(registry, value, path));
+    }
+}
+
+/// A variant's own fields. A one-field tuple variant's sole field is
+/// spliced in directly rather than nested under an index; see
+/// [`push_unnamed`].
+fn variant_children(
+    registry: &TypeRegistry,
+    value: &dyn PartialReflect,
+    path: &str,
+) -> Vec<Entry> {
+    if enums::is_single_tuple_variant(value)
+        && let ReflectRef::Enum(value) = value.reflect_ref()
+        && let Some(inner) = value.field_at(0)
+    {
+        let mut out = Vec::new();
+        push_unnamed(registry, inner, &join(path, "0"), "", &mut out);
+        return out;
+    }
+    collect_entries(registry, value, path)
 }
 
 /// The entries for `value`'s own fields, one level down from `prefix`.
@@ -193,25 +277,7 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
         // its own guard.
         let registry = world.resource::<AppTypeRegistry>().read();
 
-        if let Some(type_id) =
-            value.get_represented_type_info().map(|i| i.type_id())
-            && registry
-                .get_type_data::<ReflectInspect>(type_id)
-                .is_some()
-        {
-            out.push(Entry::Leaf {
-                path: String::new(),
-                type_id,
-            });
-        } else if let Some(variants) = enums::variants(value) {
-            out.push(Entry::Variant {
-                path: String::new(),
-                name: String::new(),
-                variants,
-                pick: enums::constructible(value, &registry),
-                children: collect_entries(&registry, value, ""),
-            });
-        } else {
+        if !push_common(&registry, value, "", "", &mut out) {
             out = collect_entries(&registry, value, "");
         }
     });
@@ -311,9 +377,11 @@ fn build_entries(
 ) {
     for entry in entries {
         match entry {
-            Entry::Leaf { path, type_id } => {
-                build_leaf(ui, root, path, type_id, depth)
-            }
+            Entry::Leaf {
+                path,
+                name,
+                type_id,
+            } => build_leaf(ui, root, path, name, type_id, depth),
             Entry::Group { path, name, .. } => {
                 build_group(ui, root, path, name, depth)
             }
@@ -322,9 +390,18 @@ fn build_entries(
                 name,
                 variants,
                 pick,
+                single_tuple_field,
                 children,
             } => build_variant(
-                ui, root, path, name, variants, pick, children, depth,
+                ui,
+                root,
+                path,
+                name,
+                variants,
+                pick,
+                single_tuple_field,
+                children,
+                depth,
             ),
         }
     }
@@ -334,6 +411,7 @@ fn build_leaf(
     ui: &mut BevyUi,
     root: &Field,
     path: String,
+    name: String,
     type_id: TypeId,
     depth: u32,
 ) {
@@ -346,7 +424,7 @@ fn build_leaf(
     // Dimmer than the value it labels: the field name is a caption,
     // not the content.
     let muted = ui.theme.color.text_dim;
-    let label = leaf_name(&path).to_string();
+    let label = name;
     let field = root.child(&path);
     ui.compose(FieldRow {
         label,
@@ -367,6 +445,7 @@ fn build_variant(
     name: String,
     variants: Vec<String>,
     pick: bool,
+    single_tuple_field: bool,
     children: Vec<Entry>,
     depth: u32,
 ) {
@@ -392,8 +471,9 @@ fn build_variant(
         return;
     }
 
-    // The root has no name to head a group with, see `entries`.
-    if path.is_empty() {
+    // Nothing named this - the walk's own root, or a single-field
+    // tuple struct spliced into it; see `entries` and `push_common`.
+    if name.is_empty() {
         ui.compose(enums::VariantPicker {
             source: &field,
             variants,
@@ -403,14 +483,40 @@ fn build_variant(
         return;
     }
 
-    ui.compose(Section {
+    // A one-field tuple variant needs no header either, just the
+    // fold's usual indent under the picker row.
+    if single_tuple_field {
+        let label = name;
+        ui.compose(FieldRow {
+            label,
+            color: muted,
+            bold: false,
+            depth,
+            field: Some(field.clone()),
+            value: move |ui: &mut BevyUi| {
+                ui.compose(enums::VariantPicker {
+                    source: &field,
+                    variants,
+                    pick,
+                });
+            },
+        });
+
+        let root = root.clone();
+        fold::indent(ui, None, move |ui| {
+            build_entries(ui, &root, children.clone(), depth + 1)
+        });
+        return;
+    }
+
+    // Re-walked from `field` on every open rather than carried in the
+    // closure, so a section reopened many times never clones stale
+    // data forward. `entries` never wraps `field` itself, so its one
+    // entry is always this same variant.
+    ui.compose(Section::new(
         name,
-        section: (root.entity(), root.component(), path),
-        // Re-walked from `field` on every open rather than carried
-        // in the closure, so a section reopened many times never
-        // clones stale data forward. `entries` never wraps `field`
-        // itself, so its one entry is always this same variant.
-        body: move |ui: &mut BevyUi| {
+        (root.entity(), root.component(), path),
+        move |ui: &mut BevyUi| {
             let Some(Entry::Variant {
                 variants,
                 pick,
@@ -427,7 +533,7 @@ fn build_variant(
             });
             build_entries(ui, &field, children, depth + 1);
         },
-    });
+    ));
 }
 
 fn build_group(
@@ -439,30 +545,60 @@ fn build_group(
 ) {
     let group_field = root.child(&path);
 
-    ui.compose(Section {
+    // Re-walked from `group_field` on every open rather than carried
+    // in the closure, so a section reopened many times never clones
+    // stale data forward.
+    ui.compose(Section::new(
         name,
-        section: (root.entity(), root.component(), path),
-        // Re-walked from `group_field` on every open rather than
-        // carried in the closure, so a section reopened many times
-        // never clones stale data forward.
-        body: move |ui: &mut BevyUi| {
+        (root.entity(), root.component(), path),
+        move |ui: &mut BevyUi| {
             let walked = entries(ui.world, &group_field);
             build_entries(ui, &group_field, walked, depth + 1);
         },
-    });
+    ));
 }
 
 /// A collapsible section: a header that folds it, and a body indented
 /// under a guide rail.
-pub struct Section<F> {
+pub struct Section<F, H> {
     pub name: String,
     pub body: F,
     /// This section's place in `ClosedSections`, as entity,
     /// component, path.
     pub section: (Entity, TypeId, String),
+    /// Run on the header once it's built, after folding is wired to
+    /// it - for whatever else the header should carry, like a delete
+    /// button. A no-op when left out.
+    pub on_header: H,
 }
 
-impl<F: BuildFn<FynixHost>> Composer<FynixHost> for Section<F> {
+/// [`Section::new`]'s `on_header`: nothing extra on it.
+fn no_header(_: ElementMut<'_, '_, FynixHost, Button>) {}
+
+impl<F> Section<F, fn(ElementMut<'_, '_, FynixHost, Button>)> {
+    /// A section with nothing extra on its header.
+    pub fn new(
+        name: String,
+        section: (Entity, TypeId, String),
+        body: F,
+    ) -> Self {
+        Self {
+            name,
+            body,
+            section,
+            on_header: no_header,
+        }
+    }
+}
+
+impl<
+    F: BuildFn<FynixHost>,
+    H: for<'u, 'a> FnOnce(ElementMut<'u, 'a, FynixHost, Button>)
+        + Send
+        + Sync
+        + 'static,
+> Composer<FynixHost> for Section<F, H>
+{
     type Element = Frame;
 
     fn compose(
@@ -473,6 +609,7 @@ impl<F: BuildFn<FynixHost>> Composer<FynixHost> for Section<F> {
             name,
             body,
             section,
+            on_header,
         } = self;
         let (entity, component, path) = section;
         let open = !ui
@@ -508,7 +645,7 @@ impl<F: BuildFn<FynixHost>> Composer<FynixHost> for Section<F> {
             // Nothing else to mean: the whole header folds it.
             folds_on: FoldsOn::Header,
             enabled: true,
-            on_header: |_: ElementMut<'_, '_, FynixHost, Button>| {},
+            on_header,
             body,
             open,
             on_toggle: move |world: &mut World, open: bool| {

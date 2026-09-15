@@ -7,22 +7,26 @@
 //! window edge, dismissal on focus loss, Escape, and arrow-key
 //! navigation.
 
-use crate::reactive::FynixBuild;
+use crate::reactive::{BevyUi, FynixBuild, FynixHost};
+use crate::theme::EditorTheme;
 use bevy::feathers::controls::{FeathersMenu, FeathersMenuPopup};
 use bevy::feathers::cursor::EntityCursor;
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::prelude::*;
 use bevy::scene::EntityWorldMutSceneExt;
 use bevy::ui_widgets::{
-    ActivateOnPress, Button as ButtonBehavior, MenuButton, MenuItem,
+    Activate, ActivateOnPress, Button as ButtonBehavior, MenuButton,
+    MenuItem,
 };
 use bevy::window::SystemCursorIcon;
 use bevy_fynix::WorldEntityMut as _;
 use bevy_fynix::tag::{Hovered, Pressed, TagExt as _};
 use fynix::element::element;
+use fynix::prelude::elem;
+use fynix::style::Style;
 
 use super::patch::*;
-use super::{Icon, Label};
+use super::{Frame, Icon, Label};
 
 /// What a [`Dropdown`] and its [`DropdownList`] hang from.
 ///
@@ -150,9 +154,7 @@ pub struct DropdownList {
     /// Matched to the control's, so the two line up.
     #[elem(default = px(160), patch = PatchListWidth)]
     pub width: Val,
-    /// What the popup scene rounds its own corners to, so leaving this
-    /// alone keeps the look feathers gave it.
-    #[elem(default = px(4), patch = PatchRadius)]
+    #[elem(default = px(theme.space.menu_radius), patch = PatchRadius)]
     pub radius: Val,
 }
 
@@ -165,15 +167,25 @@ impl DropdownList {
             error!("failed to build a dropdown list: {err}");
             return;
         }
+        // Feathers seeded its own theme's colour and padding; every
+        // menu shares one look, so this repaints it with ours.
+        let panel = build.theme.color.panel;
+        let padding = build.theme.space.menu_padding;
+        let hairline = build.theme.color.hairline;
+        let border = build.theme.space.hairline;
+        build.entity_mut().insert((
+            BackgroundColor(panel),
+            BorderColor::all(hairline),
+        ));
         // The rest of the node belongs to the popup scene, and writing
-        // it whole would undo the placement. Its vertical padding is
-        // zeroed so the rows sit flush.
+        // it whole would undo the placement.
         if let Some(mut layout) = build.entity_mut().get_mut::<Node>()
         {
             layout.min_width = self.width;
             layout.border_radius = BorderRadius::all(self.radius);
-            layout.padding.top = px(0);
-            layout.padding.bottom = px(0);
+            layout.padding = UiRect::all(px(padding));
+            layout.border = UiRect::all(px(border));
+            layout.overflow = Overflow::clip();
         }
     }
 }
@@ -190,8 +202,14 @@ field_patch!(PatchListWidth, Val, |patch, v| {
 /// focus is what keeps the list open at all.
 #[element(build = Self::build)]
 pub struct DropdownItem {
+    /// Before the label, when set.
+    #[elem(child)]
+    pub icon: Option<Icon>,
     #[elem(child)]
     pub label: Label,
+    /// Between the icon and the label, when there is one.
+    #[elem(default = px(theme.space.sm), patch = PatchColumnGap)]
+    pub column_gap: Val,
     #[elem(default = px(20), patch = PatchHeight)]
     pub height: Val,
     #[elem(default = ::NONE, patch = PatchBackground, anim(
@@ -207,7 +225,7 @@ pub struct DropdownItem {
     /// While held. Falls back to `hover_fill` when unset.
     #[elem(ignore)]
     pub press_fill: Option<Color>,
-    #[elem(default = px(3), patch = PatchRadius)]
+    #[elem(default = px(theme.space.menu_item_radius), patch = PatchRadius)]
     pub radius: Val,
 }
 
@@ -248,5 +266,72 @@ impl DropdownItem {
             Some(color) => color,
             None => &self.hover_fill,
         }
+    }
+}
+
+/// One row of any menu: a [`DropdownItem`] that runs `on_click` and
+/// closes whatever list it sits in when picked. `icon` is an asset
+/// path and its tint, shown before the label.
+pub fn menu_item(
+    ui: &mut BevyUi,
+    icon: Option<(&str, Color)>,
+    label: impl Into<String>,
+    on_click: impl Fn(&mut World) + Send + Sync + Clone + 'static,
+) {
+    let text = ui.theme.color.text;
+    let label = label.into();
+    let mut item = match icon {
+        Some((image, color)) => ui.elem(elem!(
+            DropdownItem,
+            icon = elem!(
+                Icon,
+                image = image.to_string(),
+                color = color,
+                size = px(12)
+            ),
+            label = elem!(
+                Label,
+                text = label,
+                wrap = false,
+                color = text
+            )
+        )),
+        None => ui.elem(elem!(
+            DropdownItem,
+            label = elem!(
+                Label,
+                text = label,
+                wrap = false,
+                color = text
+            )
+        )),
+    };
+    item.pointer_tags().observe(
+        move |_: On<Activate>, mut commands: Commands| {
+            let on_click = on_click.clone();
+            commands.queue(move |world: &mut World| on_click(world));
+        },
+    );
+}
+
+/// A menu's own floating surface. Pair with an explicit `inset` to
+/// place it.
+pub struct MenuSurface;
+
+impl Style for MenuSurface {
+    type Host = FynixHost;
+    type Element = Frame;
+
+    fn apply(&self, frame: &mut Frame, theme: &EditorTheme) {
+        frame.position = PositionType::Absolute;
+        frame.direction = FlexDirection::Column;
+        frame.min_width = px(120);
+        frame.padding = UiRect::all(px(theme.space.menu_padding));
+        frame.background = theme.color.panel;
+        frame.radius = px(theme.space.menu_radius);
+        frame.border = px(theme.space.hairline);
+        frame.border_color = theme.color.hairline;
+        frame.overflow = Overflow::clip();
+        frame.z = Some(theme.layer.context_menu);
     }
 }

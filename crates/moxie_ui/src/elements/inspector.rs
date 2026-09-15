@@ -9,7 +9,6 @@
 //! Each is empty when what it points at is not there. A missing
 //! component and an inspector pointed nowhere read the same.
 
-use bevy_fynix::tag::TagExt as _;
 use std::any::TypeId;
 use std::borrow::Cow;
 
@@ -17,7 +16,7 @@ use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
 use bevy::reflect::TypeRegistration;
 use bevy::reflect::std_traits::ReflectDefault;
-use bevy::ui_widgets::{Activate, ActivateOnPress, MenuButton};
+use bevy::ui_widgets::{ActivateOnPress, MenuButton};
 
 use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
@@ -25,16 +24,17 @@ use fynix::prelude::*;
 use fynix::records::{BuildFn, ChangedFn};
 
 use super::{
-    Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Icon,
-    Label, TintButton,
+    Button, Dropdown, DropdownItem, DropdownList, DropdownMenu,
+    Frame, Icon, Label, TintButton, menu_item,
 };
+use crate::context_menu::context_menu;
 use crate::icons;
 use crate::inspector::{
-    Field, FieldRow, InspectorFields, ReflectInspectable, Section,
-    inspect_value, single_value,
+    Field, FieldRow, InspectorFields, ReflectEssential,
+    ReflectInspectGroup, ReflectInspectable, Section, inspect_value,
+    single_value,
 };
 use crate::reactive::{BevyUi, FynixHost, value_changed};
-use crate::theme::EditorTheme;
 
 /// Inspector for a [`Component`].
 pub struct ComponentInspector {
@@ -132,7 +132,19 @@ impl Composer<FynixHost> for EntityInspector {
         let entity = self.entity;
 
         column(ui, px(8), components_changed(entity), move |ui| {
-            for (component, name) in inspectable(ui.world, entity) {
+            // `None` sorts first, so an ungrouped run never gets
+            // mistaken for one under its own (absent) heading.
+            let mut shown_group: Option<Option<&'static str>> = None;
+            for (component, name, group) in
+                inspectable(ui.world, entity)
+            {
+                if shown_group != Some(group) {
+                    shown_group = Some(group);
+                    if let Some(group) = group {
+                        group_heading(ui, group);
+                    }
+                }
+
                 let field = Field::new(entity, component);
 
                 if let Some(path) = single_value(ui.world, &field) {
@@ -141,10 +153,11 @@ impl Composer<FynixHost> for EntityInspector {
                     } else {
                         field.child(&path)
                     };
-                    single(ui, &name, leaf);
+                    single(ui, entity, component, &name, leaf);
                     continue;
                 }
 
+                let deletable = !essential(ui.world, component);
                 ui.compose(Section {
                     name: name.to_string(),
                     body: move |ui: &mut BevyUi| {
@@ -158,6 +171,29 @@ impl Composer<FynixHost> for EntityInspector {
                     // `entries` in `tree.rs`, which never wraps the
                     // root in a group of its own either.
                     section: (entity, component, String::new()),
+                    on_header: move |mut header: ElementMut<
+                        '_,
+                        '_,
+                        FynixHost,
+                        Button,
+                    >| {
+                        if !deletable {
+                            return;
+                        }
+                        context_menu(&mut header, move |menu| {
+                            let critical =
+                                menu.theme().color.critical;
+                            menu.item(
+                                Some((icons::TRASH, critical)),
+                                "Delete",
+                                move |world| {
+                                    remove_component(
+                                        world, entity, component,
+                                    );
+                                },
+                            );
+                        });
+                    },
                 });
             }
 
@@ -184,7 +220,7 @@ impl Composer<FynixHost> for AddComponent {
         let width = Dropdown::width_for(
             &options
                 .iter()
-                .map(|(_, name)| name.to_string())
+                .map(|(_, name, _)| name.to_string())
                 .collect::<Vec<_>>(),
             12.0,
         );
@@ -219,9 +255,21 @@ impl Composer<FynixHost> for AddComponent {
                             return;
                         }
 
-                        for (component, name) in options {
+                        // `None` sorts first, so an ungrouped run
+                        // never gets mistaken for one under its own
+                        // (absent) heading.
+                        let mut shown_group: Option<
+                            Option<&'static str>,
+                        > = None;
+                        for (component, name, group) in options {
+                            if shown_group != Some(group) {
+                                shown_group = Some(group);
+                                if let Some(group) = group {
+                                    group_heading(ui, group);
+                                }
+                            }
                             add_component_item(
-                                ui, theme, entity, component, &name,
+                                ui, entity, component, &name,
                             );
                         }
                     },
@@ -231,29 +279,45 @@ impl Composer<FynixHost> for AddComponent {
     }
 }
 
+/// A group's own name, heading the run of [`add_component_item`]s
+/// under it.
+fn group_heading(ui: &mut BevyUi, name: &str) {
+    let theme = ui.theme;
+    let (fill, radius, small, text_dim) = (
+        theme.color.fill,
+        theme.space.menu_item_radius,
+        theme.text.small,
+        theme.color.text_dim,
+    );
+    ui.elem(elem!(
+        Frame,
+        width = percent(100),
+        padding = UiRect::new(px(8), px(8), px(4), px(4)),
+        background = fill,
+        radius = px(radius)
+    ))
+    .with(move |ui| {
+        ui.elem(elem!(
+            Label,
+            text = name.to_string(),
+            size = small,
+            bold = true,
+            wrap = false,
+            color = text_dim
+        ));
+    });
+}
+
 /// One entry in [`AddComponent`]'s list. Picking it inserts the
 /// component and closes the list.
 fn add_component_item(
     ui: &mut BevyUi,
-    theme: &EditorTheme,
     entity: Entity,
     component: TypeId,
     name: &str,
 ) {
-    ui.elem(elem!(
-        DropdownItem,
-        label = elem!(
-            Label,
-            text = name.to_string(),
-            wrap = false,
-            color = theme.color.text
-        )
-    ))
-    .pointer_tags()
-    .observe(move |_: On<Activate>, mut commands: Commands| {
-        commands.queue(move |world: &mut World| {
-            add_component(world, entity, component);
-        });
+    menu_item(ui, None, name, move |world| {
+        add_component(world, entity, component);
     });
 }
 
@@ -262,17 +326,24 @@ fn add_component_item(
 /// `entity` does not already carry, with a registered
 /// [`ReflectDefault`] to construct one with.
 ///
-/// Sorted by name, for the same reason [`inspectable`] is.
+/// Sorted by [`with_inspect_group`](
+/// crate::inspector::InspectAppExt::with_inspect_group)'s group
+/// (ungrouped first), then by name within it, for the same reason
+/// [`inspectable`] sorts by name.
 fn addable(
     world: &World,
     entity: Entity,
-) -> Vec<(TypeId, Cow<'static, str>)> {
+) -> Vec<(TypeId, Cow<'static, str>, Option<&'static str>)> {
     let Ok(entity_ref) = world.get_entity(entity) else {
         return Vec::new();
     };
 
     let registry = world.resource::<AppTypeRegistry>().read();
-    let mut out: Vec<(TypeId, Cow<'static, str>)> = registry
+    let mut out: Vec<(
+        TypeId,
+        Cow<'static, str>,
+        Option<&'static str>,
+    )> = registry
         .iter()
         .filter(|registration| {
             registration.data::<ReflectInspectable>().is_some()
@@ -284,11 +355,20 @@ fn addable(
             if reflect_component.contains(entity_ref) {
                 return None;
             }
-            Some((registration.type_id(), display_name(registration)))
+            let group = registration
+                .data::<ReflectInspectGroup>()
+                .map(|group| group.0);
+            Some((
+                registration.type_id(),
+                display_name(registration),
+                group,
+            ))
         })
         .collect();
 
-    out.sort_by_key(|(_, name)| name.clone());
+    out.sort_by(|(_, a_name, a_group), (_, b_name, b_group)| {
+        a_group.cmp(b_group).then_with(|| a_name.cmp(b_name))
+    });
     out
 }
 
@@ -327,20 +407,78 @@ fn add_component(
     );
 }
 
+/// Removes `component` from `entity`. Does nothing if the entity
+/// despawned, never carried it, or its type isn't registered.
+fn remove_component(
+    world: &mut World,
+    entity: Entity,
+    component: TypeId,
+) {
+    if essential(world, component) {
+        return;
+    }
+
+    let registry = world.resource::<AppTypeRegistry>().clone();
+    let registry = registry.read();
+
+    let Some(reflect_component) =
+        registry.get(component).and_then(|registration| {
+            registration.data::<ReflectComponent>()
+        })
+    else {
+        return;
+    };
+    let Ok(mut entity) = world.get_entity_mut(entity) else {
+        return;
+    };
+    reflect_component.remove(&mut entity);
+}
+
+/// Whether `component` was opted in via
+/// [`register_essential`](crate::inspector::InspectAppExt::register_essential).
+fn essential(world: &World, component: TypeId) -> bool {
+    let registry = world.resource::<AppTypeRegistry>().read();
+    registry.get(component).is_some_and(|registration| {
+        registration.data::<ReflectEssential>().is_some()
+    })
+}
+
 /// A whole component on one row, named where a group of fields would
 /// have been headed.
-fn single(ui: &mut BevyUi, name: &str, field: Field) {
+fn single(
+    ui: &mut BevyUi,
+    entity: Entity,
+    component: TypeId,
+    name: &str,
+    field: Field,
+) {
     let name = name.to_string();
     let primary = ui.theme.color.text;
+    let deletable = !essential(ui.world, component);
 
-    ui.compose(FieldRow {
-        label: name,
-        color: primary,
-        bold: true,
-        depth: 0,
-        field: Some(field.clone()),
-        value: move |ui: &mut BevyUi| inspect_value(ui, &field),
+    let mut row = ui.elem(elem!(Frame, width = percent(100)));
+    row.with(move |ui| {
+        ui.compose(FieldRow {
+            label: name,
+            color: primary,
+            bold: true,
+            depth: 0,
+            field: Some(field.clone()),
+            value: move |ui: &mut BevyUi| inspect_value(ui, &field),
+        });
     });
+    if deletable {
+        context_menu(&mut row, move |menu| {
+            let critical = menu.theme().color.critical;
+            menu.item(
+                Some((icons::TRASH, critical)),
+                "Delete",
+                move |world| {
+                    remove_component(world, entity, component);
+                },
+            );
+        });
+    }
 }
 
 /// The entity bevy is currently keeping `resource` on.
@@ -376,15 +514,18 @@ fn components_changed(
 }
 
 /// Every component on `entity` the inspector can reach and shows, by
-/// type and the name its section is headed with.
+/// type, the name its section is headed with, and its
+/// [`with_inspect_group`](
+/// crate::inspector::InspectAppExt::with_inspect_group) group.
 ///
-/// Sorted by that name: an archetype lists what it holds in whatever
-/// order it happens to, and a panel whose sections reshuffle when a
-/// component is added is no use to read.
+/// Sorted by group (ungrouped first), then by name within it: an
+/// archetype lists what it holds in whatever order it happens to, and
+/// a panel whose sections reshuffle when a component is added is no
+/// use to read.
 fn inspectable(
     world: &World,
     entity: Entity,
-) -> Vec<(TypeId, Cow<'static, str>)> {
+) -> Vec<(TypeId, Cow<'static, str>, Option<&'static str>)> {
     let Ok(components) = world.inspect_entity(entity) else {
         return Vec::new();
     };
@@ -393,7 +534,11 @@ fn inspectable(
         components.filter_map(|info| info.type_id()).collect();
 
     let registry = world.resource::<AppTypeRegistry>().read();
-    let mut out: Vec<(TypeId, Cow<'static, str>)> = ids
+    let mut out: Vec<(
+        TypeId,
+        Cow<'static, str>,
+        Option<&'static str>,
+    )> = ids
         .into_iter()
         .filter_map(|id| {
             let registration = registry.get(id)?;
@@ -402,11 +547,16 @@ fn inspectable(
             registration.data::<ReflectComponent>()?;
             // Opt-in - see InspectAppExt::register_inspectable.
             registration.data::<ReflectInspectable>()?;
-            Some((id, display_name(registration)))
+            let group = registration
+                .data::<ReflectInspectGroup>()
+                .map(|group| group.0);
+            Some((id, display_name(registration), group))
         })
         .collect();
 
-    out.sort_by_key(|(_, name)| name.clone());
+    out.sort_by(|(_, a_name, a_group), (_, b_name, b_group)| {
+        a_group.cmp(b_group).then_with(|| a_name.cmp(b_name))
+    });
     out
 }
 

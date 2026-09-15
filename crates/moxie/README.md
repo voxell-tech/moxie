@@ -4,6 +4,10 @@
 [![CI](https://github.com/voxell-tech/moxie/workflows/CI/badge.svg)](https://github.com/voxell-tech/moxie/actions)
 [![Discord](https://img.shields.io/discord/442334985471655946.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/Mhnyp6VYEQ)
 
+![Moxie](/.github/assets/moxie.png)
+
+## Introduction
+
 **Moxie** is a `bevy_ui` based editor for the
 [MotionGfx](https://github.com/voxell-tech/motiongfx) framework:
 timeline, hierarchy, inspector, dockable panels, and a scene document
@@ -13,7 +17,7 @@ It renders a docked timeline panel for the first `Timeline` it finds:
 scrub by pressing or dragging the track, toggle play/pause with the
 button or spacebar, and scroll the track with a resizable name column.
 
-## Workspace
+### Workspace
 
 | Crate | Description |
 | ----- | ----------- |
@@ -21,22 +25,30 @@ button or spacebar, and scroll the track with a resizable name column.
 | [`moxie_ui`](https://github.com/voxell-tech/moxie/tree/main/crates/moxie_ui) | Reusable `bevy_ui` widgets, docking, and theming, built on `fynix`. |
 | [`moxie_asset`](https://github.com/voxell-tech/moxie/tree/main/crates/moxie_asset) | Asset-kind registry, absolute asset source, and the `.mat` loader. |
 
-## Building
+## Running
 
-Moxie depends on `bevy_motiongfx` / `motiongfx_scene` from the `moxie`
-branch of `voxell-tech/motiongfx`, which is not yet on `main`. Until
-that lands, `motiongfx_interp` is pinned through a `[patch]` to a local
-checkout, so `motiongfx` must be cloned beside this repo on the `moxie`
-branch:
+`bevy_motiongfx` / `motiongfx_scene` come from the `vendor/motiongfx`
+git submodule (`voxell-tech/motiongfx`, on branch `moxie`), not yet
+published in that form. Clone with submodules, or fetch them into an
+existing checkout:
 
-```text
-~/src/moxie      <- this repo
-~/src/motiongfx  <- voxell-tech/motiongfx, on branch `moxie`
+```sh
+git clone --recurse-submodules https://github.com/voxell-tech/moxie.git
+# or, in an existing checkout:
+git submodule update --init --recursive
 ```
 
 ```sh
 cargo run -p moxie
 ```
+
+## Contributing
+
+Read [`docs/comment_convention.md`](/docs/comment_convention.md) and
+[`docs/code_convention.md`](/docs/code_convention.md) before opening a
+PR. [`docs/backlog.md`](/docs/backlog.md) lists open items worth
+picking up; the checks a PR needs to pass are in
+[`.github/workflows/rust.yml`](/.github/workflows/rust.yml).
 
 ## Join the community!
 

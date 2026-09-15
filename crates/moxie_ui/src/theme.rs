@@ -125,6 +125,20 @@ pub struct Spacing {
     pub fold_toggle: f32,
     /// How far a fold's rail sets its body in from the header.
     pub fold_indent: f32,
+    /// A menu row's own corner ([`DropdownItem`](
+    /// crate::elements::DropdownItem), [`menu_item`](
+    /// crate::elements::menu_item)), fixed rather than set per call
+    /// site so every menu rounds the same.
+    pub menu_item_radius: f32,
+    /// A menu's own padding around its rows.
+    pub menu_padding: f32,
+    /// A menu's own corner - concentric with `menu_item_radius`
+    /// across `menu_padding`, not a number of its own; see
+    /// `toolbars.md` in the Apple HIG.
+    pub menu_radius: f32,
+    /// How close a menu is allowed to sit to the window's edge before
+    /// it flips to the other side.
+    pub menu_margin: f32,
 }
 
 /// `GlobalZIndex` levels, so a drag's chrome stacks the same way
@@ -136,6 +150,9 @@ pub struct Layers {
     /// A dragged ghost or the box standing in for one, above every
     /// hint.
     pub drag: i32,
+    /// A right-click menu, above everything a right-click could land
+    /// on.
+    pub context_menu: i32,
 }
 
 /// Font sizes, three steps.
@@ -192,6 +209,12 @@ impl Default for EditorTheme {
                 edge: 2.0,
                 fold_toggle: 14.0,
                 fold_indent: 9.0,
+                menu_item_radius: 6.0,
+                menu_padding: 4.0,
+                // Concentric with `menu_item_radius` across
+                // `menu_padding`: 6.0 + 4.0.
+                menu_radius: 10.0,
+                menu_margin: 8.0,
             },
             text: TextScale {
                 small: 10.0,
@@ -205,6 +228,7 @@ impl Default for EditorTheme {
             layer: Layers {
                 drop_hint: 150,
                 drag: 200,
+                context_menu: 250,
             },
             palette,
         }
