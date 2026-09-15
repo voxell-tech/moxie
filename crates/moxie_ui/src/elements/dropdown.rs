@@ -210,7 +210,7 @@ pub struct DropdownItem {
     /// While held. Falls back to `hover_fill` when unset.
     #[elem(ignore)]
     pub press_fill: Option<Color>,
-    #[elem(default = px(3), patch = PatchRadius)]
+    #[elem(default = px(theme.space.menu_item_radius), patch = PatchRadius)]
     pub radius: Val,
 }
 

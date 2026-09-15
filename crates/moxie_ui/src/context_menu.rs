@@ -125,22 +125,22 @@ fn spawn_context_menu(
             );
 
         let background = ui.theme.color.panel;
+        let padding = ui.theme.space.menu_padding;
+        let radius = ui.theme.space.menu_radius;
         let build = build.clone();
-        // Concentric with `DropdownItem`'s own fixed radius across
-        // the padding between them, not an unrelated number of its
-        // own - see HIG's `toolbars.md`: a custom component's corner
-        // radius should stay concentric with what it sits inside.
-        const ITEM_RADIUS: f32 = 3.0;
-        const PADDING: f32 = 4.0;
         ui.elem(elem!(
             Frame,
             position = PositionType::Absolute,
             inset = UiRect::new(px(at.x), auto(), px(at.y), auto()),
             min_width = px(120),
             direction = FlexDirection::Column,
-            padding = UiRect::all(px(PADDING)),
+            padding = UiRect::all(px(padding)),
             background = background,
-            radius = px(ITEM_RADIUS + PADDING),
+            // Concentric with `DropdownItem`'s own radius across
+            // `padding` - see HIG's `toolbars.md`: a custom
+            // component's corner should stay concentric with what it
+            // sits inside.
+            radius = px(radius),
             overflow = Overflow::clip(),
             z = Some(layer)
         ))
