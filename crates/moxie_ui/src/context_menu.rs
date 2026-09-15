@@ -122,7 +122,7 @@ fn spawn_context_menu(
         let build = build.clone();
         ui.elem(elem!(
             !MenuSurface,
-            inset = UiRect::new(px(at.x), auto(), px(at.y), auto())
+            inset = UiRect::new(px(at.x), auto(), px(at.y), auto()),
         ))
         .with(move |ui| {
             let mut builder = ContextMenuBuilder { ui };

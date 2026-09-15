@@ -154,9 +154,7 @@ pub struct DropdownList {
     /// Matched to the control's, so the two line up.
     #[elem(default = px(160), patch = PatchListWidth)]
     pub width: Val,
-    /// What the popup scene rounds its own corners to, so leaving this
-    /// alone keeps the look feathers gave it.
-    #[elem(default = px(4), patch = PatchRadius)]
+    #[elem(default = px(theme.space.menu_radius), patch = PatchRadius)]
     pub radius: Val,
 }
 
@@ -169,6 +167,10 @@ impl DropdownList {
             error!("failed to build a dropdown list: {err}");
             return;
         }
+        // Feathers seeded its own theme's colour; every menu shares
+        // one look, so this repaints it with ours.
+        let panel = build.theme.color.panel;
+        build.entity_mut().insert(BackgroundColor(panel));
         // The rest of the node belongs to the popup scene, and writing
         // it whole would undo the placement. Its vertical padding is
         // zeroed so the rows sit flush.
