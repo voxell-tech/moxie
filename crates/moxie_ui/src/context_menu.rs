@@ -78,10 +78,10 @@ pub fn context_menu(
 
 /// Closes whatever [`context_menu`] is currently open, if any.
 fn despawn_context_menu(world: &mut World) {
-    let open: Vec<Entity> = world
+    let open = world
         .query_filtered::<Entity, With<ContextMenuRoot>>()
         .iter(world)
-        .collect();
+        .collect::<Vec<Entity>>();
     for entity in open {
         world.despawn(entity);
     }

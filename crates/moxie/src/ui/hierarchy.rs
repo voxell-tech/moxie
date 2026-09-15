@@ -166,7 +166,7 @@ fn insert_essential(world: &mut World, entity: Entity) {
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
 
-    let essentials: Vec<_> = registry
+    let essentials = registry
         .iter()
         .filter_map(|registration| {
             Some((
@@ -174,7 +174,7 @@ fn insert_essential(world: &mut World, entity: Entity) {
                 registration.data::<ReflectEssential>()?.spawn(),
             ))
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     let Ok(mut entity) = world.get_entity_mut(entity) else {
         return;
