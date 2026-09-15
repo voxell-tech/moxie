@@ -25,6 +25,8 @@ use std::any::TypeId;
 use bevy::light::CascadeShadowConfig;
 use bevy::prelude::*;
 use bevy::reflect::{FromType, GetTypeRegistration, PartialReflect};
+use bevy::sprite::Anchor;
+use bevy::text::{LetterSpacing, LineHeight};
 use fynix::composer::Composer;
 use fynix::prelude::*;
 use moxie_asset::AssetKindAppExt as _;
@@ -74,13 +76,19 @@ impl Plugin for InspectPlugin {
             .register_inspect::<Name>()
             .register_inspect::<Handle<StandardMaterial>>()
             .register_inspect::<Handle<Mesh>>()
-            .register_inspect::<Handle<ColorMaterial>>();
+            .register_inspect::<Handle<ColorMaterial>>()
+            .register_inspect::<Handle<Font>>();
 
         app.register_inspectable::<Name>()
             .register_inspectable::<Visibility>()
             .register_inspectable::<Transform>()
             .register_inspectable::<Text2d>()
+            .register_inspectable::<TextFont>()
             .register_inspectable::<TextColor>()
+            .register_inspectable::<TextLayout>()
+            .register_inspectable::<LineHeight>()
+            .register_inspectable::<LetterSpacing>()
+            .register_inspectable::<Anchor>()
             .register_inspectable::<Mesh2d>()
             .register_inspectable_as::<MeshMaterial2d<ColorMaterial>>(
                 "Color Material",
