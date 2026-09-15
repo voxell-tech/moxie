@@ -44,11 +44,11 @@ cargo run -p moxie
 
 ## Contributing
 
-Read [`docs/comment_convention.md`](docs/comment_convention.md) and
-[`docs/code_convention.md`](docs/code_convention.md) before opening a
-PR. [`docs/backlog.md`](docs/backlog.md) lists open items worth
+Read [`docs/comment_convention.md`](/docs/comment_convention.md) and
+[`docs/code_convention.md`](/docs/code_convention.md) before opening a
+PR. [`docs/backlog.md`](/docs/backlog.md) lists open items worth
 picking up; the checks a PR needs to pass are in
-[`.github/workflows/rust.yml`](.github/workflows/rust.yml).
+[`.github/workflows/rust.yml`](/.github/workflows/rust.yml).
 
 ## Join the community!
 
