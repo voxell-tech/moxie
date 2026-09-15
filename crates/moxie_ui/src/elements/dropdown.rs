@@ -7,19 +7,22 @@
 //! window edge, dismissal on focus loss, Escape, and arrow-key
 //! navigation.
 
-use crate::reactive::FynixBuild;
+use crate::reactive::{BevyUi, FynixBuild};
+use crate::theme::EditorTheme;
 use bevy::feathers::controls::{FeathersMenu, FeathersMenuPopup};
 use bevy::feathers::cursor::EntityCursor;
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::prelude::*;
 use bevy::scene::EntityWorldMutSceneExt;
 use bevy::ui_widgets::{
-    ActivateOnPress, Button as ButtonBehavior, MenuButton, MenuItem,
+    Activate, ActivateOnPress, Button as ButtonBehavior, MenuButton,
+    MenuItem,
 };
 use bevy::window::SystemCursorIcon;
 use bevy_fynix::WorldEntityMut as _;
 use bevy_fynix::tag::{Hovered, Pressed, TagExt as _};
 use fynix::element::element;
+use fynix::prelude::elem;
 
 use super::patch::*;
 use super::{Icon, Label};
@@ -249,4 +252,31 @@ impl DropdownItem {
             None => &self.hover_fill,
         }
     }
+}
+
+/// One row of any menu - a [`DropdownList`], the top bar's own File
+/// menu, a right-click [`context_menu`](crate::context_menu) - built
+/// the same way everywhere: a [`DropdownItem`] that runs `on_click`
+/// and closes whatever list it sits in when picked. Its rounding is
+/// [`DropdownItem`]'s own default, the same for every menu.
+pub fn menu_item(
+    ui: &mut BevyUi,
+    theme: &EditorTheme,
+    label: impl Into<String>,
+    on_click: impl Fn(&mut World) + Send + Sync + Clone + 'static,
+) {
+    ui.elem(elem!(
+        DropdownItem,
+        label = elem!(
+            Label,
+            text = label.into(),
+            wrap = false,
+            color = theme.color.text
+        )
+    ))
+    .pointer_tags()
+    .observe(move |_: On<Activate>, mut commands: Commands| {
+        let on_click = on_click.clone();
+        commands.queue(move |world: &mut World| on_click(world));
+    });
 }

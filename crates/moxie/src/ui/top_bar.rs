@@ -3,15 +3,14 @@
 
 use bevy::prelude::*;
 use bevy::ui_widgets::{
-    Activate, ActivateOnPress, MenuButton as MenuButtonBehavior,
+    ActivateOnPress, MenuButton as MenuButtonBehavior,
 };
 use bevy_fynix::WorldEntityMut;
-use bevy_fynix::tag::TagExt as _;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 use moxie_ui::elements::{
-    Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Label,
-    MenuButton,
+    Dropdown, DropdownList, DropdownMenu, Frame, Label, MenuButton,
+    menu_item,
 };
 use moxie_ui::reactive::{BevyUi, FynixHost};
 use moxie_ui::theme::EditorTheme;
@@ -76,16 +75,13 @@ impl Composer<FynixHost> for Menu {
             .with(move |ui| {
                 title(ui, theme, name);
 
-                ui.elem(elem!(
-                    DropdownList,
-                    width = width,
-                    radius = Val::ZERO
-                ))
-                .with(move |ui| {
-                    for (entry, run) in entries {
-                        item(ui, theme, entry, run);
-                    }
-                });
+                ui.elem(elem!(DropdownList, width = width)).with(
+                    move |ui| {
+                        for (entry, run) in entries {
+                            menu_item(ui, theme, entry, run);
+                        }
+                    },
+                );
             })
             .handle()
     }
@@ -108,29 +104,4 @@ fn title(ui: &mut BevyUi, theme: &EditorTheme, name: &str) {
     // What the menu's own observer reaches this through to open the
     // list beneath it.
     .insert((MenuButtonBehavior, ActivateOnPress));
-}
-
-/// One row of the open menu. Picking it closes the list, and runs
-/// `run` once the click's own commands have been applied.
-fn item(
-    ui: &mut BevyUi,
-    theme: &EditorTheme,
-    entry: &str,
-    run: fn(&mut World),
-) {
-    ui.elem(elem!(
-        DropdownItem,
-        radius = Val::ZERO,
-        hover_fill = theme.color.hover,
-        label = elem!(
-            Label,
-            text = entry.to_string(),
-            wrap = false,
-            color = theme.color.text
-        )
-    ))
-    .pointer_tags()
-    .observe(move |_: On<Activate>, mut commands: Commands| {
-        commands.queue(run);
-    });
 }

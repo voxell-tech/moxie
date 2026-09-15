@@ -9,7 +9,6 @@
 //! Each is empty when what it points at is not there. A missing
 //! component and an inspector pointed nowhere read the same.
 
-use bevy_fynix::tag::TagExt as _;
 use std::any::TypeId;
 use std::borrow::Cow;
 
@@ -17,7 +16,7 @@ use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
 use bevy::reflect::TypeRegistration;
 use bevy::reflect::std_traits::ReflectDefault;
-use bevy::ui_widgets::{Activate, ActivateOnPress, MenuButton};
+use bevy::ui_widgets::{ActivateOnPress, MenuButton};
 
 use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
@@ -26,7 +25,7 @@ use fynix::records::{BuildFn, ChangedFn};
 
 use super::{
     Button, Dropdown, DropdownItem, DropdownList, DropdownMenu,
-    Frame, Icon, Label, TintButton,
+    Frame, Icon, Label, TintButton, menu_item,
 };
 use crate::context_menu::context_menu;
 use crate::icons;
@@ -306,20 +305,8 @@ fn add_component_item(
     component: TypeId,
     name: &str,
 ) {
-    ui.elem(elem!(
-        DropdownItem,
-        label = elem!(
-            Label,
-            text = name.to_string(),
-            wrap = false,
-            color = theme.color.text
-        )
-    ))
-    .pointer_tags()
-    .observe(move |_: On<Activate>, mut commands: Commands| {
-        commands.queue(move |world: &mut World| {
-            add_component(world, entity, component);
-        });
+    menu_item(ui, theme, name, move |world| {
+        add_component(world, entity, component);
     });
 }
 

@@ -39,7 +39,7 @@ pub use button::{
 pub use divider::{Divider, DividerCursor};
 pub use dropdown::{
     Dropdown, DropdownCursor, DropdownItem, DropdownItemCursor,
-    DropdownList, DropdownListCursor, DropdownMenu,
+    DropdownList, DropdownListCursor, DropdownMenu, menu_item,
 };
 pub use field::{
     CheckBox, CheckBoxCursor, NumberField, NumberFieldCursor,

@@ -1,6 +1,6 @@
-//! A right-click menu: a small popup of [`DropdownItem`] rows at the
-//! cursor, dismissed by clicking anywhere else - the same row element
-//! every other menu in the app uses (`Dropdown`'s own list, the enum
+//! A right-click menu: a small popup of [`menu_item`] rows at the
+//! cursor, dismissed by clicking anywhere else - the same row every
+//! other menu in the app uses (`Dropdown`'s own list, the enum
 //! variant picker, `AddComponent`, the top bar's File menu), so a
 //! right-click menu reads like the rest rather than like a one-off.
 
@@ -8,12 +8,10 @@ use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::{PointerButton, PointerLocation};
 use bevy::prelude::*;
 use bevy::ui::UiScale;
-use bevy::ui_widgets::Activate;
 use bevy_fynix::WorldEntityMut;
-use bevy_fynix::tag::TagExt as _;
 use fynix::prelude::*;
 
-use crate::elements::{DropdownItem, Frame, Label, Overlay};
+use crate::elements::{Frame, Overlay, menu_item};
 use crate::reactive::{BevyUi, watch_root};
 use crate::theme::EditorTheme;
 
@@ -35,28 +33,11 @@ impl ContextMenuBuilder<'_, '_> {
         label: impl Into<String>,
         on_click: impl Fn(&mut World) + Send + Sync + Clone + 'static,
     ) {
-        let text = self.ui.theme.color.text;
-
-        self.ui
-            .elem(elem!(
-                DropdownItem,
-                label = elem!(
-                    Label,
-                    text = label.into(),
-                    wrap = false,
-                    color = text
-                )
-            ))
-            .pointer_tags()
-            .observe(
-                move |_: On<Activate>, mut commands: Commands| {
-                    let on_click = on_click.clone();
-                    commands.queue(despawn_context_menu);
-                    commands.queue(move |world: &mut World| {
-                        on_click(world);
-                    });
-                },
-            );
+        let theme = self.ui.theme;
+        menu_item(self.ui, theme, label, move |world| {
+            despawn_context_menu(world);
+            on_click(world);
+        });
     }
 }
 
@@ -154,6 +135,7 @@ fn spawn_context_menu(
             padding = UiRect::all(px(4)),
             background = background,
             radius = px(4),
+            overflow = Overflow::clip(),
             z = Some(layer)
         ))
         .with(move |ui| {
