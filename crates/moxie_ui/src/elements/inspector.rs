@@ -282,7 +282,8 @@ fn group_heading(ui: &mut BevyUi, theme: &EditorTheme, name: &str) {
         Frame,
         width = percent(100),
         padding = UiRect::new(px(8), px(8), px(4), px(4)),
-        background = theme.color.fill
+        background = theme.color.fill,
+        radius = px(theme.space.menu_item_radius)
     ))
     .with(move |ui| {
         ui.elem(elem!(
