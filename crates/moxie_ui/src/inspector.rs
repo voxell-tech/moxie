@@ -86,6 +86,7 @@ impl Plugin for InspectPlugin {
                 "Color Material",
             )
             .register_inspectable::<Camera3d>()
+            .register_inspectable::<Camera2d>()
             .register_inspectable::<CascadeShadowConfig>()
             .register_inspectable::<DirectionalLight>()
             .register_inspectable::<PointLight>()
@@ -93,7 +94,7 @@ impl Plugin for InspectPlugin {
             .register_inspectable::<SpotLight>()
             .register_inspectable::<Mesh3d>()
             .register_inspectable_as::<MeshMaterial3d<StandardMaterial>>(
-                "Standard Material",
+                "PBR Material",
             );
 
         app.register_asset_kind::<StandardMaterial>(&["mat"]);

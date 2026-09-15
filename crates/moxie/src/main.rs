@@ -36,12 +36,23 @@ fn main() {
 fn setup(mut commands: Commands) {
     commands.spawn((
         Camera {
+            order: 0,
             clear_color: Color::srgb(0.02, 0.02, 0.04).into(),
             ..default()
         },
         Camera3d::default(),
         Transform::from_xyz(0.0, 2.0, 14.0)
             .looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+
+    // Draws over the 3D camera.
+    commands.spawn((
+        Camera {
+            order: 1,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        Camera2d,
     ));
 
     commands.spawn((
