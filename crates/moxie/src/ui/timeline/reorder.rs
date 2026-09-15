@@ -472,6 +472,34 @@ fn settles_where_it_started(target: &Target, from: &[usize]) -> bool {
 // Committing.
 //
 
+/// Removes the node at `path`, pruning any block left empty by it and
+/// rebasing or clearing the selection the same way a drop does.
+pub(crate) fn delete(world: &mut World, path: &[usize]) {
+    let mut kept = world
+        .get_resource::<SelectedAction>()
+        .and_then(|selected| selected.0.clone())
+        .and_then(|selected| after_removal(&selected, path));
+
+    let Some(mut editor_scene) =
+        world.get_resource_mut::<EditorScene>()
+    else {
+        return;
+    };
+    if take(&mut editor_scene.edit().animation, path).is_none() {
+        return;
+    }
+    prune_empty(&mut editor_scene.edit().animation, &mut kept);
+
+    if let Some(mut selected) =
+        world.get_resource_mut::<SelectedAction>()
+    {
+        selected.0 = kept;
+    }
+    if let Some(mut tick) = world.get_resource_mut::<RebuildTick>() {
+        tick.0 = tick.0.wrapping_add(1);
+    }
+}
+
 /// Writes the drop's result back into the scene, following the
 /// selection if it named the moved node (or one inside it).
 fn commit(world: &mut World, from: &[usize], target: &Target) {

@@ -505,6 +505,29 @@ impl Composer<FynixHost> for BlockHeader {
                 }
                 });
                 reorder::body(&mut header_button, path.clone());
+                // The root block has nothing above it to delete it
+                // from.
+                if !path.is_empty() {
+                    let delete_path = path.clone();
+                    moxie_ui::context_menu::context_menu(
+                        &mut header_button,
+                        move |menu| {
+                            let critical =
+                                menu.theme().color.critical;
+                            let path = delete_path.clone();
+                            menu.item(
+                                Some((
+                                    moxie_ui::icons::TRASH,
+                                    critical,
+                                )),
+                                "Delete",
+                                move |world| {
+                                    reorder::delete(world, &path);
+                                },
+                            );
+                        },
+                    );
+                }
                 header_button.with(move |ui| {
                     ui.elem(elem!(
                     !TintButton::default(),
@@ -659,6 +682,27 @@ fn build_block_boxes(ui: &mut BevyUi) {
                         }
                     });
                 reorder::body(&mut clip, path.clone());
+                {
+                    let delete_path = path.clone();
+                    moxie_ui::context_menu::context_menu(
+                        &mut clip,
+                        move |menu| {
+                            let critical =
+                                menu.theme().color.critical;
+                            let path = delete_path.clone();
+                            menu.item(
+                                Some((
+                                    moxie_ui::icons::TRASH,
+                                    critical,
+                                )),
+                                "Delete",
+                                move |world| {
+                                    reorder::delete(world, &path);
+                                },
+                            );
+                        },
+                    );
+                }
                 edge_handle(
                     ui,
                     path.clone(),
