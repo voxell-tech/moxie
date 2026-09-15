@@ -136,6 +136,9 @@ pub struct Layers {
     /// A dragged ghost or the box standing in for one, above every
     /// hint.
     pub drag: i32,
+    /// A right-click menu, above everything a right-click could land
+    /// on.
+    pub context_menu: i32,
 }
 
 /// Font sizes, three steps.
@@ -205,6 +208,7 @@ impl Default for EditorTheme {
             layer: Layers {
                 drop_hint: 150,
                 drag: 200,
+                context_menu: 250,
             },
             palette,
         }

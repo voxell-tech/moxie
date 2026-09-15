@@ -15,18 +15,17 @@ pub(crate) use drag::Dragging;
 use bevy::ecs::query::QueryState;
 use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
-use bevy::reflect::std_traits::ReflectDefault;
 use bevy::ui_widgets::Activate;
 use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::id::EntityUid;
 use fynix::composer::Composer;
 use fynix::prelude::*;
+use moxie_ui::context_menu::context_menu;
 use moxie_ui::elements::{
     Button, ButtonCursor, Frame, FrameCursor, GhostButton, Icon,
     Label, LabelCursor, Panel, ScrollArea, TintButton,
 };
 use moxie_ui::fold::{Foldable, FoldsOn};
-use moxie_ui::hover_delete::hover_delete;
 use moxie_ui::inspector::ReflectEssential;
 use moxie_ui::reactive::{
     BevyUi, FynixHost, component_changed_on, value_changed,
@@ -169,13 +168,10 @@ fn insert_essential(world: &mut World, entity: Entity) {
 
     let essentials: Vec<_> = registry
         .iter()
-        .filter(|registration| {
-            registration.data::<ReflectEssential>().is_some()
-        })
         .filter_map(|registration| {
             Some((
                 registration.data::<ReflectComponent>()?,
-                registration.data::<ReflectDefault>()?.default(),
+                registration.data::<ReflectEssential>()?.spawn(),
             ))
         })
         .collect();
@@ -371,7 +367,6 @@ impl Composer<FynixHost> for Subtree {
                 FynixHost,
                 Button,
             >| {
-                let row = header.id();
                 drag::rows(&mut header, entity)
                     .observe(
                         move |_: On<Activate>,
@@ -398,16 +393,10 @@ impl Composer<FynixHost> for Subtree {
                         },
                     );
 
-                header.with(move |ui| {
-                    // Eats whatever room the label leaves, so the
-                    // delete button lands flush against the far end.
-                    ui.elem(elem!(Frame, flex_grow = 1.0f32));
-                    hover_delete(
-                        ui,
-                        row,
-                        moxie_ui::icons::TRASH,
-                        move |world| despawn_entity(world, entity),
-                    );
+                context_menu(&mut header, move |menu| {
+                    menu.item("Delete", move |world| {
+                        despawn_entity(world, entity);
+                    });
                 });
             },
             body: move |ui: &mut BevyUi| {

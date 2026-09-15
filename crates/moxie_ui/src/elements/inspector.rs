@@ -28,7 +28,7 @@ use super::{
     Button, Dropdown, DropdownItem, DropdownList, DropdownMenu,
     Frame, Icon, Label, TintButton,
 };
-use crate::hover_delete::hover_delete;
+use crate::context_menu::context_menu;
 use crate::icons;
 use crate::inspector::{
     Field, FieldRow, InspectorFields, ReflectEssential,
@@ -156,7 +156,7 @@ impl Composer<FynixHost> for EntityInspector {
                     } else {
                         field.child(&path)
                     };
-                    single(ui, &name, leaf);
+                    single(ui, entity, component, &name, leaf);
                     continue;
                 }
 
@@ -183,22 +183,12 @@ impl Composer<FynixHost> for EntityInspector {
                         if !deletable {
                             return;
                         }
-                        let row = header.id();
-                        header.with(move |ui| {
-                            // Eats whatever room the label leaves, so
-                            // the delete button lands flush against
-                            // the far end.
-                            ui.elem(elem!(Frame, flex_grow = 1.0f32));
-                            hover_delete(
-                                ui,
-                                row,
-                                icons::TRASH,
-                                move |world| {
-                                    remove_component(
-                                        world, entity, component,
-                                    );
-                                },
-                            );
+                        context_menu(&mut header, move |menu| {
+                            menu.item("Delete", move |world| {
+                                remove_component(
+                                    world, entity, component,
+                                );
+                            });
                         });
                     },
                 });
@@ -457,18 +447,35 @@ fn essential(world: &World, component: TypeId) -> bool {
 
 /// A whole component on one row, named where a group of fields would
 /// have been headed.
-fn single(ui: &mut BevyUi, name: &str, field: Field) {
+fn single(
+    ui: &mut BevyUi,
+    entity: Entity,
+    component: TypeId,
+    name: &str,
+    field: Field,
+) {
     let name = name.to_string();
     let primary = ui.theme.color.text;
+    let deletable = !essential(ui.world, component);
 
-    ui.compose(FieldRow {
-        label: name,
-        color: primary,
-        bold: true,
-        depth: 0,
-        field: Some(field.clone()),
-        value: move |ui: &mut BevyUi| inspect_value(ui, &field),
+    let mut row = ui.elem(elem!(Frame, width = percent(100)));
+    row.with(move |ui| {
+        ui.compose(FieldRow {
+            label: name,
+            color: primary,
+            bold: true,
+            depth: 0,
+            field: Some(field.clone()),
+            value: move |ui: &mut BevyUi| inspect_value(ui, &field),
+        });
     });
+    if deletable {
+        context_menu(&mut row, move |menu| {
+            menu.item("Delete", move |world| {
+                remove_component(world, entity, component);
+            });
+        });
+    }
 }
 
 /// The entity bevy is currently keeping `resource` on.
