@@ -83,6 +83,10 @@ impl Plugin for InspectPlugin {
             .register_inspectable::<Visibility>()
             .register_inspectable::<Transform>();
 
+        app.register_essential::<Name>()
+            .register_essential::<Visibility>()
+            .register_essential::<Transform>();
+
         app.with_inspect_group("Text")
             .register_inspectable::<Text2d>()
             .register_inspectable::<TextFont>()
@@ -154,6 +158,15 @@ pub trait InspectAppExt {
         &mut self,
         name: &'static str,
     ) -> InspectGroup<'_>;
+
+    /// Marks `T` a component no fresh entity is ever without, so
+    /// [`EntityInspector`](crate::elements::EntityInspector) never
+    /// offers to delete it.
+    fn register_essential<
+        T: Component + Reflect + TypePath + GetTypeRegistration,
+    >(
+        &mut self,
+    ) -> &mut Self;
 }
 
 impl InspectAppExt for App {
@@ -196,12 +209,32 @@ impl InspectAppExt for App {
     ) -> InspectGroup<'_> {
         InspectGroup { app: self, name }
     }
+
+    fn register_essential<
+        T: Component + Reflect + TypePath + GetTypeRegistration,
+    >(
+        &mut self,
+    ) -> &mut Self {
+        self.register_type::<T>()
+            .register_type_data::<T, ReflectEssential>()
+    }
 }
 
 /// Which group of `AddComponent`'s menu a component belongs to; see
 /// [`InspectAppExt::with_inspect_group`].
 #[derive(Clone)]
 pub struct ReflectInspectGroup(pub &'static str);
+
+/// Marks a component no fresh entity is ever without; see
+/// [`InspectAppExt::register_essential`].
+#[derive(Clone)]
+pub struct ReflectEssential;
+
+impl<T: Component + Reflect> FromType<T> for ReflectEssential {
+    fn from_type() -> Self {
+        Self
+    }
+}
 
 /// A scope from [`InspectAppExt::with_inspect_group`], for tagging
 /// several [`register_inspectable`](Self::register_inspectable) calls

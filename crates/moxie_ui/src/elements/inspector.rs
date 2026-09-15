@@ -31,8 +31,9 @@ use super::{
 use crate::hover_delete::hover_delete;
 use crate::icons;
 use crate::inspector::{
-    Field, FieldRow, InspectorFields, ReflectInspectGroup,
-    ReflectInspectable, Section, inspect_value, single_value,
+    Field, FieldRow, InspectorFields, ReflectEssential,
+    ReflectInspectGroup, ReflectInspectable, Section, inspect_value,
+    single_value,
 };
 use crate::reactive::{BevyUi, FynixHost, value_changed};
 use crate::theme::EditorTheme;
@@ -159,7 +160,7 @@ impl Composer<FynixHost> for EntityInspector {
                     continue;
                 }
 
-                let deletable = !essential(component);
+                let deletable = !essential(ui.world, component);
                 ui.compose(Section {
                     name: name.to_string(),
                     body: move |ui: &mut BevyUi| {
@@ -425,7 +426,7 @@ fn remove_component(
     entity: Entity,
     component: TypeId,
 ) {
-    if essential(component) {
+    if essential(world, component) {
         return;
     }
 
@@ -445,13 +446,13 @@ fn remove_component(
     reflect_component.remove(&mut entity);
 }
 
-/// Whether every fresh entity carries `component` already, so
-/// removing it would leave the entity in a state nothing spawns it
-/// into on its own.
-fn essential(component: TypeId) -> bool {
-    component == TypeId::of::<Name>()
-        || component == TypeId::of::<Transform>()
-        || component == TypeId::of::<Visibility>()
+/// Whether `component` was opted in via
+/// [`register_essential`](crate::inspector::InspectAppExt::register_essential).
+fn essential(world: &World, component: TypeId) -> bool {
+    let registry = world.resource::<AppTypeRegistry>().read();
+    registry.get(component).is_some_and(|registration| {
+        registration.data::<ReflectEssential>().is_some()
+    })
 }
 
 /// A whole component on one row, named where a group of fields would
