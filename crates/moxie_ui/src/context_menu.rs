@@ -4,7 +4,7 @@
 //! rest rather than like a one-off.
 
 use bevy::picking::events::{Pointer, Press};
-use bevy::picking::pointer::{PointerButton, PointerLocation};
+use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::UiScale;
 use bevy::ui_widgets::popover::{
@@ -59,18 +59,11 @@ pub fn context_menu(
     elem.observe(
         move |press: On<Pointer<Press>>,
               scale: Res<UiScale>,
-              pointers: Query<&PointerLocation>,
               mut commands: Commands| {
             if press.button != PointerButton::Secondary {
                 return;
             }
-            let Some(at) = pointers
-                .iter()
-                .find_map(|pointer| pointer.location())
-                .map(|location| location.position / scale.0)
-            else {
-                return;
-            };
+            let at = press.pointer_location.position / scale.0;
 
             let build = build.clone();
             commands.queue(move |world: &mut World| {
