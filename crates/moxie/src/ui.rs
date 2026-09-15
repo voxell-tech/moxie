@@ -8,7 +8,7 @@ mod top_bar;
 
 use bevy::camera::Hdr;
 use bevy::camera::visibility::RenderLayers;
-use bevy::ecs::schedule::common_conditions::{not, resource_changed};
+use bevy::ecs::schedule::common_conditions::not;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
@@ -38,6 +38,12 @@ pub(crate) struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((MoxieUiPlugin, timeline::TimelinePlugin))
+            .insert_resource(moxie_ui::inspector::FieldAnimatable(
+                Some(inspector::is_animatable),
+            ))
+            .insert_resource(moxie_ui::inspector::FieldHasAction(
+                Some(inspector::has_action),
+            ))
             .init_resource::<EditorState>()
             .init_resource::<SelectedAction>()
             .init_resource::<SelectedEntity>()
@@ -50,9 +56,8 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
-                    scene::recompile_dirty_scene.run_if(
-                        resource_changed::<scene::EditorScene>,
-                    ),
+                    scene::recompile_dirty_scene
+                        .run_if(scene::scene_dirty),
                     playback::track_first_timeline,
                     playback::play_pause_hotkey
                         .run_if(not(text_field_focused)),

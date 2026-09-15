@@ -40,6 +40,13 @@ const WORLD: &str = "world";
 const SCENE: &str = "scene";
 const BOOKMARKS: &str = "bookmarks";
 
+/// Replaces whatever is loaded with a blank project.
+pub(crate) fn new_scene(world: &mut World) {
+    clear(world);
+    world.insert_resource(EditorScene::default());
+    world.insert_resource(ProjectPath(None));
+}
+
 /// Prompts for a path and writes the whole project to it.
 pub(crate) fn save_scene(world: &mut World) {
     let Some(path) = ask_for_path(Dialog::Save) else {

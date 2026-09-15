@@ -19,6 +19,7 @@ use bevy::ui_widgets::ValueChange;
 use bevy_fynix::WorldEntityMut;
 use fynix::prelude::*;
 
+use super::field_drag::FieldName;
 use super::{Inspect, Source, SourceExt, when_changed};
 use crate::elements::{Frame, Label, NumberField, NumberFieldCursor};
 use crate::reactive::BevyUi;
@@ -65,6 +66,10 @@ fn axes<T, V>(
     V: Clone + Send + Sync + 'static,
     ValueChange<V>: EntityEvent,
 {
+    // The base field, so an animatable axis can be dragged out on its
+    // own (`translation::x`); `None` for a source the editor keeps
+    // elsewhere.
+    let field = source.as_field().cloned();
     let source = source.boxed();
 
     ui.elem(elem!(
@@ -74,15 +79,33 @@ fn axes<T, V>(
         column_gap = px(6)
     ))
     .with(move |ui| {
-        let theme = ui.theme;
+        let letter_size = ui.theme.text.body;
         for (index, name) in T::NAMES.iter().enumerate() {
-            let color = axis_color(theme, name);
-            ui.elem(elem!(
-                Label,
-                text = name.to_uppercase(),
-                color = color,
-                bold = true
-            ));
+            let color = axis_color(ui.theme, name);
+
+            match field.as_ref().map(|f| f.child(name)) {
+                // Each axis names its own sub-field
+                // (`translation::x`), so `FieldName` can make it a
+                // drag source in its own right.
+                Some(axis_field) => {
+                    ui.compose(FieldName {
+                        field: axis_field,
+                        text: name.to_uppercase(),
+                        size: letter_size,
+                        color,
+                        bold: true,
+                    });
+                }
+                None => {
+                    ui.elem(elem!(
+                        Label,
+                        text = name.to_uppercase(),
+                        color = color,
+                        bold = true
+                    ));
+                }
+            }
+
             axis::<T, V>(
                 &*source, ui, index, format, to_axis, to_input,
             );

@@ -3,11 +3,14 @@
 //! [`MotionGfxManager`] is a compiled, disposable view of it,
 //! rebuilt by `recompile_dirty_scene` whenever it changes.
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use bevy::prelude::*;
 use bevy_motiongfx::prelude::*;
 use bevy_motiongfx::scene::asset::MotionGfxScene;
 use bevy_motiongfx::scene::backend::{
-    Backend, BackendRegistry, default_scene_registry,
+    Backend, BackendRegistry, SceneRegistryExt,
+    default_scene_registry,
 };
 use bevy_motiongfx::scene::value_pool::ValuePool;
 use motiongfx_scene::block::{ActionCmd, Block, Node};
@@ -18,8 +21,7 @@ use motiongfx_scene::scene::{Scene, Stage};
 ///
 /// The action panel edits the tree, the timeline panel's row layout
 /// reads it, and `recompile_dirty_scene` turns it back into a
-/// timeline whenever it changes, triggered by Bevy's own change
-/// detection on this resource, not a flag of its own.
+/// timeline whenever `edit` lands a write.
 ///
 /// Public (unlike most of this crate's state) because the example
 /// binaries build it directly, in place of `motiongfx`'s imperative
@@ -28,13 +30,43 @@ use motiongfx_scene::scene::{Scene, Stage};
 pub struct EditorScene {
     scene: MotionGfxScene,
     registry: BackendRegistry,
+    /// What [`scene_dirty`] diffs.
+    version: SceneVersion,
+}
+
+/// What [`scene_dirty`] diffs: `generation` catches a whole
+/// `EditorScene` being replaced, `edits` catches a write to it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SceneVersion {
+    generation: u32,
+    edits: u32,
 }
 
 impl EditorScene {
     pub fn new(scene: MotionGfxScene) -> Self {
+        static NEXT_GENERATION: AtomicU32 = AtomicU32::new(0);
+        let generation =
+            NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+
+        let mut registry = default_scene_registry();
+        // Per-axis, so one axis of a translation or scale can be
+        // animated on its own. Rotation stays whole-`Quat`: animating
+        // one quaternion component denormalises it.
+        registry
+            .register_bundle(path!(<Transform>::translation::x))
+            .register_bundle(path!(<Transform>::translation::y))
+            .register_bundle(path!(<Transform>::translation::z))
+            .register_bundle(path!(<Transform>::scale::x))
+            .register_bundle(path!(<Transform>::scale::y))
+            .register_bundle(path!(<Transform>::scale::z));
+
         Self {
             scene,
-            registry: default_scene_registry(),
+            registry,
+            version: SceneVersion {
+                generation,
+                edits: 0,
+            },
         }
     }
 
@@ -42,10 +74,28 @@ impl EditorScene {
         &self.scene
     }
 
+    /// The registry that resolves this scene's field, op, and interp
+    /// names.
+    pub(crate) fn registry(&self) -> &BackendRegistry {
+        &self.registry
+    }
+
     /// The scene, to change.
     pub(crate) fn edit(&mut self) -> &mut MotionGfxScene {
+        self.version.edits = self.version.edits.wrapping_add(1);
         &mut self.scene
     }
+}
+
+/// Whether [`EditorScene::edit`] wrote, or the whole [`EditorScene`]
+/// was replaced, since this last checked.
+pub(crate) fn scene_dirty(
+    scene: Res<EditorScene>,
+    mut seen: Local<Option<SceneVersion>>,
+) -> bool {
+    let dirty = *seen != Some(scene.version);
+    *seen = Some(scene.version);
+    dirty
 }
 
 impl Default for EditorScene {
@@ -67,8 +117,8 @@ impl Default for EditorScene {
 /// preserving its playhead, or spawning that entity on the first
 /// compile.
 ///
-/// Scheduled with `run_if(resource_changed::<EditorScene>)`, so this
-/// only runs when [`EditorScene::edit`] actually landed a write.
+/// Scheduled with `run_if(scene_dirty)`, so this only runs when
+/// [`EditorScene::edit`] landed a write.
 pub(crate) fn recompile_dirty_scene(world: &mut World) {
     world.resource_scope::<EditorScene, _>(|world, mut editor_scene| {
         world.resource_scope::<MotionGfxManager, _>(

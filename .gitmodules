@@ -1,0 +1,3 @@
+[submodule "vendor/motiongfx"]
+	path = vendor/motiongfx
+	url = git@github.com:voxell-tech/motiongfx.git

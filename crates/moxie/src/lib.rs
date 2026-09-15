@@ -22,6 +22,7 @@ use bevy::prelude::*;
 use bevy::settings::{
     ReflectSettingsGroup, SettingsGroup, SettingsPlugin,
 };
+use bevy_motiongfx::BevyMotionGfxPlugin;
 use bevy_motiongfx::prelude::TimelineId;
 use bevy_motiongfx::scene::id::EntityUid;
 
@@ -35,6 +36,7 @@ pub struct MoxiePlugin;
 impl Plugin for MoxiePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
+            BevyMotionGfxPlugin,
             SettingsPlugin::new("org.voxell.motiongfx.editor"),
             MoxieAssetPlugin,
             ui::UiPlugin,

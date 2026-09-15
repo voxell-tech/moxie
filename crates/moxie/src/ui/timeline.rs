@@ -2,6 +2,7 @@
 //! scrubbable track viewport, edge to edge. No name gutter: a
 //! block's own header box already carries its label.
 
+mod create;
 mod pattern;
 mod reorder;
 mod retime;
@@ -56,8 +57,12 @@ impl Plugin for TimelinePlugin {
                 Update,
                 (retime::cancel_on_escape, reorder::cancel_on_escape),
             )
-            .add_systems(Update, reorder::preview.after(FynixSet))
+            .add_systems(
+                Update,
+                (reorder::preview, create::preview).after(FynixSet),
+            )
             .add_observer(reorder::on_drag_end)
+            .add_observer(create::on_drop)
             .add_observer(on_fit_timeline);
     }
 }
