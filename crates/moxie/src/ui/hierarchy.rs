@@ -191,11 +191,28 @@ fn insert_essential(world: &mut World, entity: Entity) {
 /// Despawns `entity` and everything under it, and clears the
 /// selection if it pointed there.
 fn despawn_entity(world: &mut World, entity: Entity) {
+    // Ahead of the despawn: `world.despawn` takes the whole subtree
+    // with it, so a selected descendant is no longer reachable to
+    // check for afterward.
+    let selected = world.resource::<SelectedEntity>().0;
+    let clears = selected
+        .is_some_and(|selected| under(world, entity, selected));
+
     world.despawn(entity);
-    let mut selected = world.resource_mut::<SelectedEntity>();
-    if selected.0 == Some(entity) {
-        selected.0 = None;
+
+    if clears {
+        world.resource_mut::<SelectedEntity>().0 = None;
     }
+}
+
+/// Whether `entity` is `ancestor` itself or sits somewhere under it.
+fn under(world: &World, ancestor: Entity, entity: Entity) -> bool {
+    if ancestor == entity {
+        return true;
+    }
+    world.get::<Children>(ancestor).is_some_and(|children| {
+        children.iter().any(|child| under(world, child, entity))
+    })
 }
 
 fn build_roots(ui: &mut BevyUi) {
