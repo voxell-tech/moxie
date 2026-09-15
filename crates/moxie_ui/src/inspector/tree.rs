@@ -29,6 +29,45 @@ use crate::reactive::{BevyUi, FynixHost};
 #[derive(Component, Default)]
 struct ClosedSections(HashSet<(TypeId, String)>);
 
+/// Whether the section at `component`/`path` on `entity` is open.
+pub(crate) fn section_open(
+    world: &World,
+    entity: Entity,
+    component: TypeId,
+    path: &str,
+) -> bool {
+    !world.get::<ClosedSections>(entity).is_some_and(|sections| {
+        sections.0.contains(&(component, path.to_string()))
+    })
+}
+
+/// Flips the section at `component`/`path` on `entity` open or shut.
+pub(crate) fn toggle_section(
+    world: &mut World,
+    entity: Entity,
+    component: TypeId,
+    path: String,
+    open: bool,
+) {
+    let Ok(mut entity) = world.get_entity_mut(entity) else {
+        return;
+    };
+    match entity.get_mut::<ClosedSections>() {
+        Some(mut sections) if !open => {
+            sections.0.insert((component, path));
+        }
+        Some(mut sections) => {
+            sections.0.remove(&(component, path));
+        }
+        None if !open => {
+            let mut sections = HashSet::default();
+            sections.insert((component, path));
+            entity.insert(ClosedSections(sections));
+        }
+        None => {}
+    }
+}
+
 /// One row the walk found.
 #[derive(Clone, PartialEq)]
 enum Entry {
@@ -265,6 +304,27 @@ fn leaf_name(path: &str) -> &str {
     path.rsplit('.').next().unwrap_or(path)
 }
 
+/// `field`'s own editable value, when the whole thing reflects a
+/// single, nameless leaf - `Name`, say - rather than a set of fields.
+/// Its card's title stands in for that missing name, so it needs the
+/// same drag source a genuine field's [`FieldName`](super::FieldName)
+/// label carries.
+pub(crate) fn root_leaf(
+    world: &World,
+    field: &Field,
+) -> Option<Field> {
+    match entries(world, field).as_slice() {
+        [Entry::Leaf { path, name, .. }] if name.is_empty() => {
+            Some(if path.is_empty() {
+                field.clone()
+            } else {
+                field.child(path)
+            })
+        }
+        _ => None,
+    }
+}
+
 /// The entries at `field`, in walk order.
 ///
 /// `field` itself is never wrapped in a group: a leaf type is the one
@@ -282,26 +342,6 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
         }
     });
     out
-}
-
-/// The path to `field`'s one editable value, if it holds only that
-/// and not a set of fields to fold - the value's own leaf, which the
-/// walk may have found under `field` rather than at it, as
-/// `MeshMaterial3d<StandardMaterial>` does with the `Handle` it
-/// wraps.
-pub(crate) fn single_value(
-    world: &World,
-    field: &Field,
-) -> Option<String> {
-    match entries(world, field).as_slice() {
-        [Entry::Leaf { path, .. }] => Some(path.clone()),
-        [Entry::Variant { path, children, .. }]
-            if children.is_empty() =>
-        {
-            Some(path.clone())
-        }
-        _ => None,
-    }
 }
 
 /// Fires when the *shape* under `field` changes: its set of entries,
@@ -612,12 +652,7 @@ impl<
             on_header,
         } = self;
         let (entity, component, path) = section;
-        let open = !ui
-            .world
-            .get::<ClosedSections>(entity)
-            .is_some_and(|sections| {
-                sections.0.contains(&(component, path.clone()))
-            });
+        let open = section_open(ui.world, entity, component, &path);
 
         let muted = ui.theme.color.text_dim;
         let primary = ui.theme.color.text;
@@ -649,24 +684,13 @@ impl<
             body,
             open,
             on_toggle: move |world: &mut World, open: bool| {
-                let Ok(mut entity) = world.get_entity_mut(entity)
-                else {
-                    return;
-                };
-                match entity.get_mut::<ClosedSections>() {
-                    Some(mut sections) if !open => {
-                        sections.0.insert((component, path.clone()));
-                    }
-                    Some(mut sections) => {
-                        sections.0.remove(&(component, path.clone()));
-                    }
-                    None if !open => {
-                        let mut sections = HashSet::default();
-                        sections.insert((component, path.clone()));
-                        entity.insert(ClosedSections(sections));
-                    }
-                    None => {}
-                }
+                toggle_section(
+                    world,
+                    entity,
+                    component,
+                    path.clone(),
+                    open,
+                );
             },
         })
         .handle()

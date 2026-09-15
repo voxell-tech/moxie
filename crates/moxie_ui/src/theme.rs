@@ -80,8 +80,6 @@ pub struct Colors {
     pub bg: Color,
     /// Panels and popups.
     pub panel: Color,
-    /// A raised strip within a panel.
-    pub surface: Color,
     /// A filled control's resting surface.
     pub fill: Color,
     /// A barely-there fill, for a tint rather than a surface.
@@ -139,6 +137,10 @@ pub struct Spacing {
     /// How close a menu is allowed to sit to the window's edge before
     /// it flips to the other side.
     pub menu_margin: f32,
+    /// A component card's own corner, in the entity inspector.
+    pub card_radius: f32,
+    /// A component card's padding around its header and fields.
+    pub card_padding: f32,
 }
 
 /// `GlobalZIndex` levels, so a drag's chrome stacks the same way
@@ -185,7 +187,6 @@ impl Default for EditorTheme {
                 critical: palette.red,
                 bg: base[0],
                 panel: base[1],
-                surface: base[2],
                 fill: base[8].with_alpha(0.06),
                 fill_faint: base[8].with_alpha(0.03),
                 hairline: base[8].with_alpha(0.08),
@@ -215,6 +216,8 @@ impl Default for EditorTheme {
                 // `menu_padding`: 6.0 + 4.0.
                 menu_radius: 10.0,
                 menu_margin: 8.0,
+                card_radius: 6.0,
+                card_padding: 6.0,
             },
             text: TextScale {
                 small: 10.0,

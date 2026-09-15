@@ -16,25 +16,31 @@ use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
 use bevy::reflect::TypeRegistration;
 use bevy::reflect::std_traits::ReflectDefault;
-use bevy::ui_widgets::{ActivateOnPress, MenuButton};
+use bevy::ui_widgets::{Activate, ActivateOnPress, MenuButton};
 
 use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 use fynix::records::{BuildFn, ChangedFn};
 
+use super::button::ButtonCursor;
+use super::frame::FrameCursor;
+use super::icon::IconCursor;
 use super::{
-    Button, Dropdown, DropdownItem, DropdownList, DropdownMenu,
-    Frame, Icon, Label, TintButton, menu_item,
+    Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Icon,
+    Label, TintButton, menu_item,
 };
 use crate::context_menu::context_menu;
+use crate::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use crate::icons;
 use crate::inspector::{
-    Field, FieldRow, InspectorFields, ReflectEssential,
-    ReflectInspectGroup, ReflectInspectable, Section, inspect_value,
-    single_value,
+    Field, FieldAnimatable, InspectorFields, ReflectEssential,
+    ReflectInspectGroup, ReflectInspectable, draggable_field,
+    root_leaf, section_open, toggle_section,
 };
-use crate::reactive::{BevyUi, FynixHost, value_changed};
+use crate::reactive::{
+    BevyUi, FynixHost, component_changed_on, value_changed,
+};
 
 /// Inspector for a [`Component`].
 pub struct ComponentInspector {
@@ -145,56 +151,12 @@ impl Composer<FynixHost> for EntityInspector {
                     }
                 }
 
-                let field = Field::new(entity, component);
-
-                if let Some(path) = single_value(ui.world, &field) {
-                    let leaf = if path.is_empty() {
-                        field
-                    } else {
-                        field.child(&path)
-                    };
-                    single(ui, entity, component, &name, leaf);
-                    continue;
-                }
-
-                let deletable = !essential(ui.world, component);
-                ui.compose(Section {
-                    name: name.to_string(),
-                    body: move |ui: &mut BevyUi| {
-                        ui.compose(ComponentInspector {
-                            entity,
-                            component,
-                            depth: 1,
-                        });
-                    },
-                    // The whole component, at the empty path. See
-                    // `entries` in `tree.rs`, which never wraps the
-                    // root in a group of its own either.
-                    section: (entity, component, String::new()),
-                    on_header: move |mut header: ElementMut<
-                        '_,
-                        '_,
-                        FynixHost,
-                        Button,
-                    >| {
-                        if !deletable {
-                            return;
-                        }
-                        context_menu(&mut header, move |menu| {
-                            let critical =
-                                menu.theme().color.critical;
-                            menu.item(
-                                Some((icons::TRASH, critical)),
-                                "Delete",
-                                move |world| {
-                                    remove_component(
-                                        world, entity, component,
-                                    );
-                                },
-                            );
-                        });
-                    },
-                });
+                component_card(
+                    ui,
+                    entity,
+                    component,
+                    name.to_string(),
+                );
             }
 
             ui.compose(AddComponent { entity });
@@ -443,42 +405,162 @@ fn essential(world: &World, component: TypeId) -> bool {
     })
 }
 
-/// A whole component on one row, named where a group of fields would
-/// have been headed.
-fn single(
+/// A card's own fold state, distinct from the shared nested-fold
+/// hierarchy `crate::fold` builds: a component's title bar is not
+/// another level of that, just a bar on top of its card, so its body
+/// sits flush with no rail or indent under it.
+#[derive(Component)]
+struct CardClosed;
+
+/// One component's own card: a title that's always there, above a
+/// body that folds flush under it - no rail, no indent, each field
+/// reading like its own root - like Unity's per-component panel.
+fn component_card(
     ui: &mut BevyUi,
     entity: Entity,
     component: TypeId,
-    name: &str,
-    field: Field,
+    name: String,
 ) {
-    let name = name.to_string();
-    let primary = ui.theme.color.text;
     let deletable = !essential(ui.world, component);
+    let open = section_open(ui.world, entity, component, "");
+    // The title stands in for a genuine field's own name when the
+    // whole component is one nameless leaf, so it carries that
+    // field's drag source too, same as `FieldName` gives a row of
+    // its own.
+    let drag_field =
+        root_leaf(ui.world, &Field::new(entity, component)).filter(
+            |field| {
+                ui.world
+                    .resource::<FieldAnimatable>()
+                    .allows(ui.world, field)
+            },
+        );
+    let background = ui.theme.color.panel;
+    let radius = ui.theme.space.card_radius;
+    let padding = ui.theme.space.card_padding;
+    let muted = ui.theme.color.text_dim;
+    let primary = ui.theme.color.text;
+    let title = name.clone();
 
-    let mut row = ui.elem(elem!(Frame, width = percent(100)));
-    row.with(move |ui| {
-        ui.compose(FieldRow {
-            label: name,
-            color: primary,
-            bold: true,
-            depth: 0,
-            field: Some(field.clone()),
-            value: move |ui: &mut BevyUi| inspect_value(ui, &field),
-        });
-    });
-    if deletable {
-        context_menu(&mut row, move |menu| {
-            let critical = menu.theme().color.critical;
-            menu.item(
-                Some((icons::TRASH, critical)),
-                "Delete",
-                move |world| {
-                    remove_component(world, entity, component);
+    let mut card = ui.elem(elem!(
+        Frame,
+        width = percent(100),
+        direction = FlexDirection::Column,
+        background = background,
+        radius = px(radius),
+        padding = UiRect::all(px(padding)),
+        overflow = Overflow::clip()
+    ));
+    let node = card.id();
+    if !open {
+        card.insert(CardClosed);
+    }
+
+    card.with(move |ui| {
+        let mut header = ui.elem(elem!(
+            !TintButton::default(),
+            width = percent(100),
+            justify = JustifyContent::FlexStart,
+            icon = elem!(
+                Icon,
+                image = icons::CHEVRON,
+                color = muted,
+                rotation =
+                    if open { CHEVRON_OPEN } else { CHEVRON_SHUT }
+            ),
+            label = elem!(
+                Label,
+                text = title,
+                color = primary,
+                bold = true
+            )
+        ));
+        header
+            .observe(
+                move |_: On<Activate>, mut commands: Commands| {
+                    commands.queue(move |world: &mut World| {
+                        let opening =
+                            world.get::<CardClosed>(node).is_some();
+                        if let Ok(mut card) =
+                            world.get_entity_mut(node)
+                        {
+                            if opening {
+                                card.remove::<CardClosed>();
+                            } else {
+                                card.insert(CardClosed);
+                            }
+                        }
+                        toggle_section(
+                            world,
+                            entity,
+                            component,
+                            String::new(),
+                            opening,
+                        );
+                    });
+                },
+            )
+            .bind(
+                |button| button.icon().rotation(),
+                component_changed_on::<CardClosed>(node),
+                move |WorldNodeRef { world, .. }| {
+                    if world.get::<CardClosed>(node).is_some() {
+                        CHEVRON_SHUT
+                    } else {
+                        CHEVRON_OPEN
+                    }
                 },
             );
-        });
-    }
+
+        if let Some(field) = drag_field.clone() {
+            draggable_field(&mut header, field, name);
+        }
+
+        if deletable {
+            context_menu(&mut header, move |menu| {
+                let critical = menu.theme().color.critical;
+                menu.item(
+                    Some((icons::TRASH, critical)),
+                    "Delete",
+                    move |world| {
+                        remove_component(world, entity, component);
+                    },
+                );
+            });
+        }
+
+        ui.elem(elem!(
+            Frame,
+            width = percent(100),
+            direction = FlexDirection::Column
+        ))
+        .bind(
+            |frame| frame.display(),
+            component_changed_on::<CardClosed>(node),
+            move |WorldNodeRef { world, .. }| {
+                if world.get::<CardClosed>(node).is_some() {
+                    Display::None
+                } else {
+                    Display::Flex
+                }
+            },
+        )
+        .watch(
+            component_changed_on::<CardClosed>(node),
+            move |ui| {
+                // Stays empty while shut, rather than building what
+                // nobody has looked at.
+                if ui.world.get::<CardClosed>(node).is_some() {
+                    return;
+                }
+                ui.compose(ComponentInspector {
+                    entity,
+                    component,
+                    depth: 0,
+                });
+            },
+        );
+    });
 }
 
 /// The entity bevy is currently keeping `resource` on.
