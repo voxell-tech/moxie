@@ -356,6 +356,12 @@ impl Composer<FynixHost> for Subtree {
         let entity = self.entity;
         let name = name_of(ui.world, entity);
         let text = ui.theme.color.text;
+        let text_dim = ui.theme.color.text_dim;
+        let name_color = if is_unnamed(ui.world, entity) {
+            text_dim
+        } else {
+            text
+        };
         let accent = ui.theme.color.accent;
         let select = ui.theme.color.selection;
 
@@ -371,7 +377,7 @@ impl Composer<FynixHost> for Subtree {
                     Label,
                     text = name,
                     wrap = false,
-                    color = text
+                    color = name_color
                 )
             ),
             // The row is the subject's, to select; only the
@@ -407,6 +413,17 @@ impl Composer<FynixHost> for Subtree {
                         component_changed_on::<Name>(entity),
                         move |WorldNodeRef { world, .. }| {
                             name_of(world, entity)
+                        },
+                    )
+                    .bind(
+                        |button| button.label().color(),
+                        component_changed_on::<Name>(entity),
+                        move |WorldNodeRef { world, .. }| {
+                            if is_unnamed(world, entity) {
+                                text_dim
+                            } else {
+                                text
+                            }
                         },
                     );
 
@@ -541,13 +558,34 @@ fn is_subject(world: &World, entity: Entity) -> bool {
 }
 
 /// Its [`Name`], or the head of its id. A whole uuid is unreadable;
-/// the first characters tell two unnamed subjects apart.
+/// the first characters tell two unnamed subjects apart. A blank
+/// `Name` counts as unset, the same as having none.
 fn name_of(world: &World, entity: Entity) -> String {
-    if let Some(name) = world.get::<Name>(entity) {
+    placeholder_name(world.get::<Name>(entity), world.get(entity))
+}
+
+/// Whether [`name_of`] is standing in for a name `entity` doesn't
+/// have, rather than showing one it does.
+fn is_unnamed(world: &World, entity: Entity) -> bool {
+    world
+        .get::<Name>(entity)
+        .is_none_or(|name| name.as_str().is_empty())
+}
+
+/// [`name_of`]'s fallback, shared with [`drag`] for the row it drags
+/// off - a system param's `Query<&Name>` gets `Option<&Name>` the
+/// same way `World::get` does, so both read it identically.
+pub(crate) fn placeholder_name(
+    name: Option<&Name>,
+    uid: Option<&EntityUid>,
+) -> String {
+    if let Some(name) = name
+        && !name.as_str().is_empty()
+    {
         return name.as_str().to_string();
     }
 
-    match world.get::<EntityUid>(entity) {
+    match uid {
         Some(uid) => uid_head(*uid),
         None => "?".to_string(),
     }
