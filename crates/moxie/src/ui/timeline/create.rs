@@ -67,6 +67,7 @@ pub(super) fn preview(
     mut nodes: Query<&mut Node>,
     mut backgrounds: Query<&mut BackgroundColor>,
     mut borders: Query<&mut BorderColor>,
+    mut was_dragging: Local<bool>,
 ) {
     let Some(visuals) = visuals else {
         return;
@@ -76,12 +77,21 @@ pub(super) fn preview(
     };
 
     if dragged.field.is_none() {
-        // The drag may have ended without a `DragDrop` over the
-        // track (e.g. released elsewhere) - `on_drop` never ran to
-        // hide the hint this hovering left showing.
-        clear(&mut nodes);
+        // Only on the frame a field drag actually ends: this runs
+        // every frame nothing is being field-dragged at all, which
+        // is most of the time - unconditionally clearing here would
+        // fight `reorder`'s own hint for a block/action drag, which
+        // shares the same `Visuals`.
+        if *was_dragging {
+            // The drag may have ended without a `DragDrop` over the
+            // track (e.g. released elsewhere) - `on_drop` never ran
+            // to hide the hint this hovering left showing.
+            clear(&mut nodes);
+        }
+        *was_dragging = false;
         return;
     }
+    *was_dragging = true;
     let (Some(cursor), Ok((vp_node, vp_transform, scroll))) =
         (cursor(&pointers, &scale), q_viewport.single())
     else {
