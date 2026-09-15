@@ -38,9 +38,10 @@ use crate::reactive::{BevyUi, FynixHost};
 
 pub use field::Field;
 use field_drag::FieldName;
+pub(crate) use field_drag::draggable_field;
 pub use field_drag::{DraggedField, FieldAnimatable, FieldHasAction};
 pub use tree::{InspectorFields, Section};
-pub(crate) use tree::{section_open, toggle_section};
+pub(crate) use tree::{root_leaf, section_open, toggle_section};
 
 /// The widgets and the entity-inspector sections available out of
 /// the box.

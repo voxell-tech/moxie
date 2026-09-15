@@ -34,8 +34,9 @@ use crate::context_menu::context_menu;
 use crate::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use crate::icons;
 use crate::inspector::{
-    Field, InspectorFields, ReflectEssential, ReflectInspectGroup,
-    ReflectInspectable, section_open, toggle_section,
+    Field, FieldAnimatable, InspectorFields, ReflectEssential,
+    ReflectInspectGroup, ReflectInspectable, draggable_field,
+    root_leaf, section_open, toggle_section,
 };
 use crate::reactive::{
     BevyUi, FynixHost, component_changed_on, value_changed,
@@ -422,11 +423,24 @@ fn component_card(
 ) {
     let deletable = !essential(ui.world, component);
     let open = section_open(ui.world, entity, component, "");
+    // The title stands in for a genuine field's own name when the
+    // whole component is one nameless leaf, so it carries that
+    // field's drag source too, same as `FieldName` gives a row of
+    // its own.
+    let drag_field =
+        root_leaf(ui.world, &Field::new(entity, component)).filter(
+            |field| {
+                ui.world
+                    .resource::<FieldAnimatable>()
+                    .allows(ui.world, field)
+            },
+        );
     let background = ui.theme.color.panel;
     let radius = ui.theme.space.card_radius;
     let padding = ui.theme.space.card_padding;
     let muted = ui.theme.color.text_dim;
     let primary = ui.theme.color.text;
+    let title = name.clone();
 
     let mut card = ui.elem(elem!(
         Frame,
@@ -456,7 +470,7 @@ fn component_card(
             ),
             label = elem!(
                 Label,
-                text = name,
+                text = title,
                 color = primary,
                 bold = true
             )
@@ -497,6 +511,10 @@ fn component_card(
                     }
                 },
             );
+
+        if let Some(field) = drag_field.clone() {
+            draggable_field(&mut header, field, name);
+        }
 
         if deletable {
             context_menu(&mut header, move |menu| {

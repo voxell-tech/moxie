@@ -152,7 +152,7 @@ impl Composer<FynixHost> for FieldName {
 
 /// Makes `elem` a drag source for `field`, named `label` while it
 /// follows the cursor.
-fn draggable_field(
+pub(crate) fn draggable_field(
     elem: &mut impl WorldEntityMut,
     field: Field,
     label: String,

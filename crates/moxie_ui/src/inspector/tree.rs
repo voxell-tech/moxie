@@ -304,6 +304,27 @@ fn leaf_name(path: &str) -> &str {
     path.rsplit('.').next().unwrap_or(path)
 }
 
+/// `field`'s own editable value, when the whole thing reflects a
+/// single, nameless leaf - `Name`, say - rather than a set of fields.
+/// Its card's title stands in for that missing name, so it needs the
+/// same drag source a genuine field's [`FieldName`](super::FieldName)
+/// label carries.
+pub(crate) fn root_leaf(
+    world: &World,
+    field: &Field,
+) -> Option<Field> {
+    match entries(world, field).as_slice() {
+        [Entry::Leaf { path, name, .. }] if name.is_empty() => {
+            Some(if path.is_empty() {
+                field.clone()
+            } else {
+                field.child(path)
+            })
+        }
+        _ => None,
+    }
+}
+
 /// The entries at `field`, in walk order.
 ///
 /// `field` itself is never wrapped in a group: a leaf type is the one
