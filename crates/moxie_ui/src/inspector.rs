@@ -84,9 +84,11 @@ impl Plugin for InspectPlugin {
             .register_inspectable::<Visibility>()
             .register_inspectable::<Transform>();
 
-        app.register_essential::<Name>()
-            .register_essential::<Visibility>()
-            .register_essential::<Transform>();
+        app.register_essential_with::<Name>(|| {
+            Box::new(Name::new("New Entity"))
+        })
+        .register_essential::<Visibility>()
+        .register_essential::<Transform>();
 
         app.with_inspect_group("Text")
             .register_inspectable::<Text2d>()
@@ -173,6 +175,17 @@ pub trait InspectAppExt {
     >(
         &mut self,
     ) -> &mut Self;
+
+    /// As [`register_essential`](Self::register_essential), spawning
+    /// `T` with `spawn` instead of [`Default::default`] - a
+    /// reasonable non-empty [`Name`] for a fresh entity, say, rather
+    /// than an empty string.
+    fn register_essential_with<
+        T: Component + Reflect + TypePath + GetTypeRegistration,
+    >(
+        &mut self,
+        spawn: fn() -> Box<dyn Reflect>,
+    ) -> &mut Self;
 }
 
 impl InspectAppExt for App {
@@ -229,6 +242,24 @@ impl InspectAppExt for App {
             .register_type_data::<T, ReflectDefault>()
             .register_type_data::<T, ReflectEssential>()
     }
+
+    fn register_essential_with<
+        T: Component + Reflect + TypePath + GetTypeRegistration,
+    >(
+        &mut self,
+        spawn: fn() -> Box<dyn Reflect>,
+    ) -> &mut Self {
+        self.register_type::<T>();
+        let registry =
+            self.world().resource::<AppTypeRegistry>().clone();
+        let mut registry = registry.write();
+        if let Some(registration) =
+            registry.get_mut(TypeId::of::<T>())
+        {
+            registration.insert(ReflectEssential { spawn });
+        }
+        self
+    }
 }
 
 /// Which group of `AddComponent`'s menu a component belongs to; see
@@ -237,13 +268,31 @@ impl InspectAppExt for App {
 pub struct ReflectInspectGroup(pub &'static str);
 
 /// Marks a component no fresh entity is ever without; see
-/// [`InspectAppExt::register_essential`].
-#[derive(Clone)]
-pub struct ReflectEssential;
+/// [`InspectAppExt::register_essential`] and
+/// [`InspectAppExt::register_essential_with`].
+///
+/// A bare [`fn`], not a boxed closure: like [`ReflectDefault`], the
+/// value it produces carries all the state it needs, so there is
+/// nothing for the function itself to capture.
+#[derive(Clone, Copy)]
+pub struct ReflectEssential {
+    spawn: fn() -> Box<dyn Reflect>,
+}
 
-impl<T: Component + Reflect> FromType<T> for ReflectEssential {
+impl ReflectEssential {
+    /// The value a fresh entity gets for this component.
+    pub fn spawn(&self) -> Box<dyn Reflect> {
+        (self.spawn)()
+    }
+}
+
+impl<T: Component + Reflect + Default> FromType<T>
+    for ReflectEssential
+{
     fn from_type() -> Self {
-        Self
+        Self {
+            spawn: || Box::new(T::default()),
+        }
     }
 }
 
