@@ -167,19 +167,19 @@ impl DropdownList {
             error!("failed to build a dropdown list: {err}");
             return;
         }
-        // Feathers seeded its own theme's colour; every menu shares
-        // one look, so this repaints it with ours.
+        // Feathers seeded its own theme's colour and padding; every
+        // menu shares one look, so this repaints it with ours.
         let panel = build.theme.color.panel;
+        let padding = build.theme.space.menu_padding;
         build.entity_mut().insert(BackgroundColor(panel));
         // The rest of the node belongs to the popup scene, and writing
-        // it whole would undo the placement. Its vertical padding is
-        // zeroed so the rows sit flush.
+        // it whole would undo the placement.
         if let Some(mut layout) = build.entity_mut().get_mut::<Node>()
         {
             layout.min_width = self.width;
             layout.border_radius = BorderRadius::all(self.radius);
-            layout.padding.top = px(0);
-            layout.padding.bottom = px(0);
+            layout.padding = UiRect::all(px(padding));
+            layout.overflow = Overflow::clip();
         }
     }
 }
