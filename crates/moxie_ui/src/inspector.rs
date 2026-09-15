@@ -516,34 +516,39 @@ impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for FieldRow<F> {
             padding = UiRect::vertical(px(3))
         ))
         .with(move |ui| {
-            ui.elem(elem!(
-                Frame,
-                width = percent(40),
-                margin = UiRect::right(px(-shed)),
-                overflow = Overflow::clip_x(),
-                padding = UiRect::right(px(EDGE_PADDING))
-            ))
-            .with(move |ui| match field {
-                Some(field) => {
-                    ui.compose(FieldName {
-                        field,
-                        text: label,
-                        size: LABEL_SIZE,
-                        color,
-                        bold,
-                    });
-                }
-                None => {
-                    ui.elem(elem!(
-                        Label,
-                        text = label,
-                        size = LABEL_SIZE,
-                        color = color,
-                        bold = bold,
-                        wrap = false
-                    ));
-                }
-            });
+            // A spliced field has no name of its own - see `entries`
+            // in `tree.rs` - so there is nothing to head a label
+            // column with; the value takes the whole row instead.
+            if !label.is_empty() {
+                ui.elem(elem!(
+                    Frame,
+                    width = percent(40),
+                    margin = UiRect::right(px(-shed)),
+                    overflow = Overflow::clip_x(),
+                    padding = UiRect::right(px(EDGE_PADDING))
+                ))
+                .with(move |ui| match field {
+                    Some(field) => {
+                        ui.compose(FieldName {
+                            field,
+                            text: label,
+                            size: LABEL_SIZE,
+                            color,
+                            bold,
+                        });
+                    }
+                    None => {
+                        ui.elem(elem!(
+                            Label,
+                            text = label,
+                            size = LABEL_SIZE,
+                            color = color,
+                            bold = bold,
+                            wrap = false
+                        ));
+                    }
+                });
+            }
             ui.elem(elem!(Frame, flex_grow = 1.0f32)).with(value);
         })
         .handle()
