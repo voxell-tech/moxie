@@ -24,6 +24,7 @@ use std::any::TypeId;
 
 use bevy::light::CascadeShadowConfig;
 use bevy::prelude::*;
+use bevy::reflect::std_traits::ReflectDefault;
 use bevy::reflect::{FromType, GetTypeRegistration, PartialReflect};
 use bevy::sprite::Anchor;
 use bevy::text::{LetterSpacing, LineHeight};
@@ -159,11 +160,16 @@ pub trait InspectAppExt {
         name: &'static str,
     ) -> InspectGroup<'_>;
 
-    /// Marks `T` a component no fresh entity is ever without, so
-    /// [`EntityInspector`](crate::elements::EntityInspector) never
-    /// offers to delete it.
+    /// Marks `T` a component no fresh entity is ever without: also
+    /// registers `T`'s [`ReflectDefault`], what actually spawns it on
+    /// one, and [`EntityInspector`](crate::elements::EntityInspector)
+    /// never offers to delete it.
     fn register_essential<
-        T: Component + Reflect + TypePath + GetTypeRegistration,
+        T: Component
+            + Reflect
+            + TypePath
+            + GetTypeRegistration
+            + Default,
     >(
         &mut self,
     ) -> &mut Self;
@@ -211,11 +217,16 @@ impl InspectAppExt for App {
     }
 
     fn register_essential<
-        T: Component + Reflect + TypePath + GetTypeRegistration,
+        T: Component
+            + Reflect
+            + TypePath
+            + GetTypeRegistration
+            + Default,
     >(
         &mut self,
     ) -> &mut Self {
         self.register_type::<T>()
+            .register_type_data::<T, ReflectDefault>()
             .register_type_data::<T, ReflectEssential>()
     }
 }

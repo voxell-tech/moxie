@@ -13,7 +13,9 @@ mod drag;
 pub(crate) use drag::Dragging;
 
 use bevy::ecs::query::QueryState;
+use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
+use bevy::reflect::std_traits::ReflectDefault;
 use bevy::ui_widgets::Activate;
 use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::id::EntityUid;
@@ -25,6 +27,7 @@ use moxie_ui::elements::{
 };
 use moxie_ui::fold::{Foldable, FoldsOn};
 use moxie_ui::hover_delete::hover_delete;
+use moxie_ui::inspector::ReflectEssential;
 use moxie_ui::reactive::{
     BevyUi, FynixHost, component_changed_on, value_changed,
 };
@@ -150,17 +153,43 @@ fn spawn_new_entity(world: &mut World) {
         return;
     };
 
-    let entity = world
-        .spawn((
-            EntityUid::new(),
-            Name::new("Entity"),
-            Transform::default(),
-            Visibility::default(),
-            ChildOf(root),
-        ))
-        .id();
+    let entity = world.spawn((EntityUid::new(), ChildOf(root))).id();
+    insert_essential(world, entity);
 
     world.insert_resource(SelectedEntity(Some(entity)));
+}
+
+/// Inserts every [`register_essential`](
+/// moxie_ui::inspector::InspectAppExt::register_essential)
+/// component's default value onto `entity` - `Name`, `Transform`,
+/// `Visibility` today, whatever the registry answers for tomorrow.
+fn insert_essential(world: &mut World, entity: Entity) {
+    let registry = world.resource::<AppTypeRegistry>().clone();
+    let registry = registry.read();
+
+    let essentials: Vec<_> = registry
+        .iter()
+        .filter(|registration| {
+            registration.data::<ReflectEssential>().is_some()
+        })
+        .filter_map(|registration| {
+            Some((
+                registration.data::<ReflectComponent>()?,
+                registration.data::<ReflectDefault>()?.default(),
+            ))
+        })
+        .collect();
+
+    let Ok(mut entity) = world.get_entity_mut(entity) else {
+        return;
+    };
+    for (reflect_component, value) in &essentials {
+        reflect_component.insert(
+            &mut entity,
+            value.as_partial_reflect(),
+            &registry,
+        );
+    }
 }
 
 /// Despawns `entity` and everything under it, and clears the
