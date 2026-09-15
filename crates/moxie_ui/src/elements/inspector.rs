@@ -132,7 +132,20 @@ impl Composer<FynixHost> for EntityInspector {
         let entity = self.entity;
 
         column(ui, px(8), components_changed(entity), move |ui| {
-            for (component, name) in inspectable(ui.world, entity) {
+            let theme = ui.theme;
+            // `None` sorts first, so an ungrouped run never gets
+            // mistaken for one under its own (absent) heading.
+            let mut shown_group: Option<Option<&'static str>> = None;
+            for (component, name, group) in
+                inspectable(ui.world, entity)
+            {
+                if shown_group != Some(group) {
+                    shown_group = Some(group);
+                    if let Some(group) = group {
+                        group_heading(ui, theme, group);
+                    }
+                }
+
                 let field = Field::new(entity, component);
 
                 if let Some(path) = single_value(ui.world, &field) {
@@ -425,15 +438,18 @@ fn components_changed(
 }
 
 /// Every component on `entity` the inspector can reach and shows, by
-/// type and the name its section is headed with.
+/// type, the name its section is headed with, and its
+/// [`with_inspect_group`](
+/// crate::inspector::InspectAppExt::with_inspect_group) group.
 ///
-/// Sorted by that name: an archetype lists what it holds in whatever
-/// order it happens to, and a panel whose sections reshuffle when a
-/// component is added is no use to read.
+/// Sorted by group (ungrouped first), then by name within it: an
+/// archetype lists what it holds in whatever order it happens to, and
+/// a panel whose sections reshuffle when a component is added is no
+/// use to read.
 fn inspectable(
     world: &World,
     entity: Entity,
-) -> Vec<(TypeId, Cow<'static, str>)> {
+) -> Vec<(TypeId, Cow<'static, str>, Option<&'static str>)> {
     let Ok(components) = world.inspect_entity(entity) else {
         return Vec::new();
     };
@@ -442,7 +458,11 @@ fn inspectable(
         components.filter_map(|info| info.type_id()).collect();
 
     let registry = world.resource::<AppTypeRegistry>().read();
-    let mut out: Vec<(TypeId, Cow<'static, str>)> = ids
+    let mut out: Vec<(
+        TypeId,
+        Cow<'static, str>,
+        Option<&'static str>,
+    )> = ids
         .into_iter()
         .filter_map(|id| {
             let registration = registry.get(id)?;
@@ -451,11 +471,16 @@ fn inspectable(
             registration.data::<ReflectComponent>()?;
             // Opt-in - see InspectAppExt::register_inspectable.
             registration.data::<ReflectInspectable>()?;
-            Some((id, display_name(registration)))
+            let group = registration
+                .data::<ReflectInspectGroup>()
+                .map(|group| group.0);
+            Some((id, display_name(registration), group))
         })
         .collect();
 
-    out.sort_by_key(|(_, name)| name.clone());
+    out.sort_by(|(_, a_name, a_group), (_, b_name, b_group)| {
+        a_group.cmp(b_group).then_with(|| a_name.cmp(b_name))
+    });
     out
 }
 
