@@ -21,7 +21,7 @@ use motiongfx_scene::scene::{Scene, Stage};
 ///
 /// The action panel edits the tree, the timeline panel's row layout
 /// reads it, and `recompile_dirty_scene` turns it back into a
-/// timeline whenever [`Self::edit`] lands a write.
+/// timeline whenever `edit` lands a write.
 ///
 /// Public (unlike most of this crate's state) because the example
 /// binaries build it directly, in place of `motiongfx`'s imperative

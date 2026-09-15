@@ -4,9 +4,9 @@
 //! The pickup and the tag that follows the cursor are `moxie_ui`'s
 //! generic field drag ([`DraggedField`]). This module is the timeline
 //! half: the landing preview while a field is held over the track, and
-//! on release splicing a fresh [`Node::Action`] into the tree. Drop
-//! resolution (merge / chain / plain insert) and the landing hints are
-//! shared with [`reorder`](super::reorder).
+//! on release splicing a fresh [`SceneNode::Action`] into the tree.
+//! Drop resolution (merge / chain / plain insert) and the landing
+//! hints are shared with [`reorder`].
 
 use core::time::Duration;
 use std::collections::BTreeSet;
@@ -171,7 +171,7 @@ pub(super) fn on_drop(
 }
 
 /// Resolves the drop, captures the field's live value, and writes a
-/// new [`Node::Action`] into the tree.
+/// new [`SceneNode::Action`] into the tree.
 fn create(
     world: &mut World,
     field: &Field,
