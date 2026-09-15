@@ -439,7 +439,7 @@ fn card(
     ui: &mut BevyUi,
     content: impl FnOnce(&mut BevyUi) + Send + Sync + 'static,
 ) {
-    let background = ui.theme.color.bg;
+    let background = ui.theme.color.panel;
     let radius = ui.theme.space.card_radius;
     let padding = ui.theme.space.card_padding;
 
