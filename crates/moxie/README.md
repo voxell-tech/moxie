@@ -4,6 +4,8 @@
 [![CI](https://github.com/voxell-tech/moxie/workflows/CI/badge.svg)](https://github.com/voxell-tech/moxie/actions)
 [![Discord](https://img.shields.io/discord/442334985471655946.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/Mhnyp6VYEQ)
 
+![Moxie](/.github/assets/moxie.png)
+
 ## Introduction
 
 **Moxie** is a `bevy_ui` based editor for the
