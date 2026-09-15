@@ -9,6 +9,7 @@ pub mod asset;
 pub mod drag;
 pub mod elements;
 pub mod fold;
+pub mod hover_delete;
 pub mod icons;
 pub mod inspector;
 pub mod layout;

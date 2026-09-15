@@ -25,9 +25,10 @@ use fynix::prelude::*;
 use fynix::records::{BuildFn, ChangedFn};
 
 use super::{
-    Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Icon,
-    Label, TintButton,
+    Button, Dropdown, DropdownItem, DropdownList, DropdownMenu,
+    Frame, Icon, Label, TintButton,
 };
+use crate::hover_delete::hover_delete;
 use crate::icons;
 use crate::inspector::{
     Field, FieldRow, InspectorFields, ReflectInspectGroup,
@@ -171,6 +172,30 @@ impl Composer<FynixHost> for EntityInspector {
                     // `entries` in `tree.rs`, which never wraps the
                     // root in a group of its own either.
                     section: (entity, component, String::new()),
+                    on_header: move |mut header: ElementMut<
+                        '_,
+                        '_,
+                        FynixHost,
+                        Button,
+                    >| {
+                        let row = header.id();
+                        header.with(move |ui| {
+                            // Eats whatever room the label leaves, so
+                            // the delete button lands flush against
+                            // the far end.
+                            ui.elem(elem!(Frame, flex_grow = 1.0f32));
+                            hover_delete(
+                                ui,
+                                row,
+                                icons::TRASH,
+                                move |world| {
+                                    remove_component(
+                                        world, entity, component,
+                                    );
+                                },
+                            );
+                        });
+                    },
                 });
             }
 
@@ -387,6 +412,29 @@ fn add_component(
         value.as_partial_reflect(),
         &registry,
     );
+}
+
+/// Removes `component` from `entity`. Does nothing if the entity
+/// despawned, never carried it, or its type isn't registered.
+fn remove_component(
+    world: &mut World,
+    entity: Entity,
+    component: TypeId,
+) {
+    let registry = world.resource::<AppTypeRegistry>().clone();
+    let registry = registry.read();
+
+    let Some(reflect_component) =
+        registry.get(component).and_then(|registration| {
+            registration.data::<ReflectComponent>()
+        })
+    else {
+        return;
+    };
+    let Ok(mut entity) = world.get_entity_mut(entity) else {
+        return;
+    };
+    reflect_component.remove(&mut entity);
 }
 
 /// A whole component on one row, named where a group of fields would

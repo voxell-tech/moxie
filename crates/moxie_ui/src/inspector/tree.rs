@@ -530,14 +530,14 @@ fn build_variant(
         return;
     }
 
-    ui.compose(Section {
+    // Re-walked from `field` on every open rather than carried in the
+    // closure, so a section reopened many times never clones stale
+    // data forward. `entries` never wraps `field` itself, so its one
+    // entry is always this same variant.
+    ui.compose(Section::new(
         name,
-        section: (root.entity(), root.component(), path),
-        // Re-walked from `field` on every open rather than carried
-        // in the closure, so a section reopened many times never
-        // clones stale data forward. `entries` never wraps `field`
-        // itself, so its one entry is always this same variant.
-        body: move |ui: &mut BevyUi| {
+        (root.entity(), root.component(), path),
+        move |ui: &mut BevyUi| {
             let Some(Entry::Variant {
                 variants,
                 pick,
@@ -554,7 +554,7 @@ fn build_variant(
             });
             build_entries(ui, &field, children, depth + 1);
         },
-    });
+    ));
 }
 
 fn build_group(
@@ -566,30 +566,60 @@ fn build_group(
 ) {
     let group_field = root.child(&path);
 
-    ui.compose(Section {
+    // Re-walked from `group_field` on every open rather than carried
+    // in the closure, so a section reopened many times never clones
+    // stale data forward.
+    ui.compose(Section::new(
         name,
-        section: (root.entity(), root.component(), path),
-        // Re-walked from `group_field` on every open rather than
-        // carried in the closure, so a section reopened many times
-        // never clones stale data forward.
-        body: move |ui: &mut BevyUi| {
+        (root.entity(), root.component(), path),
+        move |ui: &mut BevyUi| {
             let walked = entries(ui.world, &group_field);
             build_entries(ui, &group_field, walked, depth + 1);
         },
-    });
+    ));
 }
 
 /// A collapsible section: a header that folds it, and a body indented
 /// under a guide rail.
-pub struct Section<F> {
+pub struct Section<F, H> {
     pub name: String,
     pub body: F,
     /// This section's place in `ClosedSections`, as entity,
     /// component, path.
     pub section: (Entity, TypeId, String),
+    /// Run on the header once it's built, after folding is wired to
+    /// it - for whatever else the header should carry, like a delete
+    /// button. A no-op when left out.
+    pub on_header: H,
 }
 
-impl<F: BuildFn<FynixHost>> Composer<FynixHost> for Section<F> {
+/// [`Section::new`]'s `on_header`: nothing extra on it.
+fn no_header(_: ElementMut<'_, '_, FynixHost, Button>) {}
+
+impl<F> Section<F, fn(ElementMut<'_, '_, FynixHost, Button>)> {
+    /// A section with nothing extra on its header.
+    pub fn new(
+        name: String,
+        section: (Entity, TypeId, String),
+        body: F,
+    ) -> Self {
+        Self {
+            name,
+            body,
+            section,
+            on_header: no_header,
+        }
+    }
+}
+
+impl<
+    F: BuildFn<FynixHost>,
+    H: for<'u, 'a> FnOnce(ElementMut<'u, 'a, FynixHost, Button>)
+        + Send
+        + Sync
+        + 'static,
+> Composer<FynixHost> for Section<F, H>
+{
     type Element = Frame;
 
     fn compose(
@@ -600,6 +630,7 @@ impl<F: BuildFn<FynixHost>> Composer<FynixHost> for Section<F> {
             name,
             body,
             section,
+            on_header,
         } = self;
         let (entity, component, path) = section;
         let open = !ui
@@ -635,7 +666,7 @@ impl<F: BuildFn<FynixHost>> Composer<FynixHost> for Section<F> {
             // Nothing else to mean: the whole header folds it.
             folds_on: FoldsOn::Header,
             enabled: true,
-            on_header: |_: ElementMut<'_, '_, FynixHost, Button>| {},
+            on_header,
             body,
             open,
             on_toggle: move |world: &mut World, open: bool| {

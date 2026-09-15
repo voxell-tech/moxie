@@ -24,6 +24,7 @@ use moxie_ui::elements::{
     Label, LabelCursor, Panel, ScrollArea, TintButton,
 };
 use moxie_ui::fold::{Foldable, FoldsOn};
+use moxie_ui::hover_delete::hover_delete;
 use moxie_ui::reactive::{
     BevyUi, FynixHost, component_changed_on, value_changed,
 };
@@ -160,6 +161,16 @@ fn spawn_new_entity(world: &mut World) {
         .id();
 
     world.insert_resource(SelectedEntity(Some(entity)));
+}
+
+/// Despawns `entity` and everything under it, and clears the
+/// selection if it pointed there.
+fn despawn_entity(world: &mut World, entity: Entity) {
+    world.despawn(entity);
+    let mut selected = world.resource_mut::<SelectedEntity>();
+    if selected.0 == Some(entity) {
+        selected.0 = None;
+    }
 }
 
 fn build_roots(ui: &mut BevyUi) {
@@ -331,6 +342,7 @@ impl Composer<FynixHost> for Subtree {
                 FynixHost,
                 Button,
             >| {
+                let row = header.id();
                 drag::rows(&mut header, entity)
                     .observe(
                         move |_: On<Activate>,
@@ -356,6 +368,18 @@ impl Composer<FynixHost> for Subtree {
                             name_of(world, entity)
                         },
                     );
+
+                header.with(move |ui| {
+                    // Eats whatever room the label leaves, so the
+                    // delete button lands flush against the far end.
+                    ui.elem(elem!(Frame, flex_grow = 1.0f32));
+                    hover_delete(
+                        ui,
+                        row,
+                        moxie_ui::icons::TRASH,
+                        move |world| despawn_entity(world, entity),
+                    );
+                });
             },
             body: move |ui: &mut BevyUi| {
                 ui.elem(elem!(
