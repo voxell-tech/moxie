@@ -73,11 +73,18 @@ impl Plugin for InspectPlugin {
             .register_inspect::<String>()
             .register_inspect::<Name>()
             .register_inspect::<Handle<StandardMaterial>>()
-            .register_inspect::<Handle<Mesh>>();
+            .register_inspect::<Handle<Mesh>>()
+            .register_inspect::<Handle<ColorMaterial>>();
 
         app.register_inspectable::<Name>()
             .register_inspectable::<Visibility>()
             .register_inspectable::<Transform>()
+            .register_inspectable::<Text2d>()
+            .register_inspectable::<TextColor>()
+            .register_inspectable::<Mesh2d>()
+            .register_inspectable_as::<MeshMaterial2d<ColorMaterial>>(
+                "Color Material",
+            )
             .register_inspectable::<Camera3d>()
             .register_inspectable::<CascadeShadowConfig>()
             .register_inspectable::<DirectionalLight>()
