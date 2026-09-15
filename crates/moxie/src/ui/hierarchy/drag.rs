@@ -133,6 +133,7 @@ pub(super) fn rows<'r, 'u, 'a>(
         .observe(
             move |start: On<Pointer<DragStart>>,
                   names: Query<&Name>,
+                  uids: Query<&EntityUid>,
                   kernel: Res<BevyFynix<EditorTheme>>,
                   scale: Res<UiScale>,
                   mut dragging: ResMut<Dragging>,
@@ -141,10 +142,10 @@ pub(super) fn rows<'r, 'u, 'a>(
                     return;
                 }
 
-                let name = names
-                    .get(subject)
-                    .map(|name| name.as_str().to_string())
-                    .unwrap_or_default();
+                let name = super::placeholder_name(
+                    names.get(subject).ok(),
+                    uids.get(subject).ok(),
+                );
                 let at = start.pointer_location.position / scale.0;
 
                 dragging.subject = Some(subject);
