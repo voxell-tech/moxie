@@ -7,7 +7,7 @@
 //! window edge, dismissal on focus loss, Escape, and arrow-key
 //! navigation.
 
-use crate::reactive::{BevyUi, FynixBuild};
+use crate::reactive::{BevyUi, FynixBuild, FynixHost};
 use crate::theme::EditorTheme;
 use bevy::feathers::controls::{FeathersMenu, FeathersMenuPopup};
 use bevy::feathers::cursor::EntityCursor;
@@ -23,9 +23,10 @@ use bevy_fynix::WorldEntityMut as _;
 use bevy_fynix::tag::{Hovered, Pressed, TagExt as _};
 use fynix::element::element;
 use fynix::prelude::elem;
+use fynix::style::Style;
 
 use super::patch::*;
-use super::{Icon, Label};
+use super::{Frame, Icon, Label};
 
 /// What a [`Dropdown`] and its [`DropdownList`] hang from.
 ///
@@ -254,11 +255,8 @@ impl DropdownItem {
     }
 }
 
-/// One row of any menu - a [`DropdownList`], the top bar's own File
-/// menu, a right-click [`context_menu`](crate::context_menu) - built
-/// the same way everywhere: a [`DropdownItem`] that runs `on_click`
-/// and closes whatever list it sits in when picked. Its rounding is
-/// [`DropdownItem`]'s own default, the same for every menu.
+/// One row of any menu: a [`DropdownItem`] that runs `on_click` and
+/// closes whatever list it sits in when picked.
 pub fn menu_item(
     ui: &mut BevyUi,
     theme: &EditorTheme,
@@ -279,4 +277,24 @@ pub fn menu_item(
         let on_click = on_click.clone();
         commands.queue(move |world: &mut World| on_click(world));
     });
+}
+
+/// A menu's own floating surface. Pair with an explicit `inset` to
+/// place it.
+pub struct MenuSurface;
+
+impl Style for MenuSurface {
+    type Host = FynixHost;
+    type Element = Frame;
+
+    fn apply(&self, frame: &mut Frame, theme: &EditorTheme) {
+        frame.position = PositionType::Absolute;
+        frame.direction = FlexDirection::Column;
+        frame.min_width = px(120);
+        frame.padding = UiRect::all(px(theme.space.menu_padding));
+        frame.background = theme.color.panel;
+        frame.radius = px(theme.space.menu_radius);
+        frame.overflow = Overflow::clip();
+        frame.z = Some(theme.layer.context_menu);
+    }
 }

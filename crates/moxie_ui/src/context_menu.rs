@@ -11,13 +11,12 @@ use bevy::ui::UiScale;
 use bevy_fynix::WorldEntityMut;
 use fynix::prelude::*;
 
-use crate::elements::{Frame, Overlay, menu_item};
+use crate::elements::{MenuSurface, Overlay, menu_item};
 use crate::reactive::{BevyUi, watch_root};
 use crate::theme::EditorTheme;
 
-/// The open menu's own root, so a second right-click - or the
-/// catch-all overlay behind it - can close it before anything else
-/// happens.
+/// The open menu's own root, so a second right-click or the overlay
+/// behind it can close it.
 #[derive(Component)]
 struct ContextMenuRoot;
 
@@ -97,11 +96,9 @@ fn spawn_context_menu(
 ) {
     despawn_context_menu(world);
 
-    // A `Node` of its own, same as the app's own UI root: without
-    // one this is a plain entity, and every UI child parented under
-    // it inherits no layout at all. No `UiTargetCamera` needed -
-    // like a drag ghost or drop overlay, it falls back to whichever
-    // camera is marked `IsDefaultUiCamera`.
+    // A `Node` of its own, like the app's own UI root - without one
+    // its children inherit no layout at all. Falls back to whichever
+    // camera is `IsDefaultUiCamera`, same as a drag ghost.
     let root = world
         .spawn((
             ContextMenuRoot,
@@ -115,8 +112,6 @@ fn spawn_context_menu(
     watch_root::<EditorTheme>(world, root, move |ui: &mut BevyUi| {
         let layer = ui.theme.layer.context_menu;
 
-        // Catches a click anywhere else, closing the menu without
-        // acting on whatever it landed on.
         ui.elem(elem!(Overlay, catches = true, z = layer - 1))
             .observe(
                 |_: On<Pointer<Press>>, mut commands: Commands| {
@@ -124,25 +119,10 @@ fn spawn_context_menu(
                 },
             );
 
-        let background = ui.theme.color.panel;
-        let padding = ui.theme.space.menu_padding;
-        let radius = ui.theme.space.menu_radius;
         let build = build.clone();
         ui.elem(elem!(
-            Frame,
-            position = PositionType::Absolute,
-            inset = UiRect::new(px(at.x), auto(), px(at.y), auto()),
-            min_width = px(120),
-            direction = FlexDirection::Column,
-            padding = UiRect::all(px(padding)),
-            background = background,
-            // Concentric with `DropdownItem`'s own radius across
-            // `padding` - see HIG's `toolbars.md`: a custom
-            // component's corner should stay concentric with what it
-            // sits inside.
-            radius = px(radius),
-            overflow = Overflow::clip(),
-            z = Some(layer)
+            !MenuSurface,
+            inset = UiRect::new(px(at.x), auto(), px(at.y), auto())
         ))
         .with(move |ui| {
             let mut builder = ContextMenuBuilder { ui };
