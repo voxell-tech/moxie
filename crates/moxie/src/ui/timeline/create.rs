@@ -76,6 +76,10 @@ pub(super) fn preview(
     };
 
     if dragged.field.is_none() {
+        // The drag may have ended without a `DragDrop` over the
+        // track (e.g. released elsewhere) - `on_drop` never ran to
+        // hide the hint this hovering left showing.
+        clear(&mut nodes);
         return;
     }
     let (Some(cursor), Ok((vp_node, vp_transform, scroll))) =
