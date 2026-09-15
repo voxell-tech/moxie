@@ -29,6 +29,45 @@ use crate::reactive::{BevyUi, FynixHost};
 #[derive(Component, Default)]
 struct ClosedSections(HashSet<(TypeId, String)>);
 
+/// Whether the section at `component`/`path` on `entity` is open.
+pub(crate) fn section_open(
+    world: &World,
+    entity: Entity,
+    component: TypeId,
+    path: &str,
+) -> bool {
+    !world.get::<ClosedSections>(entity).is_some_and(|sections| {
+        sections.0.contains(&(component, path.to_string()))
+    })
+}
+
+/// Flips the section at `component`/`path` on `entity` open or shut.
+pub(crate) fn toggle_section(
+    world: &mut World,
+    entity: Entity,
+    component: TypeId,
+    path: String,
+    open: bool,
+) {
+    let Ok(mut entity) = world.get_entity_mut(entity) else {
+        return;
+    };
+    match entity.get_mut::<ClosedSections>() {
+        Some(mut sections) if !open => {
+            sections.0.insert((component, path));
+        }
+        Some(mut sections) => {
+            sections.0.remove(&(component, path));
+        }
+        None if !open => {
+            let mut sections = HashSet::default();
+            sections.insert((component, path));
+            entity.insert(ClosedSections(sections));
+        }
+        None => {}
+    }
+}
+
 /// One row the walk found.
 #[derive(Clone, PartialEq)]
 enum Entry {
@@ -592,12 +631,7 @@ impl<
             on_header,
         } = self;
         let (entity, component, path) = section;
-        let open = !ui
-            .world
-            .get::<ClosedSections>(entity)
-            .is_some_and(|sections| {
-                sections.0.contains(&(component, path.clone()))
-            });
+        let open = section_open(ui.world, entity, component, &path);
 
         let muted = ui.theme.color.text_dim;
         let primary = ui.theme.color.text;
@@ -629,24 +663,13 @@ impl<
             body,
             open,
             on_toggle: move |world: &mut World, open: bool| {
-                let Ok(mut entity) = world.get_entity_mut(entity)
-                else {
-                    return;
-                };
-                match entity.get_mut::<ClosedSections>() {
-                    Some(mut sections) if !open => {
-                        sections.0.insert((component, path.clone()));
-                    }
-                    Some(mut sections) => {
-                        sections.0.remove(&(component, path.clone()));
-                    }
-                    None if !open => {
-                        let mut sections = HashSet::default();
-                        sections.insert((component, path.clone()));
-                        entity.insert(ClosedSections(sections));
-                    }
-                    None => {}
-                }
+                toggle_section(
+                    world,
+                    entity,
+                    component,
+                    path.clone(),
+                    open,
+                );
             },
         })
         .handle()
