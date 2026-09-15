@@ -80,8 +80,6 @@ pub struct Colors {
     pub bg: Color,
     /// Panels and popups.
     pub panel: Color,
-    /// A raised strip within a panel.
-    pub surface: Color,
     /// A filled control's resting surface.
     pub fill: Color,
     /// A barely-there fill, for a tint rather than a surface.
@@ -189,7 +187,6 @@ impl Default for EditorTheme {
                 critical: palette.red,
                 bg: base[0],
                 panel: base[1],
-                surface: base[2],
                 fill: base[8].with_alpha(0.06),
                 fill_faint: base[8].with_alpha(0.03),
                 hairline: base[8].with_alpha(0.08),

@@ -422,7 +422,7 @@ fn component_card(
 ) {
     let deletable = !essential(ui.world, component);
     let open = section_open(ui.world, entity, component, "");
-    let background = ui.theme.color.surface;
+    let background = ui.theme.color.panel;
     let radius = ui.theme.space.card_radius;
     let padding = ui.theme.space.card_padding;
     let muted = ui.theme.color.text_dim;
