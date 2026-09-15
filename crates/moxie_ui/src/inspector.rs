@@ -81,25 +81,35 @@ impl Plugin for InspectPlugin {
 
         app.register_inspectable::<Name>()
             .register_inspectable::<Visibility>()
-            .register_inspectable::<Transform>()
+            .register_inspectable::<Transform>();
+
+        app.with_inspect_group("Text")
             .register_inspectable::<Text2d>()
             .register_inspectable::<TextFont>()
             .register_inspectable::<TextColor>()
             .register_inspectable::<TextLayout>()
             .register_inspectable::<LineHeight>()
             .register_inspectable::<LetterSpacing>()
-            .register_inspectable::<Anchor>()
+            .register_inspectable::<Anchor>();
+
+        app.with_inspect_group("2D Mesh")
             .register_inspectable::<Mesh2d>()
             .register_inspectable_as::<MeshMaterial2d<ColorMaterial>>(
                 "Color Material",
-            )
+            );
+
+        app.with_inspect_group("Cameras")
             .register_inspectable::<Camera3d>()
-            .register_inspectable::<Camera2d>()
+            .register_inspectable::<Camera2d>();
+
+        app.with_inspect_group("Lighting")
             .register_inspectable::<CascadeShadowConfig>()
             .register_inspectable::<DirectionalLight>()
             .register_inspectable::<PointLight>()
             .register_inspectable::<RectLight>()
-            .register_inspectable::<SpotLight>()
+            .register_inspectable::<SpotLight>();
+
+        app.with_inspect_group("3D Mesh")
             .register_inspectable::<Mesh3d>()
             .register_inspectable_as::<MeshMaterial3d<StandardMaterial>>(
                 "PBR Material",
@@ -136,6 +146,14 @@ pub trait InspectAppExt {
         &mut self,
         name: &'static str,
     ) -> &mut Self;
+
+    /// A scope for tagging the [`InspectGroup::register_inspectable`]
+    /// calls chained off it with `name`, so `AddComponent`'s menu
+    /// lists them together.
+    fn with_inspect_group(
+        &mut self,
+        name: &'static str,
+    ) -> InspectGroup<'_>;
 }
 
 impl InspectAppExt for App {
@@ -170,6 +188,66 @@ impl InspectAppExt for App {
                 .insert(ReflectInspectable { name: Some(name) });
         }
         self
+    }
+
+    fn with_inspect_group(
+        &mut self,
+        name: &'static str,
+    ) -> InspectGroup<'_> {
+        InspectGroup { app: self, name }
+    }
+}
+
+/// Which group of `AddComponent`'s menu a component belongs to; see
+/// [`InspectAppExt::with_inspect_group`].
+#[derive(Clone)]
+pub struct ReflectInspectGroup(pub &'static str);
+
+/// A scope from [`InspectAppExt::with_inspect_group`], for tagging
+/// several [`register_inspectable`](Self::register_inspectable) calls
+/// at once.
+pub struct InspectGroup<'a> {
+    app: &'a mut App,
+    name: &'static str,
+}
+
+impl InspectGroup<'_> {
+    /// As [`InspectAppExt::register_inspectable`], tagged with this
+    /// scope's group.
+    pub fn register_inspectable<
+        T: Component + Reflect + TypePath + GetTypeRegistration,
+    >(
+        &mut self,
+    ) -> &mut Self {
+        self.app.register_inspectable::<T>();
+        self.tag::<T>();
+        self
+    }
+
+    /// As [`InspectAppExt::register_inspectable_as`], tagged with
+    /// this scope's group.
+    pub fn register_inspectable_as<
+        T: Component + Reflect + TypePath + GetTypeRegistration,
+    >(
+        &mut self,
+        name: &'static str,
+    ) -> &mut Self {
+        self.app.register_inspectable_as::<T>(name);
+        self.tag::<T>();
+        self
+    }
+
+    /// Inserts [`ReflectInspectGroup`] onto `T`'s already-registered
+    /// entry.
+    fn tag<T: TypePath + GetTypeRegistration>(&mut self) {
+        let registry =
+            self.app.world().resource::<AppTypeRegistry>().clone();
+        let mut registry = registry.write();
+        if let Some(registration) =
+            registry.get_mut(TypeId::of::<T>())
+        {
+            registration.insert(ReflectInspectGroup(self.name));
+        }
     }
 }
 
