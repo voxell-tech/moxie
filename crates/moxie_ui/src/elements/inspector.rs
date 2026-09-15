@@ -433,13 +433,13 @@ fn essential(world: &World, component: TypeId) -> bool {
     })
 }
 
-/// One component's own card: a raised surface around `content`, like
+/// One component's own card: a sunken surface around `content`, like
 /// Unity's per-component panel.
 fn card(
     ui: &mut BevyUi,
     content: impl FnOnce(&mut BevyUi) + Send + Sync + 'static,
 ) {
-    let background = ui.theme.color.surface;
+    let background = ui.theme.color.bg;
     let radius = ui.theme.space.card_radius;
     let padding = ui.theme.space.card_padding;
 
