@@ -181,11 +181,17 @@ impl Composer<FynixHost> for EntityInspector {
                             return;
                         }
                         context_menu(&mut header, move |menu| {
-                            menu.item("Delete", move |world| {
-                                remove_component(
-                                    world, entity, component,
-                                );
-                            });
+                            let critical =
+                                menu.theme().color.critical;
+                            menu.item(
+                                Some((icons::TRASH, critical)),
+                                "Delete",
+                                move |world| {
+                                    remove_component(
+                                        world, entity, component,
+                                    );
+                                },
+                            );
                         });
                     },
                 });
@@ -310,7 +316,7 @@ fn add_component_item(
     component: TypeId,
     name: &str,
 ) {
-    menu_item(ui, name, move |world| {
+    menu_item(ui, None, name, move |world| {
         add_component(world, entity, component);
     });
 }
@@ -463,9 +469,14 @@ fn single(
     });
     if deletable {
         context_menu(&mut row, move |menu| {
-            menu.item("Delete", move |world| {
-                remove_component(world, entity, component);
-            });
+            let critical = menu.theme().color.critical;
+            menu.item(
+                Some((icons::TRASH, critical)),
+                "Delete",
+                move |world| {
+                    remove_component(world, entity, component);
+                },
+            );
         });
     }
 }

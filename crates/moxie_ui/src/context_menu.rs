@@ -29,12 +29,17 @@ pub struct ContextMenuBuilder<'u, 'a> {
 }
 
 impl ContextMenuBuilder<'_, '_> {
+    pub fn theme(&self) -> &EditorTheme {
+        self.ui.theme
+    }
+
     pub fn item(
         &mut self,
+        icon: Option<(&str, Color)>,
         label: impl Into<String>,
         on_click: impl Fn(&mut World) + Send + Sync + Clone + 'static,
     ) {
-        menu_item(self.ui, label, move |world| {
+        menu_item(self.ui, icon, label, move |world| {
             despawn_context_menu(world);
             on_click(world);
         });

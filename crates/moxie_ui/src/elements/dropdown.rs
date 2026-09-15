@@ -196,8 +196,14 @@ field_patch!(PatchListWidth, Val, |patch, v| {
 /// focus is what keeps the list open at all.
 #[element(build = Self::build)]
 pub struct DropdownItem {
+    /// Before the label, when set.
+    #[elem(child)]
+    pub icon: Option<Icon>,
     #[elem(child)]
     pub label: Label,
+    /// Between the icon and the label, when there is one.
+    #[elem(default = px(theme.space.sm), patch = PatchColumnGap)]
+    pub column_gap: Val,
     #[elem(default = px(20), patch = PatchHeight)]
     pub height: Val,
     #[elem(default = ::NONE, patch = PatchBackground, anim(
@@ -258,27 +264,48 @@ impl DropdownItem {
 }
 
 /// One row of any menu: a [`DropdownItem`] that runs `on_click` and
-/// closes whatever list it sits in when picked.
+/// closes whatever list it sits in when picked. `icon` is an asset
+/// path and its tint, shown before the label.
 pub fn menu_item(
     ui: &mut BevyUi,
+    icon: Option<(&str, Color)>,
     label: impl Into<String>,
     on_click: impl Fn(&mut World) + Send + Sync + Clone + 'static,
 ) {
     let text = ui.theme.color.text;
-    ui.elem(elem!(
-        DropdownItem,
-        label = elem!(
-            Label,
-            text = label.into(),
-            wrap = false,
-            color = text
-        )
-    ))
-    .pointer_tags()
-    .observe(move |_: On<Activate>, mut commands: Commands| {
-        let on_click = on_click.clone();
-        commands.queue(move |world: &mut World| on_click(world));
-    });
+    let label = label.into();
+    let mut item = match icon {
+        Some((image, color)) => ui.elem(elem!(
+            DropdownItem,
+            icon = elem!(
+                Icon,
+                image = image.to_string(),
+                color = color,
+                size = px(12)
+            ),
+            label = elem!(
+                Label,
+                text = label,
+                wrap = false,
+                color = text
+            )
+        )),
+        None => ui.elem(elem!(
+            DropdownItem,
+            label = elem!(
+                Label,
+                text = label,
+                wrap = false,
+                color = text
+            )
+        )),
+    };
+    item.pointer_tags().observe(
+        move |_: On<Activate>, mut commands: Commands| {
+            let on_click = on_click.clone();
+            commands.queue(move |world: &mut World| on_click(world));
+        },
+    );
 }
 
 /// A menu's own floating surface. Pair with an explicit `inset` to

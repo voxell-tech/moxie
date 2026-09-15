@@ -19,3 +19,6 @@ pub const CHEVRON: &str = "icons/arrows/chevron-up.png";
 
 /// A `Handle<T>` field in the inspector.
 pub const ASSET: &str = "icons/files/file-04.png";
+
+/// A destructive menu row, like "Delete".
+pub const TRASH: &str = "icons/general/trash-01.png";

@@ -299,7 +299,7 @@ impl ClonableSource {
 fn option(ui: &mut BevyUi, source: &dyn Source, variant: String) {
     let source = ClonableSource(source.boxed());
 
-    menu_item(ui, variant.clone(), move |world| {
+    menu_item(ui, None, variant.clone(), move |world| {
         let Some(value) = source.get(world) else {
             return;
         };

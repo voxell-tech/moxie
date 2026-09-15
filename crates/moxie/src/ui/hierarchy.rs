@@ -394,9 +394,14 @@ impl Composer<FynixHost> for Subtree {
                     );
 
                 context_menu(&mut header, move |menu| {
-                    menu.item("Delete", move |world| {
-                        despawn_entity(world, entity);
-                    });
+                    let critical = menu.theme().color.critical;
+                    menu.item(
+                        Some((moxie_ui::icons::TRASH, critical)),
+                        "Delete",
+                        move |world| {
+                            despawn_entity(world, entity);
+                        },
+                    );
                 });
             },
             body: move |ui: &mut BevyUi| {

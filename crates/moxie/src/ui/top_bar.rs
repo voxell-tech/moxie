@@ -76,7 +76,7 @@ impl Composer<FynixHost> for Menu {
                 ui.elem(elem!(DropdownList, width = width)).with(
                     move |ui| {
                         for (entry, run) in entries {
-                            menu_item(ui, entry, run);
+                            menu_item(ui, None, entry, run);
                         }
                     },
                 );
