@@ -3,6 +3,8 @@
 //! [`MotionGfxManager`] is a compiled, disposable view of it,
 //! rebuilt by `recompile_dirty_scene` whenever it changes.
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use bevy::prelude::*;
 use bevy_motiongfx::prelude::*;
 use bevy_motiongfx::scene::asset::MotionGfxScene;
@@ -28,12 +30,24 @@ use motiongfx_scene::scene::{Scene, Stage};
 pub struct EditorScene {
     scene: MotionGfxScene,
     registry: BackendRegistry,
-    /// Bumped by every [`Self::edit`] - what [`scene_dirty`] diffs.
-    edits: u64,
+    /// What [`scene_dirty`] diffs.
+    version: SceneVersion,
+}
+
+/// What [`scene_dirty`] diffs: `generation` catches a whole
+/// `EditorScene` being replaced, `edits` catches a write to it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SceneVersion {
+    generation: u32,
+    edits: u32,
 }
 
 impl EditorScene {
     pub fn new(scene: MotionGfxScene) -> Self {
+        static NEXT_GENERATION: AtomicU32 = AtomicU32::new(0);
+        let generation =
+            NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+
         let mut registry = default_scene_registry();
         // Per-axis, so one axis of a translation or scale can be
         // animated on its own. Rotation stays whole-`Quat`: animating
@@ -49,7 +63,10 @@ impl EditorScene {
         Self {
             scene,
             registry,
-            edits: 0,
+            version: SceneVersion {
+                generation,
+                edits: 0,
+            },
         }
     }
 
@@ -65,18 +82,19 @@ impl EditorScene {
 
     /// The scene, to change.
     pub(crate) fn edit(&mut self) -> &mut MotionGfxScene {
-        self.edits = self.edits.wrapping_add(1);
+        self.version.edits = self.version.edits.wrapping_add(1);
         &mut self.scene
     }
 }
 
-/// Whether [`EditorScene::edit`] wrote since this last checked.
+/// Whether [`EditorScene::edit`] wrote, or the whole [`EditorScene`]
+/// was replaced, since this last checked.
 pub(crate) fn scene_dirty(
     scene: Res<EditorScene>,
-    mut seen: Local<Option<u64>>,
+    mut seen: Local<Option<SceneVersion>>,
 ) -> bool {
-    let dirty = *seen != Some(scene.edits);
-    *seen = Some(scene.edits);
+    let dirty = *seen != Some(scene.version);
+    *seen = Some(scene.version);
     dirty
 }
 
