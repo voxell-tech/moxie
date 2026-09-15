@@ -77,11 +77,9 @@ pub(super) fn preview(
     };
 
     if dragged.field.is_none() {
-        // Only on the frame a field drag actually ends: this runs
-        // every frame nothing is being field-dragged at all, which
-        // is most of the time - unconditionally clearing here would
-        // fight `reorder`'s own hint for a block/action drag, which
-        // shares the same `Visuals`.
+        // Gated on the edge, not the level: this branch runs on
+        // every frame nothing is field-dragged, and `reorder` shares
+        // this `Visuals` for its own hint.
         if *was_dragging {
             // The drag may have ended without a `DragDrop` over the
             // track (e.g. released elsewhere) - `on_drop` never ran

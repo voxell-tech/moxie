@@ -270,12 +270,11 @@ pub struct ReflectInspectGroup(pub &'static str);
 /// Marks a component no fresh entity is ever without; see
 /// [`InspectAppExt::register_essential`] and
 /// [`InspectAppExt::register_essential_with`].
-///
-/// A bare [`fn`], not a boxed closure: like [`ReflectDefault`], the
-/// value it produces carries all the state it needs, so there is
-/// nothing for the function itself to capture.
 #[derive(Clone, Copy)]
 pub struct ReflectEssential {
+    // A bare fn, not a boxed closure: like `ReflectDefault`, the
+    // value it produces carries all the state it needs, so there is
+    // nothing for the function itself to capture.
     spawn: fn() -> Box<dyn Reflect>,
 }
 

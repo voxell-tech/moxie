@@ -1,8 +1,7 @@
 //! A right-click menu: a small popup of [`menu_item`] rows at the
 //! cursor, dismissed by clicking anywhere else - the same row every
-//! other menu in the app uses (`Dropdown`'s own list, the enum
-//! variant picker, `AddComponent`, the top bar's File menu), so a
-//! right-click menu reads like the rest rather than like a one-off.
+//! other menu in the app uses, so a right-click menu reads like the
+//! rest rather than like a one-off.
 
 use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::{PointerButton, PointerLocation};
