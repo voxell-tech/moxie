@@ -39,7 +39,6 @@ use crate::reactive::{BevyUi, FynixHost};
 pub use field::Field;
 use field_drag::FieldName;
 pub use field_drag::{DraggedField, FieldAnimatable, FieldHasAction};
-pub(crate) use tree::single_value;
 pub use tree::{InspectorFields, Section};
 
 /// The widgets and the entity-inspector sections available out of

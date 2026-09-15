@@ -284,26 +284,6 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
     out
 }
 
-/// The path to `field`'s one editable value, if it holds only that
-/// and not a set of fields to fold - the value's own leaf, which the
-/// walk may have found under `field` rather than at it, as
-/// `MeshMaterial3d<StandardMaterial>` does with the `Handle` it
-/// wraps.
-pub(crate) fn single_value(
-    world: &World,
-    field: &Field,
-) -> Option<String> {
-    match entries(world, field).as_slice() {
-        [Entry::Leaf { path, .. }] => Some(path.clone()),
-        [Entry::Variant { path, children, .. }]
-            if children.is_empty() =>
-        {
-            Some(path.clone())
-        }
-        _ => None,
-    }
-}
-
 /// Fires when the *shape* under `field` changes: its set of entries,
 /// not merely their values.
 ///

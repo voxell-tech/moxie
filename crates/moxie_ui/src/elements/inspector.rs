@@ -30,9 +30,8 @@ use super::{
 use crate::context_menu::context_menu;
 use crate::icons;
 use crate::inspector::{
-    Field, FieldRow, InspectorFields, ReflectEssential,
-    ReflectInspectGroup, ReflectInspectable, Section, inspect_value,
-    single_value,
+    Field, InspectorFields, ReflectEssential, ReflectInspectGroup,
+    ReflectInspectable, Section,
 };
 use crate::reactive::{BevyUi, FynixHost, value_changed};
 
@@ -143,21 +142,6 @@ impl Composer<FynixHost> for EntityInspector {
                     if let Some(group) = group {
                         group_heading(ui, group);
                     }
-                }
-
-                let field = Field::new(entity, component);
-
-                if let Some(path) = single_value(ui.world, &field) {
-                    let leaf = if path.is_empty() {
-                        field
-                    } else {
-                        field.child(&path)
-                    };
-                    let name = name.to_string();
-                    card(ui, entity, component, move |ui| {
-                        single(ui, &name, leaf);
-                    });
-                    continue;
                 }
 
                 card(ui, entity, component, move |ui| {
@@ -425,22 +409,7 @@ fn essential(world: &World, component: TypeId) -> bool {
     })
 }
 
-/// A whole component on one row, named where a group of fields would
-/// have been headed.
-fn single(ui: &mut BevyUi, name: &str, field: Field) {
-    let name = name.to_string();
-    let primary = ui.theme.color.text;
-    ui.compose(FieldRow {
-        label: name,
-        color: primary,
-        bold: true,
-        depth: 0,
-        field: Some(field.clone()),
-        value: move |ui: &mut BevyUi| inspect_value(ui, &field),
-    });
-}
-
-/// One component's own card: a raised surface around `content`,
+/// One component's own card: a sunken surface around `content`,
 /// right-clickable anywhere on it for "Delete" once the component
 /// isn't [`essential`] - like Unity's per-component panel.
 fn card(
@@ -449,7 +418,7 @@ fn card(
     component: TypeId,
     content: impl FnOnce(&mut BevyUi) + Send + Sync + 'static,
 ) {
-    let background = ui.theme.color.surface;
+    let background = ui.theme.color.bg;
     let radius = ui.theme.space.card_radius;
     let padding = ui.theme.space.card_padding;
     let deletable = !essential(ui.world, component);
@@ -460,7 +429,8 @@ fn card(
         direction = FlexDirection::Column,
         background = background,
         radius = px(radius),
-        padding = UiRect::all(px(padding))
+        padding = UiRect::all(px(padding)),
+        overflow = Overflow::clip()
     ));
     card.with(content);
 
