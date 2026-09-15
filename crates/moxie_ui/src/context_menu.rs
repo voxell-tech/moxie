@@ -32,8 +32,7 @@ impl ContextMenuBuilder<'_, '_> {
         label: impl Into<String>,
         on_click: impl Fn(&mut World) + Send + Sync + Clone + 'static,
     ) {
-        let theme = self.ui.theme;
-        menu_item(self.ui, theme, label, move |world| {
+        menu_item(self.ui, label, move |world| {
             despawn_context_menu(world);
             on_click(world);
         });

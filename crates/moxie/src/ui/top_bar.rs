@@ -13,7 +13,6 @@ use moxie_ui::elements::{
     menu_item,
 };
 use moxie_ui::reactive::{BevyUi, FynixHost};
-use moxie_ui::theme::EditorTheme;
 
 use crate::project;
 
@@ -60,7 +59,6 @@ impl Composer<FynixHost> for Menu {
         ui: &mut BevyUi,
     ) -> ElementHandle<FynixHost, DropdownMenu> {
         let Self { name, entries } = self;
-        let theme = ui.theme;
         // Sized to the longest entry, so the list clears its own text
         // whichever menu it belongs to.
         let width = Dropdown::width_for(
@@ -73,12 +71,12 @@ impl Composer<FynixHost> for Menu {
 
         ui.elem(elem!(DropdownMenu))
             .with(move |ui| {
-                title(ui, theme, name);
+                title(ui, name);
 
                 ui.elem(elem!(DropdownList, width = width)).with(
                     move |ui| {
                         for (entry, run) in entries {
-                            menu_item(ui, theme, entry, run);
+                            menu_item(ui, entry, run);
                         }
                     },
                 );
@@ -91,14 +89,15 @@ impl Composer<FynixHost> for Menu {
 ///
 /// A button rather than a [`Dropdown`]: an entry in a menu bar is a
 /// word, not a form control, so it wears no chevron.
-fn title(ui: &mut BevyUi, theme: &EditorTheme, name: &str) {
+fn title(ui: &mut BevyUi, name: &str) {
+    let text = ui.theme.color.text;
     ui.elem(elem!(
         !MenuButton,
         label = elem!(
             Label,
             text = name.to_string(),
             wrap = false,
-            color = theme.color.text
+            color = text
         )
     ))
     // What the menu's own observer reaches this through to open the

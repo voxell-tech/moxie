@@ -261,17 +261,17 @@ impl DropdownItem {
 /// closes whatever list it sits in when picked.
 pub fn menu_item(
     ui: &mut BevyUi,
-    theme: &EditorTheme,
     label: impl Into<String>,
     on_click: impl Fn(&mut World) + Send + Sync + Clone + 'static,
 ) {
+    let text = ui.theme.color.text;
     ui.elem(elem!(
         DropdownItem,
         label = elem!(
             Label,
             text = label.into(),
             wrap = false,
-            color = theme.color.text
+            color = text
         )
     ))
     .pointer_tags()

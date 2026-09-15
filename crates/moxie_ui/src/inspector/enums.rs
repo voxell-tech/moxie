@@ -36,7 +36,6 @@ use crate::elements::{
 };
 use crate::icons;
 use crate::reactive::{BevyUi, FynixHost};
-use crate::theme::EditorTheme;
 
 /// Every variant of `value`'s type, if it is an enum at all.
 ///
@@ -182,7 +181,6 @@ impl Composer<FynixHost> for VariantPicker<'_> {
             pick,
         } = self;
 
-        let theme = ui.theme;
         let current = active(source, ui.world)
             .unwrap_or_else(|| "-".to_string());
         let source = source.boxed();
@@ -193,13 +191,13 @@ impl Composer<FynixHost> for VariantPicker<'_> {
         ui.elem(elem!(Frame, align = AlignItems::Center))
             .with(move |ui| {
                 if !pick {
-                    name(ui, &*source, theme, current);
+                    name(ui, &*source, current);
                     return;
                 }
 
                 ui.elem(elem!(DropdownMenu)).with(move |ui| {
-                    control(ui, &*source, theme, current, width);
-                    list(ui, &*source, theme, variants, width);
+                    control(ui, &*source, current, width);
+                    list(ui, &*source, variants, width);
                 });
             })
             .handle()
@@ -207,53 +205,41 @@ impl Composer<FynixHost> for VariantPicker<'_> {
 }
 
 /// Just the active variant, for an enum that cannot be moved.
-fn name(
-    ui: &mut BevyUi,
-    source: &dyn Source,
-    theme: &EditorTheme,
-    current: String,
-) {
+fn name(ui: &mut BevyUi, source: &dyn Source, current: String) {
     let shown = source.boxed();
+    let text = ui.theme.color.text;
 
-    ui.elem(elem!(
-        Label,
-        text = current,
-        wrap = false,
-        color = theme.color.text
-    ))
-    .bind(
-        |label| label.text(),
-        when_changed(source),
-        move |WorldNodeRef { world, .. }| {
-            active(&*shown, world).unwrap_or_default()
-        },
-    );
+    ui.elem(elem!(Label, text = current, wrap = false, color = text))
+        .bind(
+            |label| label.text(),
+            when_changed(source),
+            move |WorldNodeRef { world, .. }| {
+                active(&*shown, world).unwrap_or_default()
+            },
+        );
 }
 
 /// The shut control, showing whichever variant is active.
 fn control(
     ui: &mut BevyUi,
     source: &dyn Source,
-    theme: &EditorTheme,
     current: String,
     width: Val,
 ) {
     let shown = source.boxed();
+    let text = ui.theme.color.text;
+    let text_dim = ui.theme.color.text_dim;
 
     ui.elem(elem!(
         Dropdown,
         min_width = width,
         max_width = width,
-        label = elem!(
-            Label,
-            text = current,
-            wrap = false,
-            color = theme.color.text
-        ),
+        label =
+            elem!(Label, text = current, wrap = false, color = text),
         chevron = elem!(
             Icon,
             image = icons::CHEVRON,
-            color = theme.color.text_dim,
+            color = text_dim,
             size = px(9),
             rotation = 180.0f32
         )
@@ -272,7 +258,6 @@ fn control(
 fn list(
     ui: &mut BevyUi,
     source: &dyn Source,
-    theme: &EditorTheme,
     variants: Vec<String>,
     width: Val,
 ) {
@@ -280,7 +265,7 @@ fn list(
 
     ui.elem(elem!(DropdownList, width = width)).with(move |ui| {
         for variant in variants {
-            option(ui, &*source, theme, variant);
+            option(ui, &*source, variant);
         }
     });
 }
@@ -311,15 +296,10 @@ impl ClonableSource {
     }
 }
 
-fn option(
-    ui: &mut BevyUi,
-    source: &dyn Source,
-    theme: &EditorTheme,
-    variant: String,
-) {
+fn option(ui: &mut BevyUi, source: &dyn Source, variant: String) {
     let source = ClonableSource(source.boxed());
 
-    menu_item(ui, theme, variant.clone(), move |world| {
+    menu_item(ui, variant.clone(), move |world| {
         let Some(value) = source.get(world) else {
             return;
         };

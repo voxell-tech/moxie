@@ -35,7 +35,6 @@ use crate::inspector::{
     single_value,
 };
 use crate::reactive::{BevyUi, FynixHost, value_changed};
-use crate::theme::EditorTheme;
 
 /// Inspector for a [`Component`].
 pub struct ComponentInspector {
@@ -133,7 +132,6 @@ impl Composer<FynixHost> for EntityInspector {
         let entity = self.entity;
 
         column(ui, px(8), components_changed(entity), move |ui| {
-            let theme = ui.theme;
             // `None` sorts first, so an ungrouped run never gets
             // mistaken for one under its own (absent) heading.
             let mut shown_group: Option<Option<&'static str>> = None;
@@ -143,7 +141,7 @@ impl Composer<FynixHost> for EntityInspector {
                 if shown_group != Some(group) {
                     shown_group = Some(group);
                     if let Some(group) = group {
-                        group_heading(ui, theme, group);
+                        group_heading(ui, group);
                     }
                 }
 
@@ -261,11 +259,11 @@ impl Composer<FynixHost> for AddComponent {
                             if shown_group != Some(group) {
                                 shown_group = Some(group);
                                 if let Some(group) = group {
-                                    group_heading(ui, theme, group);
+                                    group_heading(ui, group);
                                 }
                             }
                             add_component_item(
-                                ui, theme, entity, component, &name,
+                                ui, entity, component, &name,
                             );
                         }
                     },
@@ -277,22 +275,29 @@ impl Composer<FynixHost> for AddComponent {
 
 /// A group's own name, heading the run of [`add_component_item`]s
 /// under it.
-fn group_heading(ui: &mut BevyUi, theme: &EditorTheme, name: &str) {
+fn group_heading(ui: &mut BevyUi, name: &str) {
+    let theme = ui.theme;
+    let (fill, radius, small, text_dim) = (
+        theme.color.fill,
+        theme.space.menu_item_radius,
+        theme.text.small,
+        theme.color.text_dim,
+    );
     ui.elem(elem!(
         Frame,
         width = percent(100),
         padding = UiRect::new(px(8), px(8), px(4), px(4)),
-        background = theme.color.fill,
-        radius = px(theme.space.menu_item_radius)
+        background = fill,
+        radius = px(radius)
     ))
     .with(move |ui| {
         ui.elem(elem!(
             Label,
             text = name.to_string(),
-            size = theme.text.small,
+            size = small,
             bold = true,
             wrap = false,
-            color = theme.color.text_dim
+            color = text_dim
         ));
     });
 }
@@ -301,12 +306,11 @@ fn group_heading(ui: &mut BevyUi, theme: &EditorTheme, name: &str) {
 /// component and closes the list.
 fn add_component_item(
     ui: &mut BevyUi,
-    theme: &EditorTheme,
     entity: Entity,
     component: TypeId,
     name: &str,
 ) {
-    menu_item(ui, theme, name, move |world| {
+    menu_item(ui, name, move |world| {
         add_component(world, entity, component);
     });
 }
