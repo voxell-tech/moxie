@@ -30,6 +30,7 @@ use moxie_ui::inspector::ReflectEssential;
 use moxie_ui::reactive::{
     BevyUi, FynixHost, component_changed_on, value_changed,
 };
+use moxie_ui::widgets::tooltip::tooltip;
 
 use crate::{SceneRoot, SelectedEntity};
 
@@ -77,15 +78,14 @@ impl Composer<FynixHost> for AddButton {
             inset = UiRect::new(auto(), px(pad), auto(), px(pad))
         ))
         .with(move |ui| {
-            ui.elem(elem!(
+            let mut add = ui.elem(elem!(
                 !TintButton::default(),
                 icon = elem!(Icon, image = crate::icons::PLUS)
-            ))
-            .observe(
-                |_: On<Activate>, mut commands: Commands| {
-                    commands.queue(spawn_new_entity);
-                },
-            );
+            ));
+            tooltip(&mut add, "New entity");
+            add.observe(|_: On<Activate>, mut commands: Commands| {
+                commands.queue(spawn_new_entity);
+            });
         })
         .handle()
     }
