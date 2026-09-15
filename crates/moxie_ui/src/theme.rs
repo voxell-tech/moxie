@@ -139,6 +139,10 @@ pub struct Spacing {
     /// How close a menu is allowed to sit to the window's edge before
     /// it flips to the other side.
     pub menu_margin: f32,
+    /// A component card's own corner, in the entity inspector.
+    pub card_radius: f32,
+    /// A component card's padding around its header and fields.
+    pub card_padding: f32,
 }
 
 /// `GlobalZIndex` levels, so a drag's chrome stacks the same way
@@ -215,6 +219,8 @@ impl Default for EditorTheme {
                 // `menu_padding`: 6.0 + 4.0.
                 menu_radius: 10.0,
                 menu_margin: 8.0,
+                card_radius: 6.0,
+                card_padding: 6.0,
             },
             text: TextScale {
                 small: 10.0,

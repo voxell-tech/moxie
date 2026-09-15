@@ -24,8 +24,8 @@ use fynix::prelude::*;
 use fynix::records::{BuildFn, ChangedFn};
 
 use super::{
-    Button, Dropdown, DropdownItem, DropdownList, DropdownMenu,
-    Frame, Icon, Label, TintButton, menu_item,
+    Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Icon,
+    Label, TintButton, menu_item,
 };
 use crate::context_menu::context_menu;
 use crate::icons;
@@ -153,47 +153,29 @@ impl Composer<FynixHost> for EntityInspector {
                     } else {
                         field.child(&path)
                     };
-                    single(ui, entity, component, &name, leaf);
+                    let name = name.to_string();
+                    card(ui, entity, component, move |ui| {
+                        single(ui, &name, leaf);
+                    });
                     continue;
                 }
 
-                let deletable = !essential(ui.world, component);
-                ui.compose(Section {
-                    name: name.to_string(),
-                    body: move |ui: &mut BevyUi| {
-                        ui.compose(ComponentInspector {
-                            entity,
-                            component,
-                            depth: 1,
-                        });
-                    },
-                    // The whole component, at the empty path. See
-                    // `entries` in `tree.rs`, which never wraps the
-                    // root in a group of its own either.
-                    section: (entity, component, String::new()),
-                    on_header: move |mut header: ElementMut<
-                        '_,
-                        '_,
-                        FynixHost,
-                        Button,
-                    >| {
-                        if !deletable {
-                            return;
-                        }
-                        context_menu(&mut header, move |menu| {
-                            let critical =
-                                menu.theme().color.critical;
-                            menu.item(
-                                Some((icons::TRASH, critical)),
-                                "Delete",
-                                move |world| {
-                                    remove_component(
-                                        world, entity, component,
-                                    );
-                                },
-                            );
-                        });
-                    },
+                card(ui, entity, component, move |ui| {
+                    ui.compose(Section::new(
+                        name.to_string(),
+                        // The whole component, at the empty path.
+                        // See `entries` in `tree.rs`, which never
+                        // wraps the root in a group of its own
+                        // either.
+                        (entity, component, String::new()),
+                        move |ui: &mut BevyUi| {
+                            ui.compose(ComponentInspector {
+                                entity,
+                                component,
+                                depth: 1,
+                            });
+                        },
+                    ));
                 });
             }
 
@@ -445,30 +427,45 @@ fn essential(world: &World, component: TypeId) -> bool {
 
 /// A whole component on one row, named where a group of fields would
 /// have been headed.
-fn single(
+fn single(ui: &mut BevyUi, name: &str, field: Field) {
+    let name = name.to_string();
+    let primary = ui.theme.color.text;
+    ui.compose(FieldRow {
+        label: name,
+        color: primary,
+        bold: true,
+        depth: 0,
+        field: Some(field.clone()),
+        value: move |ui: &mut BevyUi| inspect_value(ui, &field),
+    });
+}
+
+/// One component's own card: a raised surface around `content`,
+/// right-clickable anywhere on it for "Delete" once the component
+/// isn't [`essential`] - like Unity's per-component panel.
+fn card(
     ui: &mut BevyUi,
     entity: Entity,
     component: TypeId,
-    name: &str,
-    field: Field,
+    content: impl FnOnce(&mut BevyUi) + Send + Sync + 'static,
 ) {
-    let name = name.to_string();
-    let primary = ui.theme.color.text;
+    let background = ui.theme.color.surface;
+    let radius = ui.theme.space.card_radius;
+    let padding = ui.theme.space.card_padding;
     let deletable = !essential(ui.world, component);
 
-    let mut row = ui.elem(elem!(Frame, width = percent(100)));
-    row.with(move |ui| {
-        ui.compose(FieldRow {
-            label: name,
-            color: primary,
-            bold: true,
-            depth: 0,
-            field: Some(field.clone()),
-            value: move |ui: &mut BevyUi| inspect_value(ui, &field),
-        });
-    });
+    let mut card = ui.elem(elem!(
+        Frame,
+        width = percent(100),
+        direction = FlexDirection::Column,
+        background = background,
+        radius = px(radius),
+        padding = UiRect::all(px(padding))
+    ));
+    card.with(content);
+
     if deletable {
-        context_menu(&mut row, move |menu| {
+        context_menu(&mut card, move |menu| {
             let critical = menu.theme().color.critical;
             menu.item(
                 Some((icons::TRASH, critical)),
