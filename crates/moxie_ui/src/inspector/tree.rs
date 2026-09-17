@@ -8,11 +8,9 @@
 use std::any::TypeId;
 
 use bevy::ecs::change_detection::Tick;
-use bevy::input_focus::tab_navigation::TabGroup;
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::reflect::{PartialReflect, ReflectRef, TypeRegistry};
-use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 use fynix::records::BuildFn;
@@ -396,7 +394,6 @@ impl Composer<FynixHost> for InspectorFields {
             direction = FlexDirection::Column,
             row_gap = px(4)
         ))
-        .insert(TabGroup::new(0))
         .watch(shape_changed(self.root), move |ui| {
             build_entries(
                 ui,
