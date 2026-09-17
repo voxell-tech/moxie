@@ -7,6 +7,7 @@
 //! [`DockTree`]: crate::widgets::dock::DockTree
 
 use crate::reactive::FynixBuild;
+use bevy::input_focus::tab_navigation::TabGroup;
 use bevy::prelude::*;
 use bevy_fynix::WorldEntityMut as _;
 use fynix::element::{ElementBase as _, element};
@@ -24,8 +25,8 @@ use crate::widgets::dock::{
 
 /// Column that fills its parent, which most of the dock's nodes are.
 ///
-/// `min_width`/`min_height` at `0`, not `Node`'s own default `Auto`,
-/// which floors a node at its content's size regardless of the `100%`
+/// `min_width`/`min_height` at `0`: `Node`'s own default `Auto`
+/// floors a node at its content's size regardless of the `100%`
 /// above.
 pub(super) fn filled(direction: FlexDirection) -> Node {
     Node {
@@ -329,6 +330,7 @@ impl TabContent {
                 display: display(self.showing),
                 ..default()
             },
+            TabGroup::modal(),
         ));
     }
 }

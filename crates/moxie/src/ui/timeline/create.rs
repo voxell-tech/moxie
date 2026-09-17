@@ -16,9 +16,11 @@ use bevy::picking::pointer::PointerLocation;
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
 use bevy_fynix::BevyFynix;
-use bevy_motiongfx::scene::backend::{AnimOp, Backend};
+use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
 use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
 use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
+use motiongfx_scene::refs::FieldRef;
+use motiongfx_scene::scene::{FieldSeed, Subject};
 use moxie_ui::inspector::{DraggedField, Field};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::theme::EditorTheme;
@@ -77,9 +79,9 @@ pub(super) fn preview(
     };
 
     if dragged.field.is_none() {
-        // Gated on the edge, not the level: this branch runs on
-        // every frame nothing is field-dragged, and `reorder` shares
-        // this `Visuals` for its own hint.
+        // Gated on the edge: this branch runs on every frame nothing
+        // is field-dragged, and `reorder` shares this `Visuals` for
+        // its own hint.
         if *was_dragging {
             // The drag may have ended without a `DragDrop` over the
             // track (e.g. released elsewhere) - `on_drop` never ran
@@ -225,6 +227,52 @@ fn create(
             return;
         };
 
+        // Only the first action on a field needs its own seed; later
+        // actions reuse it instead of orphaning a pool entry.
+        let existing_seed = scene
+            .0
+            .stage
+            .subjects
+            .iter()
+            .find(|s| s.id == SceneUid::Entity(uid))
+            .and_then(|s| {
+                s.fields
+                    .iter()
+                    .find(|seed| seed.field == field_ref)
+                    .map(|seed| seed.value)
+            });
+
+        let seed_id = match existing_seed {
+            Some(seed_id) => seed_id,
+            None => {
+                // Separate from `id`: the action panel edits an
+                // action's value in place, so sharing one would let
+                // editing it overwrite the stage too.
+                let Some(seed_id) =
+                    bevy_motiongfx::scene::value_pool::insert_scene_value(
+                        &mut scene.values,
+                        &type_registry.read(),
+                        &*value,
+                    )
+                else {
+                    return;
+                };
+                seed_id
+            }
+        };
+
+        // The field's live value, at the moment nothing has animated
+        // it yet - the only point this is also its correct staged
+        // starting value. `stage` is a no-op without an entry here,
+        // and baking silently falls back to whatever the world
+        // already holds.
+        seed_field(
+            &mut scene.0.stage.subjects,
+            SceneUid::Entity(uid),
+            field_ref.clone(),
+            seed_id,
+        );
+
         let node = SceneNode::action(ActionCmd {
             subject: SceneUid::Entity(uid),
             field: field_ref,
@@ -232,7 +280,7 @@ fn create(
             value: id,
             duration: DEFAULT_DURATION,
             ease: None,
-            interp: None,
+            interp: Some(AnimInterp::Linear),
             name: None,
         });
         splice(&mut scene.0.animation, target, node)
@@ -246,6 +294,29 @@ fn create(
     }
     if let Some(mut tick) = world.get_resource_mut::<RebuildTick>() {
         tick.0 = tick.0.wrapping_add(1);
+    }
+}
+
+/// Stages `field` on `subject` at `value`, unless it already is -
+/// only the first action ever created for a field needs one; every
+/// later one's start comes from replaying what came before it.
+fn seed_field(
+    subjects: &mut Vec<Subject<Backend>>,
+    subject: SceneUid,
+    field: FieldRef,
+    value: bevy::asset::uuid::Uuid,
+) {
+    let entry = subjects.iter_mut().find(|s| s.id == subject);
+    match entry {
+        Some(entry) => {
+            if !entry.fields.iter().any(|seed| seed.field == field) {
+                entry.fields.push(FieldSeed { field, value });
+            }
+        }
+        None => subjects.push(Subject {
+            id: subject,
+            fields: vec![FieldSeed { field, value }],
+        }),
     }
 }
 

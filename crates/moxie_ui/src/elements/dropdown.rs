@@ -127,8 +127,8 @@ impl Dropdown {
                 justify_content: JustifyContent::SpaceBetween,
                 column_gap: px(6),
                 padding: UiRect::axes(px(8), Val::ZERO),
-                // What will not fit is the label's problem, not the
-                // row's - see `hold_chevron`.
+                // What will not fit is the label's problem - see
+                // `hold_chevron`.
                 overflow: Overflow::clip(),
                 ..default()
             },

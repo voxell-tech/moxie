@@ -1,12 +1,10 @@
-//! Lays a scene's [`Block`] tree out as nested boxes, not one flat
-//! row per node. A block is a bordered container spanning its time
-//! range, holding its children as filled bars (actions) or nested
-//! containers (blocks).
+//! Lays a scene's [`Block`] tree out as nested boxes. A block is a
+//! bordered container spanning its time range, holding its children
+//! as filled bars (actions) or nested containers (blocks).
 //!
 //! Horizontal position always comes straight from a node's resolved
 //! start time ([`TimelineView`]). Nesting only affects the vertical
-//! axis: a block's box literally encloses its children's boxes,
-//! rather than implying the relationship through indentation.
+//! axis: a block's box literally encloses its children's boxes.
 
 use core::time::Duration;
 use std::collections::BTreeSet;

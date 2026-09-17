@@ -87,8 +87,6 @@ pub(crate) fn indent(
                 content.watch(
                     component_changed_on::<Folded>(node),
                     move |ui| {
-                        // Stays empty while folded, rather than
-                        // building what nothing has opened yet.
                         if is_folded(ui.world, node) {
                             return;
                         }
@@ -208,7 +206,7 @@ where
         ));
         // Every part reads the fold off this one node, so the chevron
         // can turn and the body can go. A fresh node takes whatever
-        // `open` says, not always closed.
+        // `open` says.
         let node = root.id();
         if !open {
             root.insert(Folded);

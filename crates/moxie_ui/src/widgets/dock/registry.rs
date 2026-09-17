@@ -7,13 +7,11 @@ use bevy::prelude::*;
 use crate::reactive::BevyUi;
 
 /// Builds a window's content as kernel nodes, so a panel can declare
-/// its own `ui.watch` / `ui.bind` instead of reaching for the kernel
-/// from outside.
+/// its own `ui.watch` / `ui.bind`.
 ///
-/// A bare function pointer, not a boxed closure: it has to leave the
-/// registry before it can run, since `Ui` holds the world mutably.
-/// Being [`Copy`] it simply comes out. What a panel needs, it reads
-/// from the world.
+/// A bare function pointer: it has to leave the registry before it
+/// can run, since `Ui` holds the world mutably. Being [`Copy`] it
+/// simply comes out. What a panel needs, it reads from the world.
 pub type DockWindowBuildFn = for<'a> fn(&mut BevyUi<'a>);
 
 pub struct DockWindowDescriptor {
@@ -42,8 +40,7 @@ impl WindowRegistry {
         self.windows.push(descriptor);
     }
 
-    /// Remove a window by id. Returns true if the window was found.
-    /// Rebuilds the id -> index mapping after removal.
+    /// Removes a window by id, `true` if it was found.
     pub fn unregister(&mut self, id: &str) -> bool {
         let Some(idx) = self.index.remove(id) else {
             return false;

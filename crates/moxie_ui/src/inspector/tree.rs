@@ -8,11 +8,9 @@
 use std::any::TypeId;
 
 use bevy::ecs::change_detection::Tick;
-use bevy::input_focus::tab_navigation::TabGroup;
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::reflect::{PartialReflect, ReflectRef, TypeRegistry};
-use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 use fynix::records::BuildFn;
@@ -344,11 +342,10 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
     out
 }
 
-/// Fires when the *shape* under `field` changes: its set of entries,
-/// not merely their values.
+/// Fires when the *shape* under `field` changes: its set of entries.
 ///
-/// Values ride on bindings, not rebuilds, so a focused number input
-/// survives a value change; a rebuild would despawn it mid-edit. The
+/// Values ride on bindings, so a focused number input survives a
+/// value change; a rebuild would despawn it mid-edit. The
 /// tick is checked first so the walk only runs when something
 /// touched the component.
 fn shape_changed(
@@ -396,7 +393,6 @@ impl Composer<FynixHost> for InspectorFields {
             direction = FlexDirection::Column,
             row_gap = px(4)
         ))
-        .insert(TabGroup::new(0))
         .watch(shape_changed(self.root), move |ui| {
             build_entries(
                 ui,

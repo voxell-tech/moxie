@@ -185,8 +185,7 @@ pub(crate) struct EditorState {
     pub(crate) duration: Duration,
     /// Mirrored from the first [`RealtimePlayer`](bevy_motiongfx::prelude::RealtimePlayer)
     /// so the play/pause label can bind to this resource instead of
-    /// polling a component query. Written by `on_toggle_playback` and
-    /// `stop_at_track_end`.
+    /// polling a component query.
     pub(crate) is_playing: bool,
 }
 

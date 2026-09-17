@@ -33,7 +33,6 @@ impl Composer<FynixHost> for SettingsPanel {
             scrolls = true
         ))
         .with(|ui| {
-            // Editable rows built by the reflect inspector.
             ui.compose(ResourceInspector::of::<EditorSettings>());
             ui.compose(SaveRow);
         })

@@ -8,16 +8,21 @@
 //! has moved, while the rest of the layout stays put. A slim line or
 //! an outline marks where a release would land.
 
+use std::collections::HashSet;
+
 use bevy::feathers::cursor::OverrideCursor;
 use bevy::picking::events::{DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::{PointerButton, PointerLocation};
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
 use bevy_fynix::{BevyFynix, WorldEntityMut};
+use bevy_motiongfx::scene::asset::MotionGfxScene;
 use bevy_motiongfx::scene::backend::Backend;
+use bevy_motiongfx::scene::id::SceneUid;
 use fynix::element::Element;
 use fynix::ui::ElementMut;
 use motiongfx_scene::block::{Block, Combinator, Node as SceneNode};
+use motiongfx_scene::refs::FieldRef;
 use moxie_ui::drag::{grab, ungrab};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::FynixHost;
@@ -294,10 +299,9 @@ fn end_drag(
 /// Ends the `body` drag in progress and commits the drop, unless it
 /// settled where it started.
 ///
-/// Global, not one observer per box: a child
-/// [`Button`](bevy::ui_widgets::Button) (the fold chevron among them)
-/// stops `DragEnd` propagating and would otherwise strand the gesture
-/// until Escape.
+/// Global: a child [`Button`](bevy::ui_widgets::Button) (the fold
+/// chevron among them) stops `DragEnd` propagating and would
+/// otherwise strand the gesture until Escape.
 pub(crate) fn on_drag_end(
     _: On<Pointer<DragEnd>>,
     visuals: Option<Res<Visuals>>,
@@ -489,6 +493,7 @@ pub(crate) fn delete(world: &mut World, path: &[usize]) {
         return;
     }
     prune_empty(&mut editor_scene.edit().animation, &mut kept);
+    prune_stage(editor_scene.edit());
 
     if let Some(mut selected) =
         world.get_resource_mut::<SelectedAction>()
@@ -681,6 +686,42 @@ fn prune_empty(
             }
         } else {
             i += 1;
+        }
+    }
+}
+
+/// Drops any `Stage` entry no surviving action still animates -
+/// staging only ever appends when an action is created ([`create`](
+/// super::create)), so deleting the last action on a field otherwise
+/// leaves its seed behind forever.
+fn prune_stage(scene: &mut MotionGfxScene) {
+    let mut used = HashSet::new();
+    collect_used_fields(&scene.animation, &mut used);
+
+    for subject in &mut scene.stage.subjects {
+        subject.fields.retain(|seed| {
+            used.contains(&(subject.id, seed.field.clone()))
+        });
+    }
+    scene
+        .stage
+        .subjects
+        .retain(|subject| !subject.fields.is_empty());
+}
+
+fn collect_used_fields(
+    block: &Block<Backend>,
+    used: &mut HashSet<(SceneUid, FieldRef)>,
+) {
+    for child in &block.children {
+        match child {
+            SceneNode::Block { block, .. } => {
+                collect_used_fields(block, used)
+            }
+            SceneNode::Action { action, .. } => {
+                used.insert((action.subject, action.field.clone()));
+            }
+            SceneNode::Draft { .. } => {}
         }
     }
 }
@@ -992,9 +1033,39 @@ pub(super) fn hide_landing(
 mod tests {
     use core::time::Duration;
 
-    use motiongfx_scene::block::{Block, Node as SceneNode};
+    use bevy::asset::uuid::Uuid;
+    use bevy_motiongfx::scene::backend::AnimOp;
+    use bevy_motiongfx::scene::id::EntityUid;
+    use bevy_motiongfx::scene::value_pool::ValuePool;
+    use motiongfx_scene::block::{
+        ActionCmd, Block, Node as SceneNode,
+    };
+    use motiongfx_scene::scene::{FieldSeed, Scene, Stage, Subject};
 
     use super::*;
+
+    fn action(subject: SceneUid, field: &str) -> SceneNode<Backend> {
+        SceneNode::action(ActionCmd {
+            subject,
+            field: FieldRef::new("T", field),
+            op: AnimOp::To,
+            value: Uuid::nil(),
+            duration: Duration::ZERO,
+            ease: None,
+            interp: None,
+            name: None,
+        })
+    }
+
+    fn seeded(subject: SceneUid, field: &str) -> Subject<Backend> {
+        Subject {
+            id: subject,
+            fields: vec![FieldSeed {
+                field: FieldRef::new("T", field),
+                value: Uuid::nil(),
+            }],
+        }
+    }
 
     fn leaf() -> SceneNode<Backend> {
         SceneNode::Draft {
@@ -1046,5 +1117,56 @@ mod tests {
         let mut keep = Some(vec![0, 1]);
         prune_empty(&mut root, &mut keep);
         assert_eq!(keep, Some(vec![0, 0]));
+    }
+
+    #[test]
+    fn prune_stage_drops_a_field_no_action_targets_anymore() {
+        let subject = SceneUid::Entity(EntityUid::new());
+        let mut scene = MotionGfxScene(Scene {
+            stage: Stage {
+                subjects: vec![seeded(subject, "x")],
+            },
+            animation: Block::chain(vec![]),
+            values: ValuePool::default(),
+        });
+        prune_stage(&mut scene);
+        assert!(scene.stage.subjects.is_empty());
+    }
+
+    #[test]
+    fn prune_stage_keeps_a_field_still_targeted() {
+        let subject = SceneUid::Entity(EntityUid::new());
+        let mut scene = MotionGfxScene(Scene {
+            stage: Stage {
+                subjects: vec![seeded(subject, "x")],
+            },
+            animation: Block::chain(vec![action(subject, "x")]),
+            values: ValuePool::default(),
+        });
+        prune_stage(&mut scene);
+        assert_eq!(scene.stage.subjects.len(), 1);
+    }
+
+    #[test]
+    fn prune_stage_keeps_a_sibling_field_on_the_same_subject() {
+        let subject = SceneUid::Entity(EntityUid::new());
+        let mut fields = seeded(subject, "x").fields;
+        fields.extend(seeded(subject, "y").fields);
+        let mut scene = MotionGfxScene(Scene {
+            stage: Stage {
+                subjects: vec![Subject {
+                    id: subject,
+                    fields,
+                }],
+            },
+            animation: Block::chain(vec![action(subject, "y")]),
+            values: ValuePool::default(),
+        });
+        prune_stage(&mut scene);
+        assert_eq!(scene.stage.subjects[0].fields.len(), 1);
+        assert_eq!(
+            scene.stage.subjects[0].fields[0].field,
+            FieldRef::new("T", "y")
+        );
     }
 }

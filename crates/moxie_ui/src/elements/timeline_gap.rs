@@ -10,7 +10,7 @@ use super::patch::*;
 /// where it would have started to where it actually starts, marking
 /// the gap apart from an action's fill or a block's own header.
 /// Ignores the pointer - it sits directly over the scrubbable track,
-/// and a click there should scrub, not stop at a decoration.
+/// and a click there should scrub.
 #[element(build = Self::build)]
 pub struct TimelineGap {
     #[elem(patch = PatchTop)]

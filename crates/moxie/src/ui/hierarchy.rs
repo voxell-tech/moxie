@@ -5,8 +5,8 @@
 //! address, nothing the editor spawned for itself.
 //!
 //! Each subject watches only its own children, so adding one rebuilds
-//! that branch and not the panel. Depth is the nesting: a subtree
-//! indents what it holds.
+//! that branch. Depth is the nesting: a subtree indents what it
+//! holds.
 
 mod drag;
 
@@ -57,10 +57,10 @@ impl Composer<FynixHost> for HierarchyPanel {
     }
 }
 
-/// The one thing that acts on the list, not on a row in it.
+/// The one thing that acts on the list.
 ///
-/// Floated over the corner, not given a strip of its own, so it
-/// stays put however far the list is scrolled.
+/// Floated over the corner, so it stays put however far the list is
+/// scrolled.
 struct AddButton;
 
 impl Composer<FynixHost> for AddButton {
@@ -399,8 +399,8 @@ impl Composer<FynixHost> for Subtree {
                             selected.0 = Some(entity);
                         },
                     )
-                    // One bind, not two: a second on the same
-                    // field would fight this one every flush.
+                    // One bind: a second on the same field would
+                    // fight this one every flush.
                     .bind(
                         |button| button.fill(),
                         highlight_changed(entity),
@@ -453,11 +453,11 @@ impl Composer<FynixHost> for Subtree {
                     },
                 );
             },
-            // Read off the subject's own entity, not this row's node.
-            // The row rebuilds fresh on a reorder or a sibling
-            // added, but the entity, and `Collapsed` on it, does not.
-            // Nothing to clean up when a subject is deleted either.
-            // `Collapsed` goes with it.
+            // Read off the subject's own entity. The row rebuilds
+            // fresh on a reorder or a sibling added, but the entity,
+            // and `Collapsed` on it, does not. Nothing to clean up
+            // when a subject is deleted either. `Collapsed` goes with
+            // it.
             open: ui.world.get::<Collapsed>(entity).is_none(),
             on_toggle: move |world: &mut World, open: bool| {
                 let Ok(mut entity) = world.get_entity_mut(entity)
@@ -519,7 +519,7 @@ fn highlight_changed(
 /// The top-level subjects, in the order [`SceneRoot`] holds them.
 ///
 /// The root itself is never a row: it exists to give the top level an
-/// order, not to be seen.
+/// order.
 fn roots(
     world: &World,
     query: &mut QueryState<Entity, With<SceneRoot>>,
@@ -565,7 +565,7 @@ fn name_of(world: &World, entity: Entity) -> String {
 }
 
 /// Whether [`name_of`] is standing in for a name `entity` doesn't
-/// have, rather than showing one it does.
+/// have.
 fn is_unnamed(world: &World, entity: Entity) -> bool {
     world
         .get::<Name>(entity)

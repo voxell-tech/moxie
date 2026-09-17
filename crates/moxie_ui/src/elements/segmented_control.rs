@@ -16,9 +16,8 @@ use crate::reactive::{BevyUi, FynixHost};
 
 /// A 3-way (or more) radio, one option filled solid - bevy_feathers'
 /// own `RoundedCorners`/`ButtonVariant::Primary` pattern: only the
-/// row's own two ends are rounded, each segment its own corners rather
-/// than the row clipping a straight-edged strip, with a 1px gap as the
-/// seam between segments, not a divider line.
+/// row's own two ends are rounded, each segment its own corners, with
+/// a 1px gap as the seam between segments.
 pub struct SegmentedControl<F> {
     pub options: Vec<String>,
     pub selected: usize,

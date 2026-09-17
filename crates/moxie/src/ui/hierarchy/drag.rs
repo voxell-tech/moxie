@@ -4,8 +4,7 @@
 //! some parent's [`Children`], so both are a matter of which list a row
 //! lands in and where. One row is the whole drop target: its middle
 //! means inside it, its top and bottom edges beside it. What commits to
-//! a hair-thin line is a band a quarter of the row tall, not itself
-//! hair-thin.
+//! a hair-thin line is a band a quarter of the row tall.
 
 use bevy::picking::events::{
     Drag, DragDrop, DragEnd, DragLeave, DragOver, DragStart, Pointer,
@@ -34,9 +33,9 @@ type NodeRect = (&'static ComputedNode, &'static UiGlobalTransform);
 /// dragged.
 #[derive(Resource, Default)]
 pub(crate) struct Dragging {
-    /// The subject, not the node it was picked up by: a pointer event
-    /// names whichever node it hit, which may be a row's label rather
-    /// than the row, and neither is the thing being moved.
+    /// The subject: a pointer event names whichever node it hit,
+    /// which may be a row's label, and neither is the thing being
+    /// moved.
     subject: Option<Entity>,
     target: Option<(Entity, At)>,
     ghost: Option<Entity>,
@@ -220,8 +219,8 @@ pub(super) fn aim_below<'r, 'u, 'a, E: Element<FynixHost>>(
 }
 
 /// Queues the pending drop on a primary-button release, shared by
-/// every kind of drop target. Read, not taken: the drop lands before
-/// [`DragEnd`] clears the drag.
+/// every kind of drop target. Read: the drop lands before [`DragEnd`]
+/// clears the drag.
 fn commit_drop(
     drop: On<Pointer<DragDrop>>,
     dragging: Res<Dragging>,

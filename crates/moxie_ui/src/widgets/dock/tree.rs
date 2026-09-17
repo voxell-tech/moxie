@@ -28,9 +28,9 @@ pub struct NodeId(pub u64);
 /// Stable handle to a tab inside a [`DockLeaf`].
 ///
 /// Distinct from [`NodeId`]: a `TabId` identifies a specific tab
-/// instance, not the leaf that hosts it. Two tabs can carry the same
-/// `window_id` (e.g. two Outliner tabs side-by-side) and still be
-/// addressed independently for activate / move / close. Allocated
+/// instance. Two tabs can carry the same `window_id` (e.g. two
+/// Outliner tabs side-by-side) and still be addressed independently
+/// for activate / move / close. Allocated
 /// from a per-tree monotonic counter; never reused.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub struct TabId(pub u64);
@@ -448,7 +448,6 @@ impl DockTree {
         edge: Edge,
         window: String,
     ) -> Option<(NodeId, TabId)> {
-        // Ensure target is a leaf.
         if !matches!(self.nodes.get(&target), Some(DockNode::Leaf(_)))
         {
             return None;
@@ -481,10 +480,8 @@ impl DockTree {
             }),
         );
 
-        // Figure out target's parent first.
         let parent = self.parent_of(target);
 
-        // Assemble a new split node.
         let (a, b) = if edge.puts_new_in_a() {
             (new_leaf_id, target)
         } else {

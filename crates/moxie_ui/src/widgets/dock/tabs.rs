@@ -111,47 +111,44 @@ fn build_tab(
             )
         )
     ));
-    tab
-        // Which tab is active follows the tree, and must not rebuild the
-        // tab: a drag in progress would go with it.
-        .bind(
-            |tab| tab.active(),
-            resource_changed::<DockTree>(),
-            move |WorldNodeRef { world, .. }| {
-                active_of(world, leaf) == Some(tab_id)
-            },
-        )
-        // What the tab holds is lit by the same signal, and separately:
-        // the fill is the tab's own field, these are its children's.
-        .bind(
-            |tab| tab.label().color(),
-            resource_changed::<DockTree>(),
-            move |WorldNodeRef { world, .. }| {
-                text_color(world, leaf, tab_id, primary, muted)
-            },
-        )
-        .bind(
-            |tab| tab.icon().color(),
-            resource_changed::<DockTree>(),
-            move |WorldNodeRef { world, .. }| {
-                text_color(world, leaf, tab_id, primary, muted)
-            },
-        )
-        .observe(
-            move |mut click: On<Pointer<Click>>,
-                  bindings: Query<&super::reconcile::LeafBinding>,
-                  mut tree: ResMut<DockTree>| {
-                click.propagate(false);
+    tab.bind(
+        |tab| tab.active(),
+        resource_changed::<DockTree>(),
+        move |WorldNodeRef { world, .. }| {
+            active_of(world, leaf) == Some(tab_id)
+        },
+    )
+    // What the tab holds is lit by the same signal, and separately:
+    // the fill is the tab's own field, these are its children's.
+    .bind(
+        |tab| tab.label().color(),
+        resource_changed::<DockTree>(),
+        move |WorldNodeRef { world, .. }| {
+            text_color(world, leaf, tab_id, primary, muted)
+        },
+    )
+    .bind(
+        |tab| tab.icon().color(),
+        resource_changed::<DockTree>(),
+        move |WorldNodeRef { world, .. }| {
+            text_color(world, leaf, tab_id, primary, muted)
+        },
+    )
+    .observe(
+        move |mut click: On<Pointer<Click>>,
+              bindings: Query<&super::reconcile::LeafBinding>,
+              mut tree: ResMut<DockTree>| {
+            click.propagate(false);
 
-                if let Ok(binding) = bindings.get(area) {
-                    tree.set_active(binding.0, tab_id);
-                }
-            },
-        );
+            if let Ok(binding) = bindings.get(area) {
+                tree.set_active(binding.0, tab_id);
+            }
+        },
+    );
 
     // On the close button itself: a `Button` takes the click for
     // itself, so nothing the tab observes ever hears it. Its hover
-    // tint watches the same node, rather than the whole tab.
+    // tint watches the same node.
     if let Some(close) = tab.child(|tab| tab.close()) {
         tab.ui.world.entity_mut(close).observe(
             move |_: On<Activate>, mut tree: ResMut<DockTree>| {
@@ -203,8 +200,7 @@ pub(super) fn tab_tile_node() -> Node {
 /// inert close-slot spacer so its width matches a real tab. `wrapper`
 /// supplies the position + height (see [`super::drag`]).
 ///
-/// Spawned imperatively: the ghost is drag state, not part of the
-/// kernel's tree.
+/// Spawned imperatively: the ghost is drag state.
 pub(super) fn spawn_ghost_tab(
     world: &mut World,
     wrapper: Entity,

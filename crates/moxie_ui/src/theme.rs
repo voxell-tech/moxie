@@ -131,8 +131,7 @@ pub struct Spacing {
     /// A menu's own padding around its rows.
     pub menu_padding: f32,
     /// A menu's own corner - concentric with `menu_item_radius`
-    /// across `menu_padding`, not a number of its own; see
-    /// `toolbars.md` in the Apple HIG.
+    /// across `menu_padding`; see `toolbars.md` in the Apple HIG.
     pub menu_radius: f32,
     /// How close a menu is allowed to sit to the window's edge before
     /// it flips to the other side.

@@ -7,8 +7,7 @@ use fynix::element::element;
 use super::patch::*;
 
 /// A sized container with real, interactive scrolling - trackpad and
-/// mouse-wheel input actually move it (`ScrollAreaBehavior`), not just
-/// a clipped overflow a caller has to drive by hand.
+/// mouse-wheel input actually move it (`ScrollAreaBehavior`).
 #[element(build = Self::build)]
 pub struct ScrollArea {
     #[elem(patch = PatchWidth)]

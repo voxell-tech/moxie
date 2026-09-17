@@ -12,7 +12,7 @@ fn main() {
     App::new()
         .add_plugins((
             // Before `DefaultPlugins`: its absolute asset source
-            // builds when `AssetPlugin` does, not after.
+            // builds when `AssetPlugin` does.
             register_absolute_source,
             DefaultPlugins
                 .set(AssetPlugin {

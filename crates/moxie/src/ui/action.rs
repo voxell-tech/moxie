@@ -55,8 +55,8 @@ impl Composer<FynixHost> for ActionPanel {
 
 /// One property of the selected node that an input writes back.
 ///
-/// Named, not captured: an input re-reads and rewrites it long after
-/// the panel was built.
+/// Named: an input re-reads and rewrites it long after the panel was
+/// built.
 #[derive(Clone, Copy, PartialEq)]
 enum Edit {
     /// How long the action runs for.
@@ -88,7 +88,7 @@ struct Shape {
     rows: Vec<(String, String)>,
     edits: Vec<(String, Edit)>,
     /// The action's target value. Which widget draws it is the
-    /// registry's business, not this panel's.
+    /// registry's business.
     value: Option<Pooled>,
 }
 
@@ -106,6 +106,34 @@ struct Subject {
 /// The action's target value, wherever the pool keeps it.
 #[derive(Clone, Copy, PartialEq)]
 struct Pooled(Uuid);
+
+/// [`Edit::Interp`]'s own reflected type, standing in for
+/// `Option<AnimInterp>`.
+#[derive(Reflect, Clone, Copy, PartialEq, Debug)]
+enum InterpChoice {
+    /// `Option::None`: jumps to the target at the end instead of
+    /// interpolating toward it.
+    Step,
+    Linear,
+}
+
+impl From<Option<AnimInterp>> for InterpChoice {
+    fn from(interp: Option<AnimInterp>) -> Self {
+        match interp {
+            None => Self::Step,
+            Some(AnimInterp::Linear) => Self::Linear,
+        }
+    }
+}
+
+impl From<InterpChoice> for Option<AnimInterp> {
+    fn from(choice: InterpChoice) -> Self {
+        match choice {
+            InterpChoice::Step => None,
+            InterpChoice::Linear => Some(AnimInterp::Linear),
+        }
+    }
+}
 
 /// One property of the selected node, as somewhere a widget can read
 /// and write. Which widget that is follows from the type it hands
@@ -250,7 +278,6 @@ fn build(ui: &mut BevyUi) {
         });
     }
 
-    // Whatever the registry has for the type it turns out to hold.
     if let Some(pooled) = shape.value {
         ui.compose(FieldRow {
             label: "Value".to_string(),
@@ -475,16 +502,16 @@ impl Source for Property {
         let node = node_at(&scene.0.animation, &self.path)?;
 
         match (self.edit, node) {
-            // `None` is the default curve, linear, so the picker
-            // shows that instead of a fourth "unset" state.
+            // Ease's `None` is the default curve, linear, so the
+            // picker shows that instead of a fourth "unset" state -
+            // unlike interp, `None` here is not a distinct behavior.
             (Edit::Ease, Node::Action { action, .. }) => Some(
                 Box::new(action.ease.unwrap_or(AnimEase::Linear)),
             ),
-            (Edit::Interp, Node::Action { action, .. }) => Some(
-                Box::new(action.interp.unwrap_or(AnimInterp::Linear)),
-            ),
-            // Unset shows as the widget's own empty state, not a
-            // missing row.
+            (Edit::Interp, Node::Action { action, .. }) => {
+                Some(Box::new(InterpChoice::from(action.interp)))
+            }
+            // Unset shows as the widget's own empty state.
             (Edit::Name, Node::Block { block, .. }) => {
                 Some(Box::new(block.name.clone().unwrap_or_default()))
             }
@@ -533,7 +560,11 @@ impl Source for Property {
                 action.ease = AnimEase::from_reflect(value);
             }
             (Edit::Interp, Node::Action { action, .. }) => {
-                action.interp = AnimInterp::from_reflect(value);
+                if let Some(choice) =
+                    InterpChoice::from_reflect(value)
+                {
+                    action.interp = choice.into();
+                }
             }
             (Edit::Name, Node::Block { block, .. }) => {
                 if let Some(value) = String::from_reflect(value) {
@@ -605,8 +636,7 @@ fn clamp_seconds(value: f32) -> Duration {
     Duration::from_secs_f32(value.max(0.0))
 }
 
-/// Blank input clears a name back to `None`, rather than storing an
-/// empty string.
+/// Blank input clears a name back to `None`.
 fn named(value: String) -> Option<String> {
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_string())

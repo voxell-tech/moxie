@@ -60,8 +60,8 @@ impl Composer<FynixHost> for AssetsPanel {
     }
 }
 
-/// Floated over the corner, not given a strip of its own, so it stays
-/// put however far the list is scrolled.
+/// Floated over the corner, so it stays put however far the list is
+/// scrolled.
 struct AddButton;
 
 impl Composer<FynixHost> for AddButton {
@@ -423,8 +423,8 @@ fn prune_fold_state(
         .cloned()
         .collect::<Vec<_>>();
 
-    // Each root's own subtree, not `path`'s whole one. Most of what
-    // `path` holds survives untouched and is never cloned at all.
+    // Each root's own subtree. Most of what `path` holds survives
+    // untouched and is never cloned at all.
     for root in stale_roots {
         let gone = state
             .0

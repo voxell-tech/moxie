@@ -32,8 +32,8 @@ fn tick_step(px_per_second: f32, min_px: f32) -> i64 {
     }
 }
 
-/// Decimal places follow the step and not the value to ensure one row never
-/// mixes `0.5` with `1`.
+/// Decimal places follow the step, to ensure one row never mixes
+/// `0.5` with `1`.
 fn label(ms: i64, major_ms: i64) -> String {
     let secs = ms as f32 / 1000.0;
     // Enough decimals to tell one mark from the next, and no more.
@@ -64,7 +64,6 @@ pub(crate) fn ticks(view: &TimelineView, width: f32) -> Vec<Tick> {
     // Pad the range for labels near the edges.
     let from_ms = offset_ms - major_ms;
     let to_ms = offset_ms + (width / px_per_ms) as i64 + major_ms;
-    // Find the first and last tick indices in the padded range.
     let first_tick = from_ms.div_euclid(minor_ms).max(0);
     let last_tick = to_ms.div_euclid(minor_ms);
 

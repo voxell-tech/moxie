@@ -25,13 +25,13 @@ impl Plugin for MoxieAssetPlugin {
 }
 
 /// The [`AssetSourceId`](bevy::asset::io::AssetSourceId) a dragged
-/// file loads through, rooted at `/` rather than wherever
-/// `AssetPlugin::file_path` put the editor's own configured root - a
-/// bookmark can point anywhere on disk, not just under that root.
+/// file loads through, rooted at `/` - a bookmark can point anywhere
+/// on disk, past wherever `AssetPlugin::file_path` put the editor's
+/// own configured root.
 pub const ABSOLUTE_SOURCE: &str = "abs";
 
 /// Registers [`ABSOLUTE_SOURCE`]. Must run before `DefaultPlugins`:
-/// asset sources build when `AssetPlugin` does, not after.
+/// asset sources build when `AssetPlugin` does.
 pub fn register_absolute_source(app: &mut App) {
     app.register_asset_source(
         ABSOLUTE_SOURCE,

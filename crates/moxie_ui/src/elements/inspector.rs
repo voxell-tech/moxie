@@ -1,10 +1,9 @@
-//! Inspectors, as composers rather than elements.
+//! Inspectors, as composers.
 //!
 //! What an inspector is handed (an entity, a component's type, a
-//! resource's type) decides what its subtree *is*, not what a node
-//! looks like. There is no patch for "build something else instead",
-//! so these read their input once, while building, exactly a
-//! [`Composer`]'s window.
+//! resource's type) decides what its subtree *is*. There is no patch
+//! for "build something else instead", so these read their input
+//! once, while building, exactly a [`Composer`]'s window.
 //!
 //! Each is empty when what it points at is not there. A missing
 //! component and an inspector pointed nowhere read the same.
@@ -548,8 +547,6 @@ fn component_card(
         .watch(
             component_changed_on::<CardClosed>(node),
             move |ui| {
-                // Stays empty while shut, rather than building what
-                // nobody has looked at.
                 if ui.world.get::<CardClosed>(node).is_some() {
                     return;
                 }
@@ -576,8 +573,7 @@ fn resource_entity(
 /// first poll.
 ///
 /// Only moves when the resource is removed and re-inserted: a
-/// different entity means the subtree should rebuild, not have its
-/// old bindings quietly re-pointed.
+/// different entity means the subtree should rebuild.
 fn entity_changed(
     resource: TypeId,
 ) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool {

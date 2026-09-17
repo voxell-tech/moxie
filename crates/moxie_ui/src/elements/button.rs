@@ -23,9 +23,9 @@ pub enum Hover {
     None,
     /// The surface itself.
     Fill(Color),
-    /// The icon and label, not the surface. Their own `hover_color`
-    /// carries the shade - set by a [`Style`]'s
-    /// [`finish`](Style::finish), late enough to reach a child.
+    /// The icon and label. Their own `hover_color` carries the
+    /// shade, set by a [`Style`]'s [`finish`](Style::finish), late
+    /// enough to reach a child.
     IconLabel,
 }
 
@@ -181,8 +181,8 @@ impl Style for MenuButton {
 
 /// One segment of a [`SegmentedControl`](super::SegmentedControl):
 /// filled solid with the theme's accent when `active`, its theme fill
-/// otherwise. Rounding is the control's own, not each segment's - it
-/// clips its row of children rather than rounding them individually.
+/// otherwise. Rounding is the control's own - it clips its row of
+/// children.
 pub struct SegmentButton {
     pub active: bool,
 }
