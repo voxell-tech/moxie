@@ -18,7 +18,7 @@ use fynix::prelude::*;
 
 use super::Field;
 use crate::drag::{follow, ghost};
-use crate::elements::{Frame, FrameCursor, Label};
+use crate::elements::{Diamond, DiamondCursor, Frame, Label};
 use crate::reactive::{BevyUi, FynixHost, value_changed};
 use crate::theme::EditorTheme;
 
@@ -113,18 +113,8 @@ impl Composer<FynixHost> for FieldName {
                 } else {
                     neutral
                 };
-                ui.elem(elem!(
-                    Frame,
-                    width = px(6),
-                    height = px(6),
-                    margin = UiRect::horizontal(px(2)),
-                    background = fill,
-                ))
-                .insert(UiTransform::from_rotation(Rot2::degrees(
-                    45.0,
-                )))
-                .bind(
-                    |frame| frame.background(),
+                ui.elem(elem!(Diamond, background = fill)).bind(
+                    |diamond| diamond.background(),
                     value_changed(move |world, _| {
                         has_action(world, &bind_field)
                     }),

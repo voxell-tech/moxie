@@ -9,6 +9,7 @@
 pub mod dock;
 
 mod button;
+mod diamond;
 mod divider;
 mod dropdown;
 mod field;
@@ -36,6 +37,7 @@ pub use button::{
     Button, ButtonCursor, GhostButton, MenuButton, SegmentButton,
     TintButton,
 };
+pub use diamond::{Diamond, DiamondCursor};
 pub use divider::{Divider, DividerCursor};
 pub use dropdown::{
     Dropdown, DropdownCursor, DropdownItem, DropdownItemCursor,
