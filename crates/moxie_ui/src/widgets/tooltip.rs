@@ -33,9 +33,7 @@ const DELAY: Duration = Duration::from_millis(500);
 const HIDE_GRACE: Duration = Duration::from_millis(150);
 
 /// Where the tag sits relative to the cursor it appeared at, clear of
-/// the pointer hotspot. Fixed once shown: the tag no longer tracks
-/// the pointer, since a pointer reaching into it to click something
-/// would otherwise be chasing a moving target.
+/// the pointer hotspot.
 const OFFSET: Vec2 = Vec2::new(12.0, 18.0);
 
 /// What's on its way to showing, what's shown, and whether the
@@ -106,6 +104,9 @@ fn tick(
     mut state: ResMut<TooltipState>,
     mut commands: Commands,
 ) {
+    // Once shown, this never repositions the tag: doing so while a
+    // pointer reaches into it to click something would make it a
+    // moving target.
     if let Some(shown) = state.shown {
         if state.hovered_source || state.hovered_tag {
             state.hiding = None;
