@@ -710,8 +710,6 @@ fn prune_stage(scene: &mut MotionGfxScene) {
         .retain(|subject| !subject.fields.is_empty());
 }
 
-/// Every `(subject, field)` pair an [`ActionCmd`](
-/// motiongfx_scene::block::ActionCmd) under `block` still targets.
 fn collect_used_fields(
     block: &Block<Backend>,
     used: &mut HashSet<(SceneUid, FieldRef)>,

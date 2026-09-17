@@ -108,13 +108,11 @@ struct Subject {
 struct Pooled(Uuid);
 
 /// [`Edit::Interp`]'s own reflected type, standing in for
-/// `Option<AnimInterp>`: `AnimInterp` has no variant for `None`, and
-/// `None` steps rather than interpolating, so the panel needs a name
-/// for it distinct from every named curve.
+/// `Option<AnimInterp>`.
 #[derive(Reflect, Clone, Copy, PartialEq, Debug)]
 enum InterpChoice {
-    /// Jumps to the target value at the end, rather than approaching
-    /// it - `Option::None` under the hood.
+    /// `Option::None`: jumps to the target at the end instead of
+    /// interpolating toward it.
     Step,
     Linear,
 }
