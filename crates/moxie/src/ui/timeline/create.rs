@@ -19,6 +19,8 @@ use bevy_fynix::BevyFynix;
 use bevy_motiongfx::scene::backend::{AnimOp, Backend};
 use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
 use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
+use motiongfx_scene::refs::FieldRef;
+use motiongfx_scene::scene::{FieldSeed, Subject};
 use moxie_ui::inspector::{DraggedField, Field};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::theme::EditorTheme;
@@ -225,6 +227,18 @@ fn create(
             return;
         };
 
+        // The field's live value, at the moment nothing has animated
+        // it yet - the only point this is also its correct staged
+        // starting value. `stage` is a no-op without an entry here,
+        // and baking silently falls back to whatever the world
+        // already holds.
+        seed_field(
+            &mut scene.0.stage.subjects,
+            SceneUid::Entity(uid),
+            field_ref.clone(),
+            id,
+        );
+
         let node = SceneNode::action(ActionCmd {
             subject: SceneUid::Entity(uid),
             field: field_ref,
@@ -246,6 +260,29 @@ fn create(
     }
     if let Some(mut tick) = world.get_resource_mut::<RebuildTick>() {
         tick.0 = tick.0.wrapping_add(1);
+    }
+}
+
+/// Stages `field` on `subject` at `value`, unless it already is -
+/// only the first action ever created for a field needs one; every
+/// later one's start comes from replaying what came before it.
+fn seed_field(
+    subjects: &mut Vec<Subject<Backend>>,
+    subject: SceneUid,
+    field: FieldRef,
+    value: bevy::asset::uuid::Uuid,
+) {
+    let entry = subjects.iter_mut().find(|s| s.id == subject);
+    match entry {
+        Some(entry) => {
+            if !entry.fields.iter().any(|seed| seed.field == field) {
+                entry.fields.push(FieldSeed { field, value });
+            }
+        }
+        None => subjects.push(Subject {
+            id: subject,
+            fields: vec![FieldSeed { field, value }],
+        }),
     }
 }
 
