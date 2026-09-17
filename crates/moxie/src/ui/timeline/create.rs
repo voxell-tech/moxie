@@ -227,18 +227,38 @@ fn create(
             return;
         };
 
-        // Its own pool entry, not `id`: the action panel edits an
-        // action's value in place by id, and sharing one would let
-        // typing a new "animate to" value silently overwrite the
-        // stage too.
-        let Some(seed_id) =
-            bevy_motiongfx::scene::value_pool::insert_scene_value(
-                &mut scene.values,
-                &type_registry.read(),
-                &*value,
-            )
-        else {
-            return;
+        // Only the first action on a field needs its own seed; later
+        // actions reuse it instead of orphaning a pool entry.
+        let existing_seed = scene
+            .0
+            .stage
+            .subjects
+            .iter()
+            .find(|s| s.id == SceneUid::Entity(uid))
+            .and_then(|s| {
+                s.fields
+                    .iter()
+                    .find(|seed| seed.field == field_ref)
+                    .map(|seed| seed.value)
+            });
+
+        let seed_id = match existing_seed {
+            Some(seed_id) => seed_id,
+            None => {
+                // Separate from `id`: the action panel edits an
+                // action's value in place, so sharing one would let
+                // editing it overwrite the stage too.
+                let Some(seed_id) =
+                    bevy_motiongfx::scene::value_pool::insert_scene_value(
+                        &mut scene.values,
+                        &type_registry.read(),
+                        &*value,
+                    )
+                else {
+                    return;
+                };
+                seed_id
+            }
         };
 
         // The field's live value, at the moment nothing has animated
