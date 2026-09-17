@@ -55,8 +55,8 @@ impl Composer<FynixHost> for ActionPanel {
 
 /// One property of the selected node that an input writes back.
 ///
-/// Named, not captured: an input re-reads and rewrites it long after
-/// the panel was built.
+/// Named: an input re-reads and rewrites it long after the panel was
+/// built.
 #[derive(Clone, Copy, PartialEq)]
 enum Edit {
     /// How long the action runs for.
@@ -88,7 +88,7 @@ struct Shape {
     rows: Vec<(String, String)>,
     edits: Vec<(String, Edit)>,
     /// The action's target value. Which widget draws it is the
-    /// registry's business, not this panel's.
+    /// registry's business.
     value: Option<Pooled>,
 }
 
@@ -278,7 +278,6 @@ fn build(ui: &mut BevyUi) {
         });
     }
 
-    // Whatever the registry has for the type it turns out to hold.
     if let Some(pooled) = shape.value {
         ui.compose(FieldRow {
             label: "Value".to_string(),
@@ -512,8 +511,7 @@ impl Source for Property {
             (Edit::Interp, Node::Action { action, .. }) => {
                 Some(Box::new(InterpChoice::from(action.interp)))
             }
-            // Unset shows as the widget's own empty state, not a
-            // missing row.
+            // Unset shows as the widget's own empty state.
             (Edit::Name, Node::Block { block, .. }) => {
                 Some(Box::new(block.name.clone().unwrap_or_default()))
             }
@@ -638,8 +636,7 @@ fn clamp_seconds(value: f32) -> Duration {
     Duration::from_secs_f32(value.max(0.0))
 }
 
-/// Blank input clears a name back to `None`, rather than storing an
-/// empty string.
+/// Blank input clears a name back to `None`.
 fn named(value: String) -> Option<String> {
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_string())

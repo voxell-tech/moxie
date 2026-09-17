@@ -98,8 +98,7 @@ pub(crate) struct TrackViewport;
 ///
 /// Each reactive field binds at the node that owns it, so the
 /// play/pause icon, time label and friends have to be `NodeMut`s to
-/// carry their own binds. That is why this is a composer, not a
-/// `bsn!` tree.
+/// carry their own binds. That is why this is a composer.
 pub(super) struct TimelinePanel;
 
 impl Composer<FynixHost> for TimelinePanel {
@@ -278,8 +277,8 @@ fn build_ticks(ui: &mut BevyUi) {
 }
 
 /// The scrollable track viewport, filling the whole panel width. The
-/// playhead floats over it as a sibling, not a descendant, so the
-/// [`ScrollArea`] neither scrolls nor clips it.
+/// playhead floats over it as a sibling, so the [`ScrollArea`]
+/// neither scrolls nor clips it.
 struct TrackArea;
 
 impl Composer<FynixHost> for TrackArea {
@@ -330,9 +329,9 @@ impl Composer<FynixHost> for TrackArea {
                 .watch(value_changed(block_view), build_block_boxes);
             });
 
-        // Siblings of the `.watch()`-owned `ScrollArea`, not children
-        // of it: a hint built inside that would be gone the next time
-        // the box list rebuilds. `reorder` shows and places them.
+        // Siblings of the `.watch()`-owned `ScrollArea`: a hint built
+        // inside that would be gone the next time the box list
+        // rebuilds. `reorder` shows and places them.
         let track_area = root.id();
         root.with(|ui| {
             let insert = ui.theme.color.accent;

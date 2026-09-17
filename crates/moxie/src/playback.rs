@@ -39,8 +39,8 @@ pub(crate) fn on_toggle_playback(
     mut manager: ResMut<MotionGfxManager>,
     mut q_players: Query<&mut RealtimePlayer>,
 ) {
-    // One global target: invert the aggregate, not each player, so
-    // mixed states resolve to a single play/pause, not a swap.
+    // One global target: invert the aggregate, so mixed states
+    // resolve to a single play/pause.
     let should_play = !q_players.iter().any(|p| p.is_playing);
 
     // A zero length track has nothing to play.
@@ -66,8 +66,8 @@ pub(crate) fn on_toggle_playback(
 
 /// Keep [`EditorState`] tracking the first timeline.
 ///
-/// A system, not a binding: the write lands on a resource, which
-/// belongs to no node. It writes only when the answer moves, so a
+/// A system: the write lands on a resource, which belongs to no
+/// node. It writes only when the answer moves, so a
 /// change-detecting reader still sees one change per change.
 pub(crate) fn track_first_timeline(
     timelines: Query<&TimelineId>,

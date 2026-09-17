@@ -13,15 +13,14 @@ use super::Source;
 ///
 /// A resource is a component too. Bevy parks each one on an entity
 /// of its own, so which it was handed never comes up. That entity is
-/// settled once, when the field is built, not looked up on every
-/// read.
+/// settled once, when the field is built.
 ///
 /// A [`Source`] a widget can be handed. It carries no value: a widget
 /// re-reads through the path whenever the component changes, so
 /// nothing goes stale behind a snapshot.
 ///
-/// Holds a [`TypeId`], not a `ComponentId`, so a field can be named
-/// before the world has registered the type.
+/// Holds a [`TypeId`], so a field can be named before the world has
+/// registered the type.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Field {
     entity: Entity,

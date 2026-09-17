@@ -39,8 +39,8 @@ use crate::reactive::{BevyUi, FynixHost};
 
 /// Every variant of `value`'s type, if it is an enum at all.
 ///
-/// Read off the type, not the value, so the choices do not change
-/// with whichever variant happens to be active.
+/// Read off the type, so the choices do not change with whichever
+/// variant happens to be active.
 pub(super) fn variants(
     value: &dyn PartialReflect,
 ) -> Option<Vec<String>> {
@@ -184,8 +184,8 @@ impl Composer<FynixHost> for VariantPicker<'_> {
         let current = active(source, ui.world)
             .unwrap_or_else(|| "-".to_string());
         let source = source.boxed();
-        // Sized to the longest variant, not the one showing, so
-        // picking another does not resize the row.
+        // Sized to the longest variant, so picking another does not
+        // resize the row.
         let width = Dropdown::width_for(&variants, 12.0);
 
         ui.elem(elem!(Frame, align = AlignItems::Center))
@@ -283,8 +283,7 @@ impl Clone for ClonableSource {
 }
 
 impl ClonableSource {
-    // Methods of its own rather than reaching into `.0` at the call
-    // site: a closure only using the field, not the struct, captures
+    // Methods of its own: a closure only using the field captures
     // just that field - `Box<dyn Source>` on its own, which isn't
     // `Clone`.
     fn get(&self, world: &World) -> Option<Box<dyn PartialReflect>> {

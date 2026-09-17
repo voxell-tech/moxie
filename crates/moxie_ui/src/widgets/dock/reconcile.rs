@@ -160,9 +160,8 @@ fn build_split(id: NodeId, split: DockSplit, ui: &mut BevyUi) {
         });
 }
 
-/// One side of a split. The ratio is a binding, not part of the
-/// build: dragging the handle rewrites the fraction every frame and
-/// must not rebuild anything.
+/// One side of a split. The ratio is a binding: dragging the handle
+/// rewrites the fraction every frame and must not rebuild anything.
 fn build_panel(
     split_id: NodeId,
     child: NodeId,

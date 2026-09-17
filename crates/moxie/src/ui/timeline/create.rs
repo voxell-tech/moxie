@@ -79,9 +79,9 @@ pub(super) fn preview(
     };
 
     if dragged.field.is_none() {
-        // Gated on the edge, not the level: this branch runs on
-        // every frame nothing is field-dragged, and `reorder` shares
-        // this `Visuals` for its own hint.
+        // Gated on the edge: this branch runs on every frame nothing
+        // is field-dragged, and `reorder` shares this `Visuals` for
+        // its own hint.
         if *was_dragging {
             // The drag may have ended without a `DragDrop` over the
             // track (e.g. released elsewhere) - `on_drop` never ran

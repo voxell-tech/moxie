@@ -1,7 +1,7 @@
 //! Retiming a node by dragging one of its box's edges: the left edge
 //! edits `delay`, the right edge `duration` (leaves only - a block has
-//! no `duration`). Dedicated handles, not a direction-sensing body
-//! drag, leave the body free for `reorder`'s merge gesture.
+//! no `duration`). Dedicated handles leave the body free for
+//! `reorder`'s merge gesture.
 //!
 //! Nothing writes [`EditorScene`] until [`DragEnd`]: the box list
 //! watches it, so a mid-drag write would rebuild the dragged box out

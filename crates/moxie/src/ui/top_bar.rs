@@ -87,8 +87,8 @@ impl Composer<FynixHost> for Menu {
 
 /// The name in the bar, which opens the menu.
 ///
-/// A button rather than a [`Dropdown`]: an entry in a menu bar is a
-/// word, not a form control, so it wears no chevron.
+/// A button: an entry in a menu bar is a word, so it wears no
+/// chevron.
 fn title(ui: &mut BevyUi, name: &str) {
     let text = ui.theme.color.text;
     ui.elem(elem!(

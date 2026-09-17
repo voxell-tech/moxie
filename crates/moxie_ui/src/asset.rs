@@ -1,10 +1,10 @@
 //! Dragging a file onto an asset field.
 //!
 //! What extension loads as which asset is a registration,
-//! [`moxie_asset::AssetKinds`], not this module's concern. The drag
-//! itself ([`AssetDragging`]) carries a path and that same kind, so a
-//! drop target only has to compare one [`TypeId`] to know whether
-//! what landed on it is its own.
+//! [`moxie_asset::AssetKinds`]. The drag itself ([`AssetDragging`])
+//! carries a path and that same kind, so a drop target only has to
+//! compare one [`TypeId`] to know whether what landed on it is its
+//! own.
 
 use std::any::TypeId;
 use std::path::PathBuf;

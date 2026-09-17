@@ -2,9 +2,8 @@
 //!
 //! [`InspectorFields`] walks any reflected value in the world and
 //! renders it as a collapsible hierarchy of editable rows. Which
-//! widget a leaf gets is a type-registry lookup, not a match on
-//! concrete types, so a new editable type is one [`Inspect`] impl
-//! away.
+//! widget a leaf gets is a type-registry lookup, so a new editable
+//! type is one [`Inspect`] impl away.
 //!
 //! A widget is handed a [`Source`] rather than a value, and never
 //! learns where that value actually lives. [`Field`] (a component of
@@ -273,9 +272,9 @@ pub struct ReflectInspectGroup(pub &'static str);
 /// [`InspectAppExt::register_essential_with`].
 #[derive(Clone, Copy)]
 pub struct ReflectEssential {
-    // A bare fn, not a boxed closure: like `ReflectDefault`, the
-    // value it produces carries all the state it needs, so there is
-    // nothing for the function itself to capture.
+    // A bare fn: like `ReflectDefault`, the value it produces
+    // carries all the state it needs, so there is nothing for the
+    // function itself to capture.
     spawn: fn() -> Box<dyn Reflect>,
 }
 
@@ -466,9 +465,9 @@ pub fn inspect_value(ui: &mut BevyUi, source: &dyn Source) {
 }
 
 /// One field's row: a label column, then whatever `value` builds
-/// beside it. The split is proportional (40/60), not a fixed pixel
-/// width, so it scales with however wide the panel is docked - the
-/// same convention Unity, Godot, and Unreal's own inspectors use.
+/// beside it. The split is proportional (40/60), so it scales with
+/// however wide the panel is docked - the same convention Unity,
+/// Godot, and Unreal's own inspectors use.
 ///
 /// `depth` is how many [`Foldable`](crate::fold::Foldable) bodies
 /// this row sits under. Each one narrows the row by its own indent,

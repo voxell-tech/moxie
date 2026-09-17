@@ -342,11 +342,10 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
     out
 }
 
-/// Fires when the *shape* under `field` changes: its set of entries,
-/// not merely their values.
+/// Fires when the *shape* under `field` changes: its set of entries.
 ///
-/// Values ride on bindings, not rebuilds, so a focused number input
-/// survives a value change; a rebuild would despawn it mid-edit. The
+/// Values ride on bindings, so a focused number input survives a
+/// value change; a rebuild would despawn it mid-edit. The
 /// tick is checked first so the walk only runs when something
 /// touched the component.
 fn shape_changed(

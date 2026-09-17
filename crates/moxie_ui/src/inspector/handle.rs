@@ -69,9 +69,8 @@ impl<T: Asset + TypePath> Inspect for Handle<T> {
 
                 let source = written.boxed();
                 commands.queue(move |world: &mut World| {
-                    // Rooted at `/`, not wherever `AssetPlugin`
-                    // configured its own root - a dragged path is
-                    // absolute and may live anywhere on disk.
+                    // Rooted at `/`: a dragged path is absolute and
+                    // may live anywhere on disk.
                     let asset_path =
                         AssetPath::from_path_buf(path.clone())
                             .with_source(ABSOLUTE_SOURCE);

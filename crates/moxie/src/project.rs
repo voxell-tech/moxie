@@ -200,9 +200,9 @@ fn clear(world: &mut World) {
     world.insert_resource(ProjectBookmarks::default());
 }
 
-/// What a subject is saved as. An allowlist, not everything it
-/// happens to carry: the rest is the running editor's business, and
-/// a file that hoards it would not load into a different one.
+/// What a subject is saved as. An allowlist: the rest is the running
+/// editor's business, and a file that hoards it would not load into
+/// a different one.
 fn subject_components() -> WorldFilter {
     WorldFilter::deny_all()
         .allow::<SceneRoot>()

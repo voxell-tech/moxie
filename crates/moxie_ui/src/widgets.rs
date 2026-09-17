@@ -1,5 +1,4 @@
 //! Widgets: trees built with [`bevy_fynix`], a `watch`/`bind`
-//! composition of [`crate::elements`] elements, not a single static
-//! [`Scene`](bevy::prelude::Scene).
+//! composition of [`crate::elements`] elements.
 
 pub mod dock;

@@ -299,10 +299,9 @@ fn end_drag(
 /// Ends the `body` drag in progress and commits the drop, unless it
 /// settled where it started.
 ///
-/// Global, not one observer per box: a child
-/// [`Button`](bevy::ui_widgets::Button) (the fold chevron among them)
-/// stops `DragEnd` propagating and would otherwise strand the gesture
-/// until Escape.
+/// Global: a child [`Button`](bevy::ui_widgets::Button) (the fold
+/// chevron among them) stops `DragEnd` propagating and would
+/// otherwise strand the gesture until Escape.
 pub(crate) fn on_drag_end(
     _: On<Pointer<DragEnd>>,
     visuals: Option<Res<Visuals>>,
