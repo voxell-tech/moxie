@@ -330,11 +330,7 @@ impl TabContent {
                 display: display(self.showing),
                 ..default()
             },
-            // Every panel gets its own focus group, not just whichever
-            // one thought to add it: `Tab` cycles within the docked
-            // window under the cursor rather than jumping across the
-            // whole editor.
-            TabGroup::new(0),
+            TabGroup::modal(),
         ));
     }
 }
