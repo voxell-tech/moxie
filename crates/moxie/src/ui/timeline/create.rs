@@ -227,6 +227,20 @@ fn create(
             return;
         };
 
+        // Its own pool entry, not `id`: the action panel edits an
+        // action's value in place by id, and sharing one would let
+        // typing a new "animate to" value silently overwrite the
+        // stage too.
+        let Some(seed_id) =
+            bevy_motiongfx::scene::value_pool::insert_scene_value(
+                &mut scene.values,
+                &type_registry.read(),
+                &*value,
+            )
+        else {
+            return;
+        };
+
         // The field's live value, at the moment nothing has animated
         // it yet - the only point this is also its correct staged
         // starting value. `stage` is a no-op without an entry here,
@@ -236,7 +250,7 @@ fn create(
             &mut scene.0.stage.subjects,
             SceneUid::Entity(uid),
             field_ref.clone(),
-            id,
+            seed_id,
         );
 
         let node = SceneNode::action(ActionCmd {
