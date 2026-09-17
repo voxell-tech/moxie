@@ -88,9 +88,8 @@ pub(crate) fn field_ref_of(
     Some(FieldRef::new(TypeName::new(type_path), path))
 }
 
-/// `field`'s own stage entry, if it has one - what a toggled diamond
-/// shows and edits in place of `field`'s live value
-/// ([`moxie_ui::inspector::FieldStageSource`]).
+/// `field`'s own stage entry, if it has one; see
+/// [`moxie_ui::inspector::FieldStageSource`].
 pub(crate) fn stage_source(
     world: &World,
     field: &Field,

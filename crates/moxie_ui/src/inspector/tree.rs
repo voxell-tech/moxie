@@ -344,9 +344,8 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
 }
 
 /// Fires when the *shape* under `field` changes: its set of entries -
-/// and also when [`StagedFieldEdit`] does, since which leaves toggled
-/// changes which `Source` a row's widget is built against, a decision
-/// `build_leaf` only makes at build time.
+/// or when [`StagedFieldEdit`] does, since that changes which
+/// `Source` `build_leaf` builds a row's widget against.
 ///
 /// Values ride on bindings, so a focused number input survives a
 /// value change; a rebuild would despawn it mid-edit. The

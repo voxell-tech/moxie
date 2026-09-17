@@ -66,8 +66,6 @@ pub struct FieldStageSource(
 
 impl FieldStageSource {
     /// `field`'s stage entry as a [`Source`], per the host's check.
-    /// `None` when the host offers none, or the field has no entry to
-    /// show.
     pub fn resolve(
         &self,
         world: &World,
