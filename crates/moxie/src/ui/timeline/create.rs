@@ -16,7 +16,7 @@ use bevy::picking::pointer::PointerLocation;
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
 use bevy_fynix::BevyFynix;
-use bevy_motiongfx::scene::backend::{AnimOp, Backend};
+use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
 use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
 use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
 use motiongfx_scene::refs::FieldRef;
@@ -260,7 +260,7 @@ fn create(
             value: id,
             duration: DEFAULT_DURATION,
             ease: None,
-            interp: None,
+            interp: Some(AnimInterp::Linear),
             name: None,
         });
         splice(&mut scene.0.animation, target, node)
