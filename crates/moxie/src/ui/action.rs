@@ -107,6 +107,36 @@ struct Subject {
 #[derive(Clone, Copy, PartialEq)]
 struct Pooled(Uuid);
 
+/// [`Edit::Interp`]'s own reflected type, standing in for
+/// `Option<AnimInterp>`: `AnimInterp` has no variant for `None`, and
+/// `None` steps rather than interpolating, so the panel needs a name
+/// for it distinct from every named curve.
+#[derive(Reflect, Clone, Copy, PartialEq, Debug)]
+enum InterpChoice {
+    /// Jumps to the target value at the end, rather than approaching
+    /// it - `Option::None` under the hood.
+    Step,
+    Linear,
+}
+
+impl From<Option<AnimInterp>> for InterpChoice {
+    fn from(interp: Option<AnimInterp>) -> Self {
+        match interp {
+            None => Self::Step,
+            Some(AnimInterp::Linear) => Self::Linear,
+        }
+    }
+}
+
+impl From<InterpChoice> for Option<AnimInterp> {
+    fn from(choice: InterpChoice) -> Self {
+        match choice {
+            InterpChoice::Step => None,
+            InterpChoice::Linear => Some(AnimInterp::Linear),
+        }
+    }
+}
+
 /// One property of the selected node, as somewhere a widget can read
 /// and write. Which widget that is follows from the type it hands
 /// back, so this never names one.
@@ -475,14 +505,15 @@ impl Source for Property {
         let node = node_at(&scene.0.animation, &self.path)?;
 
         match (self.edit, node) {
-            // `None` is the default curve, linear, so the picker
-            // shows that instead of a fourth "unset" state.
+            // Ease's `None` is the default curve, linear, so the
+            // picker shows that instead of a fourth "unset" state -
+            // unlike interp, `None` here is not a distinct behavior.
             (Edit::Ease, Node::Action { action, .. }) => Some(
                 Box::new(action.ease.unwrap_or(AnimEase::Linear)),
             ),
-            (Edit::Interp, Node::Action { action, .. }) => Some(
-                Box::new(action.interp.unwrap_or(AnimInterp::Linear)),
-            ),
+            (Edit::Interp, Node::Action { action, .. }) => {
+                Some(Box::new(InterpChoice::from(action.interp)))
+            }
             // Unset shows as the widget's own empty state, not a
             // missing row.
             (Edit::Name, Node::Block { block, .. }) => {
@@ -533,7 +564,11 @@ impl Source for Property {
                 action.ease = AnimEase::from_reflect(value);
             }
             (Edit::Interp, Node::Action { action, .. }) => {
-                action.interp = AnimInterp::from_reflect(value);
+                if let Some(choice) =
+                    InterpChoice::from_reflect(value)
+                {
+                    action.interp = choice.into();
+                }
             }
             (Edit::Name, Node::Block { block, .. }) => {
                 if let Some(value) = String::from_reflect(value) {
