@@ -74,6 +74,9 @@ pub struct Colors {
     pub text_faint: Color,
     /// Interactive accent.
     pub accent: Color,
+    /// A field's diamond while it edits the stage seed, not the live
+    /// value.
+    pub stage: Color,
     /// Destructive accents, and a draft or error state.
     pub critical: Color,
     /// The editor's own ground.
@@ -183,6 +186,7 @@ impl Default for EditorTheme {
                 text_dim: base[6],
                 text_faint: base[8].with_alpha(0.6),
                 accent: palette.blue,
+                stage: palette.yellow,
                 critical: palette.red,
                 bg: base[0],
                 panel: base[1],

@@ -44,6 +44,9 @@ impl Plugin for UiPlugin {
             .insert_resource(moxie_ui::inspector::FieldHasAction(
                 Some(inspector::has_action),
             ))
+            .insert_resource(moxie_ui::inspector::FieldStageSource(
+                Some(inspector::stage_source),
+            ))
             .init_resource::<EditorState>()
             .init_resource::<SelectedAction>()
             .init_resource::<SelectedEntity>()

@@ -15,6 +15,7 @@ use fynix::composer::Composer;
 use fynix::prelude::*;
 use fynix::records::BuildFn;
 
+use super::field_drag::{FieldStageSource, StagedFieldEdit};
 use super::{Field, FieldRow, ReflectInspect, enums};
 use crate::elements::{Button, Frame, Icon, Label, TintButton};
 use crate::fold::{self, CHEVRON_SHUT, Foldable, FoldsOn};
@@ -342,7 +343,10 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
     out
 }
 
-/// Fires when the *shape* under `field` changes: its set of entries.
+/// Fires when the *shape* under `field` changes: its set of entries -
+/// and also when [`StagedFieldEdit`] does, since which leaves toggled
+/// changes which `Source` a row's widget is built against, a decision
+/// `build_leaf` only makes at build time.
 ///
 /// Values ride on bindings, so a focused number input survives a
 /// value change; a rebuild would despawn it mid-edit. The
@@ -353,17 +357,24 @@ fn shape_changed(
 ) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool {
     let mut seen_tick: Option<Tick> = None;
     let mut seen_shape: Option<Vec<Entry>> = None;
+    let mut seen_staged: Option<Tick> = None;
     move |WorldNodeRef { world, .. }| {
+        let staged_tick = world
+            .get_resource_change_ticks::<StagedFieldEdit>()
+            .map(|ticks| ticks.changed);
+        let staged_fired = seen_staged != staged_tick;
+        seen_staged = staged_tick;
+
         let tick = field.changed_tick(world);
         if seen_shape.is_some() && tick == seen_tick {
-            return false;
+            return staged_fired;
         }
         seen_tick = tick;
 
         let current = entries(world, &field);
         let fired = seen_shape.as_ref() != Some(&current);
         seen_shape = Some(current);
-        fired
+        fired || staged_fired
     }
 }
 
@@ -462,13 +473,27 @@ fn build_leaf(
     let muted = ui.theme.color.text_dim;
     let label = name;
     let field = root.child(&path);
+
+    let staged =
+        ui.world.resource::<StagedFieldEdit>().is_active(&field);
+    let stage_source = staged
+        .then(|| {
+            ui.world
+                .resource::<FieldStageSource>()
+                .resolve(ui.world, &field)
+        })
+        .flatten();
+
     ui.compose(FieldRow {
         label,
         color: muted,
         bold: false,
         depth,
         field: Some(field.clone()),
-        value: move |ui: &mut BevyUi| drawer.build(&field, ui),
+        value: move |ui: &mut BevyUi| match &stage_source {
+            Some(source) => drawer.build(&**source, ui),
+            None => drawer.build(&field, ui),
+        },
     });
 }
 

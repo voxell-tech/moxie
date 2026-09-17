@@ -5,8 +5,12 @@
 //! is generic: it carries a [`Field`] and nothing about what dropping
 //! it somewhere means.
 
+use std::collections::HashSet;
+
 use bevy::feathers::cursor::EntityCursor;
-use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
+use bevy::picking::events::{
+    Click, Drag, DragEnd, DragStart, Pointer,
+};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::UiScale;
@@ -16,11 +20,15 @@ use bevy_fynix::{BevyFynix, WorldEntityMut};
 use fynix::composer::Composer;
 use fynix::prelude::*;
 
-use super::Field;
+use super::{Field, Source};
 use crate::drag::{follow, ghost};
 use crate::elements::{Diamond, DiamondCursor, Frame, Label};
 use crate::reactive::{BevyUi, FynixHost, value_changed};
 use crate::theme::EditorTheme;
+
+/// The axis names every registered vector [`Inspect`](super::Inspect)
+/// widget breaks its own field into - see `vector.rs`'s `Axes::NAMES`.
+const AXIS_NAMES: [&str; 4] = ["x", "y", "z", "w"];
 
 /// The host's answer to "can this field be animated?", set from the
 /// editor's scene registry. `None` (the default) leaves every field
@@ -45,6 +53,46 @@ impl FieldHasAction {
     /// Whether `field` already has an action, per the host's check.
     pub fn check(&self, world: &World, field: &Field) -> bool {
         self.0.is_some_and(|check| check(world, field))
+    }
+}
+
+/// The host's way to reach `field`'s own stage entry, set from the
+/// editor's scene tree. `None` (the default) never offers one, so no
+/// diamond can be toggled into stage-edit mode.
+#[derive(Resource, Default)]
+pub struct FieldStageSource(
+    pub Option<fn(&World, &Field) -> Option<Box<dyn Source>>>,
+);
+
+impl FieldStageSource {
+    /// `field`'s stage entry as a [`Source`], per the host's check.
+    /// `None` when the host offers none, or the field has no entry to
+    /// show.
+    pub fn resolve(
+        &self,
+        world: &World,
+        field: &Field,
+    ) -> Option<Box<dyn Source>> {
+        self.0.and_then(|resolve| resolve(world, field))
+    }
+}
+
+/// Fields whose diamond is toggled to show and edit their stage entry
+/// ([`FieldStageSource`]) instead of their live value.
+#[derive(Resource, Default)]
+pub struct StagedFieldEdit(HashSet<Field>);
+
+impl StagedFieldEdit {
+    pub fn is_active(&self, field: &Field) -> bool {
+        self.0.contains(field)
+    }
+
+    fn set(&mut self, field: Field, active: bool) {
+        if active {
+            self.0.insert(field);
+        } else {
+            self.0.remove(&field);
+        }
     }
 }
 
@@ -89,8 +137,22 @@ impl Composer<FynixHost> for FieldName {
         let has_action = |world: &World, field: &Field| {
             world.resource::<FieldHasAction>().check(world, field)
         };
+        let staged = |world: &World, field: &Field| {
+            world.resource::<StagedFieldEdit>().is_active(field)
+        };
         let accent = ui.theme.color.accent;
+        let stage = ui.theme.color.stage;
         let neutral = ui.theme.color.fill;
+        let diamond_fill =
+            move |world: &World, field: &Field| -> Color {
+                if staged(world, field) {
+                    stage
+                } else if has_action(world, field) {
+                    accent
+                } else {
+                    neutral
+                }
+            };
 
         let mut row = ui.elem(elem!(
             Frame,
@@ -99,31 +161,38 @@ impl Composer<FynixHost> for FieldName {
             column_gap = px(5)
         ));
         // `field` moves into the drag wiring below; these clones let
-        // the diamond keep re-checking `FieldHasAction` on every
-        // later poll.
+        // the diamond keep re-checking its own state on every later
+        // poll.
         let diamond_field = field.clone();
         let bind_field = field.clone();
+        let click_field = field.clone();
         if animatable {
             draggable_field(&mut row, field, text.clone());
         }
         row.with(move |ui| {
             if animatable {
-                let fill = if has_action(ui.world, &diamond_field) {
-                    accent
-                } else {
-                    neutral
-                };
-                ui.elem(elem!(Diamond, background = fill)).bind(
+                let fill = diamond_fill(ui.world, &diamond_field);
+                ui.elem(elem!(Diamond, background = fill))
+                    .observe(
+                    move |mut click: On<Pointer<Click>>,
+                          mut commands: Commands| {
+                        click.propagate(false);
+                        let field = click_field.clone();
+                        commands.queue(move |world: &mut World| {
+                            toggle_staged_edit(world, &field);
+                        });
+                    },
+                )
+                .bind(
                     |diamond| diamond.background(),
                     value_changed(move |world, _| {
-                        has_action(world, &bind_field)
+                        (
+                            has_action(world, &bind_field),
+                            staged(world, &bind_field),
+                        )
                     }),
                     move |WorldNodeRef { world, .. }| {
-                        if has_action(world, &diamond_field) {
-                            accent
-                        } else {
-                            neutral
-                        }
+                        diamond_fill(world, &diamond_field)
                     },
                 );
             }
@@ -137,6 +206,33 @@ impl Composer<FynixHost> for FieldName {
             ));
         })
         .handle()
+    }
+}
+
+/// Toggles `field`'s own stage-edit state, and cascades the same new
+/// state onto whichever of [`AXIS_NAMES`] under it also has an
+/// action - a compound field's diamond turns its staged axes with it.
+fn toggle_staged_edit(world: &mut World, field: &Field) {
+    let has_action = |world: &World, field: &Field| {
+        world.resource::<FieldHasAction>().check(world, field)
+    };
+    if !has_action(world, field) {
+        return;
+    }
+
+    let active =
+        !world.resource::<StagedFieldEdit>().is_active(field);
+    world
+        .resource_mut::<StagedFieldEdit>()
+        .set(field.clone(), active);
+
+    for name in AXIS_NAMES {
+        let child = field.child(name);
+        if has_action(world, &child) {
+            world
+                .resource_mut::<StagedFieldEdit>()
+                .set(child, active);
+        }
     }
 }
 

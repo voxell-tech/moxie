@@ -38,7 +38,10 @@ use crate::reactive::{BevyUi, FynixHost};
 pub use field::Field;
 use field_drag::FieldName;
 pub(crate) use field_drag::draggable_field;
-pub use field_drag::{DraggedField, FieldAnimatable, FieldHasAction};
+pub use field_drag::{
+    DraggedField, FieldAnimatable, FieldHasAction, FieldStageSource,
+    StagedFieldEdit,
+};
 pub use tree::{InspectorFields, Section};
 pub(crate) use tree::{root_leaf, section_open, toggle_section};
 
@@ -54,6 +57,8 @@ impl Plugin for InspectPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FieldAnimatable>()
             .init_resource::<FieldHasAction>()
+            .init_resource::<FieldStageSource>()
+            .init_resource::<StagedFieldEdit>()
             .init_resource::<DraggedField>();
 
         app.register_inspect::<bool>()
