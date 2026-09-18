@@ -27,10 +27,7 @@ button or spacebar, and scroll the track with a resizable name column.
 
 ## Running
 
-`bevy_motiongfx` / `motiongfx_scene` come from the `vendor/motiongfx`
-git submodule (`voxell-tech/motiongfx`, on branch `moxie`), not yet
-published in that form. Clone with submodules, or fetch them into an
-existing checkout:
+Clone with submodules, or fetch them into an existing checkout:
 
 ```sh
 git clone --recurse-submodules https://github.com/voxell-tech/moxie.git
