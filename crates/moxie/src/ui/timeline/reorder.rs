@@ -180,7 +180,7 @@ pub(crate) fn preview(
         With<TrackViewport>,
     >,
     q_area: Query<(&ComputedNode, &UiGlobalTransform)>,
-    q_boxes: Query<(Entity, &BoxPath)>,
+    q_boxes: Query<(Entity, &BoxPath, Option<&ChildOf>)>,
     q_gaps: Query<(Entity, &GapPath), Without<BoxPath>>,
     mut nodes: Query<&mut Node>,
     mut backgrounds: Query<&mut BackgroundColor>,
@@ -213,37 +213,53 @@ pub(crate) fn preview(
     let root = &editor_scene.scene().0.animation;
     let layout = block_layout::layout(root, *view, folded.paths());
 
-    // The whole subtree moves rigidly by how far the cursor has
-    // travelled, so a block carries its children rather than sliding
-    // out of its own border.
+    // Only the dragged box moves: its children are nested inside it
+    // and ride along, so a block carries them rather than sliding out
+    // of its own border. Its ancestors stop clipping so it can leave
+    // their bounds.
     let delta = content - gesture.cursor_start;
-    for (entity, box_path) in &q_boxes {
-        if !under(&box_path.0, &gesture.path) {
+    for (entity, box_path, child_of) in &q_boxes {
+        if box_path.0 != gesture.path {
+            continue;
+        }
+        commands.entity(entity).insert(GlobalZIndex(drag_z));
+        let Some(placed) =
+            layout.iter().find(|p| p.path == box_path.0)
+        else {
+            continue;
+        };
+        if let Ok(mut node) = nodes.get_mut(entity) {
+            let at = placed.offset() + delta;
+            node.left = px(at.x);
+            node.top = px(at.y);
+        }
+
+        let mut up = child_of.map(ChildOf::parent);
+        while let Some(ancestor) = up {
+            let Ok((_, _, above)) = q_boxes.get(ancestor) else {
+                break;
+            };
+            if let Ok(mut node) = nodes.get_mut(ancestor)
+                && node.overflow != Overflow::visible()
+            {
+                node.overflow = Overflow::visible();
+            }
+            up = above.map(ChildOf::parent);
+        }
+    }
+    for (entity, gap_path) in &q_gaps {
+        if gap_path.0 != gesture.path {
             continue;
         }
         commands.entity(entity).insert(GlobalZIndex(drag_z));
         if let Some(placed) =
-            layout.iter().find(|p| p.path == box_path.0)
+            layout.iter().find(|p| p.path == gap_path.0)
+            && placed.gap_x.is_some()
             && let Ok(mut node) = nodes.get_mut(entity)
         {
-            node.left = px(placed.x + delta.x);
-            node.top = px(placed.y + delta.y);
-        }
-    }
-    for (entity, gap_path) in &q_gaps {
-        if !under(&gap_path.0, &gesture.path) {
-            continue;
-        }
-        commands.entity(entity).insert(GlobalZIndex(drag_z));
-        if let Some(Placed {
-            gap_x: Some(gap_x),
-            y,
-            ..
-        }) = layout.iter().find(|p| p.path == gap_path.0)
-            && let Ok(mut node) = nodes.get_mut(entity)
-        {
-            node.left = px(gap_x + delta.x);
-            node.top = px(y + delta.y);
+            let at = placed.gap_offset() + delta;
+            node.left = px(at.x);
+            node.top = px(at.y);
         }
     }
 

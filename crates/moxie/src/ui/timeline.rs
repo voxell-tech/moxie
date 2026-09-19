@@ -35,7 +35,8 @@ use moxie_ui::elements::{
     Button, ButtonCursor, Frame, GhostButton, Icon, IconCursor,
     Label, NumberField, NumberFieldCursor, Panel, PlayheadLine,
     PlayheadLineCursor, ScrollArea, TimeLabel, TimeTick,
-    TimelineAction, TimelineBlock, TimelineGap, TintButton,
+    TimelineAction, TimelineBlock, TimelineGap, TimelineLink,
+    TintButton,
 };
 use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use moxie_ui::reactive::{
@@ -428,18 +429,20 @@ fn block_view(
 /// A block's header: its name (or combinator, if unnamed) beside its
 /// fold chevron, clickable to select - the chevron alone toggles the
 /// fold.
-struct BlockHeader {
+struct BlockHeader<F> {
     path: Vec<usize>,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    left: Val,
+    top: Val,
+    width: Val,
+    height: f32,
     folded: bool,
     label: String,
     is_selected: bool,
+    /// Builds what nests inside the block's box.
+    children: F,
 }
 
-impl Composer<FynixHost> for BlockHeader {
+impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for BlockHeader<F> {
     type Element = TimelineBlock;
 
     fn compose(
@@ -448,13 +451,14 @@ impl Composer<FynixHost> for BlockHeader {
     ) -> ElementHandle<FynixHost, TimelineBlock> {
         let Self {
             path,
-            x,
-            y,
-            w,
-            h,
+            left,
+            top,
+            width,
+            height,
             folded,
             label,
             is_selected,
+            children,
         } = self;
         let theme = ui.theme;
         let default_color = theme.color.text;
@@ -477,10 +481,10 @@ impl Composer<FynixHost> for BlockHeader {
 
         let mut header = ui.elem(elem!(
             TimelineBlock,
-            top = px(y),
-            left = px(x),
-            width = px(w),
-            height = px(h),
+            top = top,
+            left = left,
+            width = width,
+            height = px(height),
             background = background,
             border = block_color.with_alpha(0.5),
             selected = is_selected
@@ -557,6 +561,7 @@ impl Composer<FynixHost> for BlockHeader {
                         color = label_color
                     ));
                 });
+                children(ui);
             },
         );
 
@@ -564,182 +569,200 @@ impl Composer<FynixHost> for BlockHeader {
     }
 }
 
-/// One box per placement: a block's header ([`BlockHeader`]), or an
-/// action leaf's own [`TimelineAction`]. Either outlines in the
-/// theme's accent when [`SelectedAction`] names its path, and
-/// clicking either writes that path in; only the action also lights
-/// up under the cursor.
+/// The boxes, nested the way the tree is: a block's [`BlockHeader`]
+/// holds its children, and an action leaf is its own
+/// [`TimelineAction`]. Either outlines in the theme's accent when
+/// [`SelectedAction`] names its path, and clicking either writes that
+/// path in; only the action also lights up under the cursor.
 fn build_block_boxes(ui: &mut BevyUi) {
     let (placements, selected, _) = block_view(ui.world, ui.parent());
-    let theme = ui.theme;
     let pattern = ui.world.resource::<DelayPattern>().0.clone();
 
-    for placed in placements {
-        let is_selected = selected.as_ref() == Some(&placed.path);
-
-        // Spawned at zero width even with no delay yet, so a live
-        // drag that opens one up has an entity already in place to
-        // grow.
-        if !placed.path.is_empty() {
-            let gap_x = placed.gap_x.unwrap_or(placed.x);
-            let image = pattern.clone();
-            ui.elem(elem!(
-                TimelineGap,
-                top = px(placed.y),
-                left = px(gap_x),
-                width = px(placed.x - gap_x),
-                height = px(placed.h),
-                image = image,
-                color = theme.color.text_dim.with_alpha(0.35)
-            ))
-            .insert(retime::GapPath(placed.path.clone()));
-        }
-
-        match placed.label {
-            Some(label) => {
-                let path = placed.path.clone();
-                ui.compose(BlockHeader {
-                    path: path.clone(),
-                    x: placed.x,
-                    y: placed.y,
-                    w: placed.w,
-                    h: placed.h,
-                    folded: placed.folded,
-                    label,
-                    is_selected,
-                });
-                // The root's box has no `delay` of its own to drag -
-                // it always starts at zero.
-                if !path.is_empty() {
-                    edge_handle(
-                        ui,
-                        path,
-                        retime::Kind::Move,
-                        placed.x,
-                        placed.y,
-                        placed.h,
-                    );
-                }
-            }
-            // An action leaf's own element: position, colors and
-            // selection are all typed fields, and it owns its
-            // pointer cursor and hover/press tint itself.
-            None => {
-                let path = placed.path.clone();
-                let label =
-                    placed.name.clone().unwrap_or_else(|| {
-                        if placed.draft {
-                            "Draft".to_string()
-                        } else {
-                            String::new()
-                        }
-                    });
-                // A draft has no subject/field yet, so its clip reads
-                // as an empty slot in the critical color, rather than
-                // a real action's fill.
-                let fill = if placed.draft {
-                    theme.color.critical.with_alpha(0.5)
-                } else {
-                    theme.color.clip
-                };
-                let border = if is_selected {
-                    theme.color.accent
-                } else if placed.draft {
-                    theme.color.critical.with_alpha(0.5)
-                } else {
-                    Color::NONE
-                };
-                let mut clip = ui.elem(elem!(
-                    TimelineAction,
-                    label = elem!(
-                        Label,
-                        text = label,
-                        size = theme.text.small,
-                        color = if placed.draft {
-                            theme.color.critical.with_alpha(0.9)
-                        } else {
-                            theme.palette.blue.with_alpha(0.9)
-                        }
-                    ),
-                    top = px(placed.y),
-                    left = px(placed.x),
-                    width = px(placed.w),
-                    height = px(placed.h),
-                    fill = fill,
-                    hover_fill = theme.color.clip_hover,
-                    press_fill = theme.color.clip_press,
-                    border = border,
-                    selected = is_selected
-                ));
-                clip.insert(retime::BoxPath(placed.path.clone()))
-                    .pointer_tags()
-                    .observe({
-                        let path = path.clone();
-                        move |_: On<Activate>,
-                              mut selected: ResMut<SelectedAction>| {
-                            selected.0 = Some(path.clone());
-                        }
-                    });
-                reorder::body(&mut clip, path.clone());
-                {
-                    let delete_path = path.clone();
-                    moxie_ui::context_menu::context_menu(
-                        &mut clip,
-                        move |menu| {
-                            let critical =
-                                menu.theme().color.critical;
-                            let path = delete_path.clone();
-                            menu.item(
-                                Some((
-                                    moxie_ui::icons::TRASH,
-                                    critical,
-                                )),
-                                "Delete",
-                                move |world| {
-                                    reorder::delete(world, &path);
-                                },
-                            );
-                        },
-                    );
-                }
-                edge_handle(
-                    ui,
-                    path.clone(),
-                    retime::Kind::Move,
-                    placed.x,
-                    placed.y,
-                    placed.h,
-                );
-                edge_handle(
-                    ui,
-                    path,
-                    retime::Kind::Resize,
-                    placed.x + placed.w - retime::EDGE_HANDLE_PX,
-                    placed.y,
-                    placed.h,
-                );
-            }
-        }
+    if !placements.is_empty() {
+        build_node(ui, &placements, 0, selected.as_ref(), &pattern);
     }
 }
 
-/// A thin, absolutely positioned strip at one edge of a box, wired to
+/// Builds `placements[at]` and everything nested under it, and returns
+/// the index just past that subtree.
+fn build_node(
+    ui: &mut BevyUi,
+    placements: &[Placed],
+    at: usize,
+    selected: Option<&Vec<usize>>,
+    pattern: &Handle<Image>,
+) -> usize {
+    let placed = &placements[at];
+    let theme = ui.theme;
+    let is_selected = selected == Some(&placed.path);
+    let mut next = at + 1;
+
+    // Spawned at zero width even with no delay yet, so a live
+    // drag that opens one up has an entity already in place to
+    // grow.
+    if !placed.path.is_empty() {
+        ui.elem(elem!(
+            TimelineGap,
+            top = placed.top(),
+            left = placed.gap_left(),
+            width = placed.gap_width(),
+            height = px(placed.h),
+            image = pattern.clone(),
+            color = theme.color.text_dim.with_alpha(0.35)
+        ))
+        .insert(retime::GapPath(placed.path.clone()));
+    }
+
+    if let Some([left, top, width, height]) = placed.link_rect() {
+        ui.elem(elem!(
+            TimelineLink,
+            top = top,
+            left = left,
+            width = width,
+            height = height,
+            color = theme.color.text_dim
+        ));
+    }
+
+    match &placed.label {
+        Some(label) => {
+            ui.compose(BlockHeader {
+                path: placed.path.clone(),
+                left: placed.left(),
+                top: placed.top(),
+                width: placed.width(),
+                height: placed.h,
+                folded: placed.folded,
+                label: label.clone(),
+                is_selected,
+                children: |ui: &mut BevyUi| {
+                    // The root's box has no `delay` of its own to drag -
+                    // it always starts at zero.
+                    if !placed.path.is_empty() {
+                        edge_handle(
+                            ui,
+                            placed.path.clone(),
+                            retime::Kind::Move,
+                        );
+                    }
+                    while placements.get(next).is_some_and(|child| {
+                        child.path.len() > placed.path.len()
+                    }) {
+                        next = build_node(
+                            ui, placements, next, selected, pattern,
+                        );
+                    }
+                },
+            });
+        }
+        // An action leaf's own element: position, colors and
+        // selection are all typed fields, and it owns its
+        // pointer cursor and hover/press tint itself.
+        None => {
+            let path = placed.path.clone();
+            let label = placed.name.clone().unwrap_or_else(|| {
+                if placed.draft {
+                    "Draft".to_string()
+                } else {
+                    String::new()
+                }
+            });
+            // A draft has no subject/field yet, so its clip reads
+            // as an empty slot in the critical color, rather than
+            // a real action's fill.
+            let fill = if placed.draft {
+                theme.color.critical.with_alpha(0.5)
+            } else {
+                theme.color.clip
+            };
+            let border = if is_selected {
+                theme.color.accent
+            } else if placed.draft {
+                theme.color.critical.with_alpha(0.5)
+            } else {
+                Color::NONE
+            };
+            let mut clip = ui.elem(elem!(
+                TimelineAction,
+                label = elem!(
+                    Label,
+                    text = label,
+                    size = theme.text.small,
+                    color = if placed.draft {
+                        theme.color.critical.with_alpha(0.9)
+                    } else {
+                        theme.palette.blue.with_alpha(0.9)
+                    }
+                ),
+                top = placed.top(),
+                left = placed.left(),
+                width = placed.width(),
+                height = px(placed.h),
+                fill = fill,
+                hover_fill = theme.color.clip_hover,
+                press_fill = theme.color.clip_press,
+                border = border,
+                selected = is_selected
+            ));
+            clip.insert(retime::BoxPath(placed.path.clone()))
+                .pointer_tags()
+                .observe({
+                    let path = path.clone();
+                    move |_: On<Activate>,
+                          mut selected: ResMut<SelectedAction>| {
+                        selected.0 = Some(path.clone());
+                    }
+                });
+            reorder::body(&mut clip, path.clone());
+            {
+                let delete_path = path.clone();
+                moxie_ui::context_menu::context_menu(
+                    &mut clip,
+                    move |menu| {
+                        let critical = menu.theme().color.critical;
+                        let path = delete_path.clone();
+                        menu.item(
+                            Some((moxie_ui::icons::TRASH, critical)),
+                            "Delete",
+                            move |world| {
+                                reorder::delete(world, &path);
+                            },
+                        );
+                    },
+                );
+            }
+            clip.with(|ui| {
+                edge_handle(ui, path.clone(), retime::Kind::Move);
+                edge_handle(ui, path, retime::Kind::Resize);
+            });
+        }
+    }
+
+    next
+}
+
+/// A thin strip on one edge of the box it is built inside, wired to
 /// `kind` via [`retime::edge`].
 fn edge_handle(
     ui: &mut BevyUi,
     path: Vec<usize>,
     kind: retime::Kind,
-    x: f32,
-    y: f32,
-    h: f32,
 ) {
     let accent = ui.theme.color.accent;
+    let inset = match kind {
+        retime::Kind::Move => {
+            UiRect::new(Val::ZERO, auto(), Val::ZERO, auto())
+        }
+        retime::Kind::Resize => {
+            UiRect::new(auto(), Val::ZERO, Val::ZERO, auto())
+        }
+    };
     let mut handle = ui.elem(elem!(
         Frame,
         position = PositionType::Absolute,
-        inset = UiRect::new(px(x), auto(), px(y), auto()),
+        inset = inset,
         width = px(retime::EDGE_HANDLE_PX),
-        height = px(h),
+        height = percent(100),
         hover_background = accent.with_alpha(0.35),
         press_background = accent.with_alpha(0.6)
     ));
