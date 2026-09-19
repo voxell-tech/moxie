@@ -146,14 +146,14 @@ pub struct Spacing {
 /// wherever it is dragged.
 #[derive(Clone, Copy, Debug)]
 pub struct Layers {
-    /// A drop target hint, above the content it marks.
+    /// A drop target hint.
     pub drop_hint: i32,
-    /// A dragged ghost or the box standing in for one, above every
-    /// hint.
+    /// A dragged ghost.
     pub drag: i32,
-    /// A right-click menu, above everything a right-click could land
-    /// on.
+    /// A right-click menu.
     pub context_menu: i32,
+    /// A hover tag.
+    pub tooltip: i32,
 }
 
 /// Font sizes, three steps.
@@ -231,6 +231,7 @@ impl Default for EditorTheme {
                 drop_hint: 150,
                 drag: 200,
                 context_menu: 250,
+                tooltip: 300,
             },
             palette,
         }
