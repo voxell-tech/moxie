@@ -47,7 +47,7 @@ const OUTLINE_GROW: f32 = 2.0;
 pub(crate) struct Dragging(Option<Gesture>);
 
 /// Where a dragged node lands when released.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) enum Target {
     /// Among `parent`'s children, at `index`.
     Insert { parent: Vec<usize>, index: usize },
@@ -423,6 +423,17 @@ pub(super) fn resolve(
             return Some(Target::Insert {
                 index: if before { index } else { index + 1 },
                 parent,
+            });
+        }
+
+        // A block that already runs its children this way would only
+        // end up nested in an identical one, so the node joins it.
+        if let Some(inner) = block_at(root, &child.path)
+            && inner.combinator == wanted
+        {
+            return Some(Target::Insert {
+                index: if before { 0 } else { inner.children.len() },
+                parent: child.path.clone(),
             });
         }
         return Some(Target::Merge {
@@ -1048,6 +1059,7 @@ pub(super) fn hide_landing(
 #[cfg(test)]
 mod tests {
     use core::time::Duration;
+    use std::collections::BTreeSet;
 
     use bevy::asset::uuid::Uuid;
     use bevy_motiongfx::scene::backend::AnimOp;
@@ -1095,6 +1107,135 @@ mod tests {
         children: Vec<SceneNode<Backend>>,
     ) -> SceneNode<Backend> {
         SceneNode::block(Block::chain(children))
+    }
+
+    fn timed() -> SceneNode<Backend> {
+        SceneNode::Draft {
+            delay: None,
+            duration: Duration::from_secs(1),
+            name: None,
+        }
+    }
+
+    fn combined(
+        combinator: Combinator,
+        children: Vec<SceneNode<Backend>>,
+    ) -> Block<Backend> {
+        Block {
+            combinator,
+            children,
+            name: None,
+        }
+    }
+
+    /// Where a drop at `cursor` lands with `[1]` being dragged.
+    fn drop_at(
+        root: &Block<Backend>,
+        cursor: Vec2,
+    ) -> Option<Target> {
+        let layout = block_layout::layout(
+            root,
+            TimelineView::default(),
+            &BTreeSet::new(),
+        );
+        resolve(cursor, &layout, root, &[1])
+    }
+
+    #[test]
+    fn a_chain_edge_joins_a_chain_block_instead_of_nesting_one() {
+        let root = combined(
+            Combinator::All,
+            vec![
+                SceneNode::block(combined(
+                    Combinator::Chain,
+                    vec![timed(), timed()],
+                )),
+                timed(),
+            ],
+        );
+
+        assert_eq!(
+            drop_at(&root, Vec2::new(40.0, 36.0)),
+            Some(Target::Insert {
+                parent: vec![0],
+                index: 0
+            })
+        );
+        assert_eq!(
+            drop_at(&root, Vec2::new(280.0, 36.0)),
+            Some(Target::Insert {
+                parent: vec![0],
+                index: 2
+            })
+        );
+    }
+
+    #[test]
+    fn an_overlap_joins_an_all_block_instead_of_nesting_one() {
+        let root = combined(
+            Combinator::Chain,
+            vec![
+                SceneNode::block(combined(
+                    Combinator::All,
+                    vec![timed(), timed()],
+                )),
+                timed(),
+            ],
+        );
+
+        assert_eq!(
+            drop_at(&root, Vec2::new(80.0, 36.0)),
+            Some(Target::Insert {
+                parent: vec![0],
+                index: 2
+            })
+        );
+    }
+
+    #[test]
+    fn a_flow_block_can_still_be_merged_into() {
+        let root = combined(
+            Combinator::All,
+            vec![
+                SceneNode::block(combined(
+                    Combinator::Flow(Duration::from_millis(500)),
+                    vec![timed(), timed()],
+                )),
+                timed(),
+            ],
+        );
+
+        assert_eq!(
+            drop_at(&root, Vec2::new(40.0, 36.0)),
+            Some(Target::Merge {
+                path: vec![0],
+                combinator: Combinator::Chain,
+                before: true
+            })
+        );
+    }
+
+    #[test]
+    fn a_chain_edge_still_merges_into_an_all_block() {
+        let root = combined(
+            Combinator::All,
+            vec![
+                SceneNode::block(combined(
+                    Combinator::All,
+                    vec![timed(), timed()],
+                )),
+                timed(),
+            ],
+        );
+
+        assert_eq!(
+            drop_at(&root, Vec2::new(20.0, 36.0)),
+            Some(Target::Merge {
+                path: vec![0],
+                combinator: Combinator::Chain,
+                before: true
+            })
+        );
     }
 
     #[test]
