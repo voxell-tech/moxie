@@ -153,7 +153,7 @@ pub struct Layers {
     pub drag: i32,
     /// A right-click menu.
     pub context_menu: i32,
-    /// A hover tag.
+    /// A tooltip.
     pub tooltip: i32,
 }
 
