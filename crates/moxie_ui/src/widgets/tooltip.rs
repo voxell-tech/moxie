@@ -240,11 +240,24 @@ fn tick(
     scale: Res<UiScale>,
     pointers: Query<&PointerLocation>,
     marks: Query<(Entity, &TooltipMark)>,
+    sources: Query<Entity>,
     mut nodes: Query<&mut Node>,
     mut state: ResMut<TooltipState>,
     mut commands: Commands,
 ) {
     let state = &mut *state;
+
+    // A despawned source never sends `Out`.
+    let orphaned = state
+        .tooltips
+        .iter()
+        .filter(|tooltip| !sources.contains(tooltip.source))
+        .map(|tooltip| tooltip.root)
+        .collect::<Vec<_>>();
+    for root in orphaned {
+        state.drop_tooltip(root, &mut commands);
+    }
+
     let delta = time.delta();
     let cursor = pointers
         .iter()
