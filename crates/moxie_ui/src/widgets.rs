@@ -2,3 +2,4 @@
 //! composition of [`crate::elements`] elements.
 
 pub mod dock;
+pub mod tooltip;
