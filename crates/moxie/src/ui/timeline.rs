@@ -35,16 +35,18 @@ use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 use moxie_ui::elements::{
-    Button, ButtonCursor, Frame, GhostButton, Icon, IconCursor,
-    Label, NumberField, NumberFieldCursor, Panel, PlayheadLine,
-    PlayheadLineCursor, ScrollArea, TimeLabel, TimeTick,
-    TimelineAction, TimelineBlock, TimelineBlockCursor, TimelineGap,
-    TimelineLink, TintButton,
+    ACTION_ICON_SIZE, Button, ButtonCursor, Frame, GhostButton, Icon,
+    IconCursor, Label, NumberField, NumberFieldCursor, Panel,
+    PlayheadLine, PlayheadLineCursor, ScrollArea, TimeLabel,
+    TimeTick, TimelineAction, TimelineBlock, TimelineBlockCursor,
+    TimelineGap, TimelineLink, TintButton, icon_fit,
 };
+use moxie_ui::field_icon::field_icon;
 use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use moxie_ui::reactive::{
     BevyUi, FynixHost, resource_changed, value_changed,
 };
+use moxie_ui::theme::Spacing;
 
 /// The timeline's resources and interaction systems.
 pub(crate) struct TimelinePlugin;
@@ -316,6 +318,7 @@ impl Composer<FynixHost> for TrackArea {
                 ui.compose(TimeAxis);
             })
             .with(|ui| {
+                let space = ui.theme.space;
                 ui.elem(elem!(
                     ScrollArea,
                     width = percent(100),
@@ -323,7 +326,12 @@ impl Composer<FynixHost> for TrackArea {
                 ))
                 .insert(TrackViewport)
                 .remove::<ScrollAreaBehavior>()
-                .watch(value_changed(block_view), build_block_boxes);
+                .watch(
+                    value_changed(move |world, _| {
+                        block_view(world, space)
+                    }),
+                    build_block_boxes,
+                );
             });
 
         // A sibling of the `.watch()`-owned `ScrollArea`, so a rebuild
@@ -352,7 +360,7 @@ fn current_time(world: &World) -> Duration {
 /// The editor scene's animation tree, laid out as nested boxes. Nested
 /// boxes are a percent of their parent, so the layout ignores the view
 /// and only the root box follows it.
-fn block_placements(world: &World, _: Entity) -> Vec<Placed> {
+fn block_placements(world: &World, space: Spacing) -> Vec<Placed> {
     let empty = BTreeSet::new();
     let folded = world
         .get_resource::<BlockFoldState>()
@@ -365,6 +373,7 @@ fn block_placements(world: &World, _: Entity) -> Vec<Placed> {
                 &editor_scene.scene().0.animation,
                 TimelineView::UNIT,
                 folded,
+                space,
             )
         })
         .unwrap_or_default()
@@ -393,7 +402,7 @@ impl RebuildTick {
 /// re-timed, re-nested, reordered, or selection moves onto or off it.
 fn block_view(
     world: &World,
-    node: Entity,
+    space: Spacing,
 ) -> (Vec<Placed>, Option<Vec<usize>>, u64) {
     let selected = world
         .get_resource::<SelectedAction>()
@@ -404,7 +413,7 @@ fn block_view(
     // rebinds each box to its new path.
     let tick =
         world.get_resource::<RebuildTick>().map_or(0, |tick| tick.0);
-    (block_placements(world, node), selected, tick)
+    (block_placements(world, space), selected, tick)
 }
 
 /// A block's header: its name (or combinator, if unnamed) beside its
@@ -564,7 +573,8 @@ impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for BlockHeader<F> {
 /// [`SelectedAction`] names its path, and clicking either writes that
 /// path in; only the action also lights up under the cursor.
 fn build_block_boxes(ui: &mut BevyUi) {
-    let (placements, selected, _) = block_view(ui.world, ui.parent());
+    let (placements, selected, _) =
+        block_view(ui.world, ui.theme.space);
     let pattern = ui.world.resource::<DelayPattern>().0.clone();
 
     if !placements.is_empty() {
@@ -700,8 +710,32 @@ fn build_node(
             } else {
                 theme.palette.blue.with_alpha(0.9)
             };
+            let icon = placed.field.as_ref().and_then(|field| {
+                let registry =
+                    ui.world.resource::<AppTypeRegistry>().read();
+                field_icon(
+                    &registry,
+                    &field.type_name().to_string(),
+                    field.path(),
+                )
+            });
+            // What `fit_action_icons` will settle on once laid out,
+            // so the icon is never built at the wrong size. The
+            // placement is in seconds, so it is scaled to pixels here.
+            let fit = icon_fit(
+                placed.w
+                    * ui.world
+                        .resource::<TimelineView>()
+                        .px_per_second,
+            );
             let mut action = ui.elem(elem!(
                 TimelineAction,
+                icon = icon.map(|image| elem!(
+                    Icon,
+                    image = image,
+                    color = Color::WHITE.with_alpha(fit),
+                    size = px(ACTION_ICON_SIZE * fit)
+                )(theme)),
                 label = elem!(
                     Label,
                     text = label,

@@ -110,6 +110,11 @@ pub struct Spacing {
     pub radius: f32,
     /// The standard height of a row or an interactive control.
     pub row: f32,
+    /// A timeline action's height.
+    pub action_row: f32,
+    /// The vertical gap between timeline rows that would otherwise
+    /// overlap in time.
+    pub lane_gap: f32,
     /// A toolbar button's square.
     pub touch: f32,
     /// The default icon.
@@ -203,6 +208,8 @@ impl Default for EditorTheme {
                 xl: 12.0,
                 radius: 4.0,
                 row: 24.0,
+                action_row: 32.0,
+                lane_gap: 2.0,
                 touch: 26.0,
                 icon: 11.0,
                 hairline: 1.0,

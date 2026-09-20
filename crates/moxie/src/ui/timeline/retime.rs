@@ -25,7 +25,8 @@ use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::backend::Backend;
 use fynix::prelude::*;
 use motiongfx_scene::block::Node as SceneNode;
-use moxie_ui::reactive::FynixHost;
+use moxie_ui::reactive::{BevyFynix, FynixHost};
+use moxie_ui::theme::Spacing;
 
 use super::super::action::{node_at, node_at_mut};
 use super::block_layout::{self, Placed};
@@ -122,6 +123,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
         .observe(
             move |mut drag: On<Pointer<Drag>>,
                   scale: Res<UiScale>,
+                  kernel: Res<BevyFynix>,
                   mut dragging: ResMut<Dragging>,
                   editor_scene: Res<EditorScene>,
                   folded: Res<BlockFoldState>,
@@ -160,6 +162,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                     &editor_scene,
                     &folded,
                     *view,
+                    kernel.theme().space,
                     &gesture.path,
                     gesture.kind,
                     gesture.value_secs,
@@ -199,6 +202,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
 /// undo the preview.
 fn cancel_on_escape(
     keys: Res<ButtonInput<KeyCode>>,
+    kernel: Res<BevyFynix>,
     mut dragging: ResMut<Dragging>,
     editor_scene: Res<EditorScene>,
     folded: Res<BlockFoldState>,
@@ -220,6 +224,7 @@ fn cancel_on_escape(
         &editor_scene,
         &folded,
         *view,
+        kernel.theme().space,
         &gesture.path,
         gesture.kind,
         gesture.base_secs,
@@ -235,6 +240,7 @@ fn relayout(
     editor_scene: &EditorScene,
     folded: &BlockFoldState,
     view: TimelineView,
+    space: Spacing,
     path: &[usize],
     kind: Kind,
     secs: f32,
@@ -252,7 +258,7 @@ fn relayout(
     apply_edit(node, kind, secs);
 
     let layout =
-        block_layout::layout(&animation, view, folded.paths());
+        block_layout::layout(&animation, view, folded.paths(), space);
     apply_layout(&layout, boxes, gaps, links);
 }
 

@@ -12,14 +12,13 @@ use std::collections::BTreeSet;
 use bevy::ui::{Val, percent, px};
 use bevy_motiongfx::scene::backend::Backend;
 use motiongfx_scene::block::{Block, Combinator, Node};
+use motiongfx_scene::refs::FieldRef;
+use moxie_ui::theme::Spacing;
 
 use crate::TimelineView;
 
-/// Height of an action leaf's bar, and of a block's header strip.
-const ROW_HEIGHT: f32 = 26.0;
+/// Height of a block's header strip.
 pub(crate) const HEADER_HEIGHT: f32 = 24.0;
-/// Vertical gap between lanes that would otherwise overlap in time.
-const LANE_GAP: f32 = 2.0;
 
 /// The right-angle line from the middle of the flow gap between two
 /// siblings' slot starts, down to this one's row and along to its own
@@ -55,6 +54,9 @@ pub(crate) struct Placed {
     /// An action leaf's own name, if set. `None` for a block - its
     /// name, if any, is already folded into `label`.
     pub(crate) name: Option<String>,
+    /// The field an action leaf drives. `None` for a block or a
+    /// draft, which has none yet.
+    pub(crate) field: Option<FieldRef>,
     /// `true` when a block's children are folded away. Always `false`
     /// for an action leaf.
     pub(crate) folded: bool,
@@ -145,6 +147,7 @@ pub(crate) fn layout(
     animation: &Block<Backend>,
     view: TimelineView,
     folded: &BTreeSet<Vec<usize>>,
+    space: Spacing,
 ) -> Vec<Placed> {
     if animation.children.is_empty() {
         return Vec::new();
@@ -154,6 +157,7 @@ pub(crate) fn layout(
         animation,
         Duration::ZERO,
         folded,
+        space,
         &mut Vec::new(),
     );
     let mut out = Vec::new();
@@ -179,6 +183,7 @@ struct Measured {
 enum MeasuredKind {
     Action {
         name: Option<String>,
+        field: FieldRef,
     },
     Draft {
         name: Option<String>,
@@ -259,6 +264,7 @@ fn measure_node(
     node: &Node<Backend>,
     start: Duration,
     folded: &BTreeSet<Vec<usize>>,
+    space: Spacing,
     path: &mut Vec<usize>,
 ) -> Measured {
     let delay = match node {
@@ -273,21 +279,22 @@ fn measure_node(
             start,
             end: start.saturating_add(action.duration),
             gap: delay,
-            height: ROW_HEIGHT,
+            height: space.action_row,
             kind: MeasuredKind::Action {
                 name: action.name.clone(),
+                field: action.field.clone(),
             },
         },
         Node::Draft { duration, name, .. } => Measured {
             start,
             end: start.saturating_add(*duration),
             gap: delay,
-            height: ROW_HEIGHT,
+            height: space.action_row,
             kind: MeasuredKind::Draft { name: name.clone() },
         },
         Node::Block { block, .. } => Measured {
             gap: delay,
-            ..measure_block(block, start, folded, path)
+            ..measure_block(block, start, folded, space, path)
         },
     }
 }
@@ -296,6 +303,7 @@ fn measure_block(
     block: &Block<Backend>,
     start: Duration,
     folded: &BTreeSet<Vec<usize>>,
+    space: Spacing,
     path: &mut Vec<usize>,
 ) -> Measured {
     let is_folded = folded.contains(path.as_slice());
@@ -307,6 +315,7 @@ fn measure_block(
             &block.combinator,
             start,
             folded,
+            space,
             path,
         )
     };
@@ -342,6 +351,7 @@ fn measure_children(
     combinator: &Combinator,
     block_start: Duration,
     folded: &BTreeSet<Vec<usize>>,
+    space: Spacing,
     path: &mut Vec<usize>,
 ) -> (Vec<(f32, Measured)>, f32) {
     if children.is_empty() {
@@ -377,7 +387,8 @@ fn measure_children(
         .enumerate()
         .map(|(i, (child, start))| {
             path.push(i);
-            let measured = measure_node(child, start, folded, path);
+            let measured =
+                measure_node(child, start, folded, space, path);
             path.pop();
             measured
         })
@@ -395,7 +406,7 @@ fn measure_children(
                 .iter()
                 .map(|m| {
                     let this = y;
-                    y += m.height + LANE_GAP;
+                    y += m.height + space.lane_gap;
                     this
                 })
                 .collect()
@@ -433,7 +444,7 @@ fn flatten(
     });
 
     match &measured.kind {
-        MeasuredKind::Action { name } => out.push(Placed {
+        MeasuredKind::Action { name, field } => out.push(Placed {
             x,
             y,
             w,
@@ -441,6 +452,7 @@ fn flatten(
             depth,
             label: None,
             name: name.clone(),
+            field: Some(field.clone()),
             folded: false,
             draft: false,
             gap_x,
@@ -456,6 +468,7 @@ fn flatten(
             depth,
             label: None,
             name: name.clone(),
+            field: None,
             folded: false,
             draft: true,
             gap_x,
@@ -477,6 +490,7 @@ fn flatten(
                 depth,
                 label: Some(label.clone()),
                 name: None,
+                field: None,
                 folded: *folded,
                 draft: false,
                 gap_x,
@@ -527,16 +541,18 @@ fn flatten(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use moxie_ui::theme::EditorTheme;
 
     fn placed(x: f32, w: f32, parent: Option<Bounds>) -> Placed {
         Placed {
             x,
             y: 40.0,
             w,
-            h: ROW_HEIGHT,
+            h: EditorTheme::default().space.action_row,
             depth: 1,
             label: None,
             name: None,
+            field: None,
             folded: false,
             draft: false,
             gap_x: None,

@@ -13,5 +13,9 @@ pub const ASSETS: &str = "icons/files/folder.png";
 pub const PLUS: &str = "icons/general/plus.png";
 pub const TRASH: &str = "icons/general/trash-01.png";
 
+pub const TRANSLATE: &str = "icons/editor/translate.png";
+pub const ROTATE: &str = "icons/editor/rotate.png";
+pub const SCALE: &str = "icons/editor/scale.png";
+
 pub const PLAY: &str = "icons/media/play.png";
 pub const PAUSE: &str = "icons/media/pause.png";

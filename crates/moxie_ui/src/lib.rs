@@ -10,6 +10,7 @@ pub mod context_menu;
 pub mod cursor;
 pub mod drag;
 pub mod elements;
+pub mod field_icon;
 pub mod fold;
 pub mod icons;
 pub mod inspector;
@@ -61,6 +62,7 @@ impl Plugin for MoxieUiPlugin {
         ))
         // Seed the feathers palette (its default theme is empty).
         .insert_resource(UiTheme(create_dark_theme()))
+        .add_systems(Update, elements::fit_action_icons)
         .init_resource::<AssetKinds>()
         .init_resource::<AssetDragging>();
     }

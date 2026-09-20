@@ -95,7 +95,12 @@ fn preview(
         cursor.y - viewport_rect.min.y + scroll.y,
     );
     let root = &editor_scene.scene().0.animation;
-    let layout = block_layout::layout(root, *view, folded.paths());
+    let layout = block_layout::layout(
+        root,
+        *view,
+        folded.paths(),
+        kernel.theme().space,
+    );
     let target = reorder::resolve(content, &layout, root, NO_NODE);
 
     reorder::announce_hint(
@@ -178,7 +183,8 @@ fn create(
     let target = {
         let root =
             &world.resource::<EditorScene>().scene().0.animation;
-        let layout = block_layout::layout(root, view, folded);
+        let space = world.resource::<BevyFynix>().theme().space;
+        let layout = block_layout::layout(root, view, folded, space);
         reorder::resolve(content, &layout, root, NO_NODE)
     };
 
