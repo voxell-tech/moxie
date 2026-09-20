@@ -1,6 +1,6 @@
 //! A hover tag: UI that appears near the cursor after a short pause.
 //!
-//! Attached per-entity with [`tooltip`] or [`tooltip_with`], the same
+//! Attached per-entity with [`TooltipExt`], the same
 //! way `draggable_field` wires up a drag: the hover lives in one shared
 //! `TooltipState` rather than on the element itself.
 //!
@@ -28,8 +28,7 @@ use crate::theme::EditorTheme;
 const DELAY: Duration = Duration::from_millis(500);
 
 /// How long neither the source nor the tag may be hovered before it
-/// hides - long enough to cross the gap between them to reach the
-/// tag itself.
+/// hides.
 const HIDE_GRACE: Duration = Duration::from_millis(150);
 
 /// Where the tag sits relative to the cursor it appeared at, clear of
@@ -94,7 +93,7 @@ impl TooltipState {
 #[derive(Component)]
 struct TooltipMark(Entity);
 
-/// Registers [`tick`], the system [`tooltip_with`] otherwise has
+/// Registers [`tick`], the system [`TooltipExt`] otherwise has
 /// nothing to drive it.
 pub(crate) struct TooltipPlugin;
 
@@ -105,23 +104,25 @@ impl Plugin for TooltipPlugin {
     }
 }
 
-/// Makes `elem` show `text` near the cursor after a short hover, and
-/// keeps it up as long as the pointer stays on `elem` or the tag.
-pub fn tooltip(
-    elem: &mut impl WorldEntityMut,
-    text: impl Into<String>,
-) {
-    let text = text.into();
-    tooltip_with(elem, move |ui| {
-        let h = ui.theme.space.md;
-        let v = ui.theme.space.xs;
-        let size = ui.theme.text.small;
-        let color = ui.theme.color.text;
-        let text = text.clone();
+/// Hover tags for anything that can be observed.
+pub trait TooltipExt: WorldEntityMut {
+    /// Shows `text` near the cursor after a short hover, and keeps it
+    /// up as long as the pointer stays on this element or the tag.
+    fn tooltip(&mut self, text: impl Into<String>) -> &mut Self {
+        let text = text.into();
+        self.tooltip_with(move |ui| {
+            let h = ui.theme.space.md;
+            let v = ui.theme.space.xs;
+            let size = ui.theme.text.small;
+            let color = ui.theme.color.text;
+            let text = text.clone();
 
-        // Its own room beyond `MenuSurface`'s own padding: that's
-        // sized for a menu row, snug on a bare tag.
-        ui.elem(elem!(Frame, padding = UiRect::axes(px(h), px(v))))
+            // Its own room beyond `MenuSurface`'s own padding: that's
+            // sized for a menu row, snug on a bare tag.
+            ui.elem(elem!(
+                Frame,
+                padding = UiRect::axes(px(h), px(v))
+            ))
             .with(move |ui| {
                 ui.elem(elem!(
                     Label,
@@ -131,107 +132,116 @@ pub fn tooltip(
                     wrap = false
                 ));
             });
-    });
+        })
+    }
+
+    /// Shows whatever `build` makes inside a [`MenuSurface`] near the
+    /// cursor after a short hover, and keeps it up as long as the
+    /// pointer stays on this element, the tag, or a tag opened from
+    /// it.
+    ///
+    /// `build` runs each time the pointer enters this element, so it
+    /// should be cheap.
+    fn tooltip_with<B>(&mut self, build: B) -> &mut Self
+    where
+        B: Fn(&mut BevyUi) + Clone + Send + Sync + 'static,
+    {
+        let source = self.id();
+        self.observe(
+            move |_: On<Pointer<Over>>,
+                  mut state: ResMut<TooltipState>,
+                  parents: Query<&ChildOf>,
+                  marks: Query<&TooltipMark>,
+                  mut commands: Commands| {
+                if let Some(tag) = state
+                    .tags
+                    .iter_mut()
+                    .find(|tag| tag.source == source)
+                {
+                    tag.hovered_source = true;
+                    tag.hiding = None;
+                    return;
+                }
+
+                let parent = enclosing_tag(source, &parents, &marks);
+
+                // The pointer moved to another source at this level while
+                // its neighbour's tag was still up: that tag goes.
+                let neighbour = state
+                    .tags
+                    .iter()
+                    .find(|tag| tag.parent == parent)
+                    .map(|tag| tag.root);
+                if let Some(neighbour) = neighbour {
+                    state.drop_tag(neighbour, &mut commands);
+                }
+
+                let depth = parent
+                    .and_then(|parent| {
+                        state
+                            .tags
+                            .iter()
+                            .find(|tag| tag.root == parent)
+                    })
+                    .map_or(0, |tag| tag.depth + 1);
+
+                // `Pickable::IGNORE`, or this full-screen node blocks the
+                // very hover that showed it: it swallows the pointer, the
+                // source loses `Over`, the tag despawns, hover resumes,
+                // and it loops.
+                let root = commands
+                    .spawn((
+                        Node {
+                            display: Display::None,
+                            width: percent(100),
+                            height: percent(100),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ))
+                    .id();
+                state.tags.push(Tag {
+                    root,
+                    source,
+                    parent,
+                    depth,
+                    revealed: false,
+                    resting: Duration::ZERO,
+                    hovered_source: true,
+                    hovered_tag: false,
+                    hiding: None,
+                });
+
+                let build = build.clone();
+                commands.queue(move |world: &mut World| {
+                    spawn_tag(world, root, depth, build)
+                });
+            },
+        )
+        .observe(
+            move |_: On<Pointer<Out>>,
+                  mut state: ResMut<TooltipState>,
+                  mut commands: Commands| {
+                let Some(tag) = state
+                    .tags
+                    .iter_mut()
+                    .find(|tag| tag.source == source)
+                else {
+                    return;
+                };
+                tag.hovered_source = false;
+
+                // Never shown, so nothing to hold open.
+                if !tag.revealed {
+                    let root = tag.root;
+                    state.drop_tag(root, &mut commands);
+                }
+            },
+        )
+    }
 }
 
-/// Makes `elem` show whatever `build` makes inside a [`MenuSurface`]
-/// near the cursor after a short hover, and keeps it up as long as
-/// the pointer stays on `elem`, the tag, or a tag opened from it.
-///
-/// `build` runs each time the pointer enters `elem`, so it should be
-/// cheap.
-pub fn tooltip_with<B>(elem: &mut impl WorldEntityMut, build: B)
-where
-    B: Fn(&mut BevyUi) + Clone + Send + Sync + 'static,
-{
-    let source = elem.id();
-    elem.observe(
-        move |_: On<Pointer<Over>>,
-              mut state: ResMut<TooltipState>,
-              parents: Query<&ChildOf>,
-              marks: Query<&TooltipMark>,
-              mut commands: Commands| {
-            if let Some(tag) =
-                state.tags.iter_mut().find(|tag| tag.source == source)
-            {
-                tag.hovered_source = true;
-                tag.hiding = None;
-                return;
-            }
-
-            let parent = enclosing_tag(source, &parents, &marks);
-
-            // The pointer moved to another source at this level while
-            // its neighbour's tag was still up: that tag goes.
-            let neighbour = state
-                .tags
-                .iter()
-                .find(|tag| tag.parent == parent)
-                .map(|tag| tag.root);
-            if let Some(neighbour) = neighbour {
-                state.drop_tag(neighbour, &mut commands);
-            }
-
-            let depth = parent
-                .and_then(|parent| {
-                    state.tags.iter().find(|tag| tag.root == parent)
-                })
-                .map_or(0, |tag| tag.depth + 1);
-
-            // `Pickable::IGNORE`, or this full-screen node blocks the
-            // very hover that showed it: it swallows the pointer, the
-            // source loses `Over`, the tag despawns, hover resumes,
-            // and it loops.
-            let root = commands
-                .spawn((
-                    Node {
-                        display: Display::None,
-                        width: percent(100),
-                        height: percent(100),
-                        ..default()
-                    },
-                    Pickable::IGNORE,
-                ))
-                .id();
-            state.tags.push(Tag {
-                root,
-                source,
-                parent,
-                depth,
-                revealed: false,
-                resting: Duration::ZERO,
-                hovered_source: true,
-                hovered_tag: false,
-                hiding: None,
-            });
-
-            let build = build.clone();
-            commands.queue(move |world: &mut World| {
-                spawn_tag(world, root, depth, build)
-            });
-        },
-    )
-    .observe(
-        move |_: On<Pointer<Out>>,
-              mut state: ResMut<TooltipState>,
-              mut commands: Commands| {
-            let Some(tag) = state
-                .tags
-                .iter_mut()
-                .find(|tag| tag.source == source)
-            else {
-                return;
-            };
-            tag.hovered_source = false;
-
-            // Never shown, so nothing to hold open.
-            if !tag.revealed {
-                let root = tag.root;
-                state.drop_tag(root, &mut commands);
-            }
-        },
-    );
-}
+impl<T: WorldEntityMut> TooltipExt for T {}
 
 /// The tag `entity` sits inside, if any.
 fn enclosing_tag(

@@ -41,7 +41,7 @@ use crate::inspector::{
 use crate::reactive::{
     BevyUi, FynixHost, component_changed_on, value_changed,
 };
-use crate::widgets::tooltip::tooltip;
+use crate::widgets::tooltip::TooltipExt as _;
 
 /// Inspector for a [`Component`].
 pub struct ComponentInspector {
@@ -198,8 +198,9 @@ impl Composer<FynixHost> for AddComponent {
                         color = theme.color.text_dim
                     )
                 ));
-                add_button.insert((MenuButton, ActivateOnPress));
-                tooltip(&mut add_button, "Add component");
+                add_button
+                    .insert((MenuButton, ActivateOnPress))
+                    .tooltip("Add component");
 
                 ui.elem(elem!(DropdownList, width = width)).with(
                     move |ui| {
