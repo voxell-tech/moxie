@@ -1,15 +1,6 @@
-//! A tooltip: UI that appears near the cursor after a short pause.
-//!
-//! Attached per-entity with [`TooltipExt`], the same way
-//! `draggable_field` wires up a drag: the hover lives in one shared
-//! `TooltipState` rather than on the element itself.
-//!
-//! The tooltip is itself interactable, not just decoration: it stays
-//! up while the pointer sits on it, not only on the source, so a link
-//! or a button inside one can be reached and clicked. A source inside
-//! a tooltip opens a tooltip of its own on top, and each tooltip
-//! stays up while the pointer is on its source, on it, or on a
-//! tooltip opened from it.
+//! Hover tooltips: [`TooltipExt`] shows UI near the cursor after a
+//! short pause. A tooltip stays up while the pointer is on its
+//! source, on it, or on a tooltip opened from it.
 
 use core::time::Duration;
 
@@ -24,20 +15,16 @@ use crate::elements::{Frame, Label, MenuSurface};
 use crate::reactive::{BevyUi, watch_root};
 use crate::theme::EditorTheme;
 
-/// How long the pointer has to rest on the source before the tooltip
-/// appears.
+/// Pause on a source before its tooltip shows.
 const DELAY: Duration = Duration::from_millis(500);
 
-/// How long neither the source nor the tooltip may be hovered before
-/// it hides.
+/// Pause after losing hover before a tooltip hides.
 const HIDE_GRACE: Duration = Duration::from_millis(150);
 
-/// Where the tooltip sits relative to the cursor it appeared at,
-/// clear of the pointer hotspot.
+/// Tooltip position relative to the cursor.
 const OFFSET: Vec2 = Vec2::new(12.0, 18.0);
 
-/// Every tooltip on its way to showing or showing, oldest first. A
-/// tooltip is always pushed after the tooltip its source sits in.
+/// Tooltips showing or about to, oldest first.
 #[derive(Resource, Default)]
 struct TooltipState {
     tooltips: Vec<Tooltip>,
@@ -45,27 +32,21 @@ struct TooltipState {
 
 /// One tooltip, from the moment its source is hovered.
 struct Tooltip {
-    /// The tooltip's root. Built hidden as soon as the source is
-    /// hovered, and shown once the pointer has rested [`DELAY`].
     root: Entity,
     source: Entity,
-    /// The root of the tooltip `source` sits in, if any. At most one
-    /// tooltip per parent exists at a time.
+    /// The tooltip `source` sits in.
     parent: Option<Entity>,
-    /// How many tooltips it is stacked on.
     depth: usize,
     revealed: bool,
-    /// How long the pointer has rested on `source`, before it shows.
     resting: Duration,
     hovered_source: bool,
     hovered_surface: bool,
-    /// Counts up once nothing holding the tooltip open is hovered;
-    /// `None` while something is.
+    /// Counts up while nothing holds the tooltip open.
     hiding: Option<Duration>,
 }
 
 impl TooltipState {
-    /// Drops the tooltip at `root`, and every tooltip opened from it.
+    /// Drops the tooltip at `root` and every tooltip opened from it.
     fn drop_tooltip(
         &mut self,
         root: Entity,
@@ -93,13 +74,11 @@ impl TooltipState {
     }
 }
 
-/// A tooltip's own surface, so the tooltip it belongs to can be found
-/// from anything inside it.
+/// Marks a tooltip's surface with its root.
 #[derive(Component)]
 struct TooltipMark(Entity);
 
-/// Registers [`tick`], the system [`TooltipExt`] otherwise has
-/// nothing to drive it.
+/// Drives [`TooltipExt`].
 pub(crate) struct TooltipPlugin;
 
 impl Plugin for TooltipPlugin {
@@ -111,9 +90,7 @@ impl Plugin for TooltipPlugin {
 
 /// Tooltips for anything that can be observed.
 pub trait TooltipExt: WorldEntityMut {
-    /// Shows `text` near the cursor after a short hover, and keeps it
-    /// up as long as the pointer stays on this element or the
-    /// tooltip.
+    /// Shows `text` near the cursor after a short hover.
     fn tooltip(&mut self, text: impl Into<String>) -> &mut Self {
         let text = text.into();
         self.tooltip_with(move |ui| {
@@ -123,8 +100,7 @@ pub trait TooltipExt: WorldEntityMut {
             let color = ui.theme.color.text;
             let text = text.clone();
 
-            // Its own room beyond `MenuSurface`'s own padding: that's
-            // sized for a menu row, snug on a bare tooltip.
+            // `MenuSurface`'s padding is sized for a menu row.
             ui.elem(elem!(
                 Frame,
                 padding = UiRect::axes(px(h), px(v))
@@ -141,13 +117,10 @@ pub trait TooltipExt: WorldEntityMut {
         })
     }
 
-    /// Shows whatever `build` makes inside a [`MenuSurface`] near the
-    /// cursor after a short hover, and keeps it up as long as the
-    /// pointer stays on this element, the tooltip, or a tooltip
-    /// opened from it.
+    /// Shows whatever `build` makes inside a [`MenuSurface`] after a
+    /// short hover.
     ///
-    /// `build` runs each time the pointer enters this element, so it
-    /// should be cheap.
+    /// `build` runs on every hover, so it should be cheap.
     fn tooltip_with<B>(&mut self, build: B) -> &mut Self
     where
         B: Fn(&mut BevyUi) + Clone + Send + Sync + 'static,
@@ -172,9 +145,7 @@ pub trait TooltipExt: WorldEntityMut {
                 let parent =
                     enclosing_tooltip(source, &parents, &marks);
 
-                // The pointer moved to another source at this level
-                // while its neighbour's tooltip was still up: that
-                // tooltip goes.
+                // Replaces the tooltip of the source at this level.
                 let neighbour = state
                     .tooltips
                     .iter()
@@ -193,10 +164,8 @@ pub trait TooltipExt: WorldEntityMut {
                     })
                     .map_or(0, |tooltip| tooltip.depth + 1);
 
-                // `Pickable::IGNORE`, or this full-screen node blocks
-                // the very hover that showed it: it swallows the
-                // pointer, the source loses `Over`, the tooltip
-                // despawns, hover resumes, and it loops.
+                // Ignores the pointer, or this full-screen node
+                // swallows the hover that showed it and loops.
                 let root = commands
                     .spawn((
                         Node {
@@ -239,7 +208,6 @@ pub trait TooltipExt: WorldEntityMut {
                 };
                 tooltip.hovered_source = false;
 
-                // Never shown, so nothing to hold open.
                 if !tooltip.revealed {
                     let root = tooltip.root;
                     state.drop_tooltip(root, &mut commands);
@@ -266,9 +234,7 @@ fn enclosing_tooltip(
     }
 }
 
-/// Counts each tooltip's show delay, shows it once it elapses, and
-/// counts the hide grace once nothing holding a shown tooltip open is
-/// hovered any longer.
+/// Counts each tooltip's show delay and hide grace.
 fn tick(
     time: Res<Time>,
     scale: Res<UiScale>,
@@ -285,9 +251,8 @@ fn tick(
         .find_map(|pointer| pointer.location())
         .map(|location| location.position / scale.0);
 
-    // A tooltip is held open by its source, by itself, or by a
-    // tooltip opened from it. Deepest first: a tooltip opened from
-    // another comes after it.
+    // Held open by its source, itself, or a tooltip opened from it.
+    // Deepest first, since those come later.
     let mut held = vec![false; state.tooltips.len()];
     for at in (0..state.tooltips.len()).rev() {
         let tooltip = &state.tooltips[at];
@@ -327,9 +292,8 @@ fn tick(
             continue;
         };
 
-        // Once shown, this never repositions the tooltip: doing so
-        // while a pointer reaches into it to click something would
-        // make it a moving target.
+        // Never repositioned once shown, so a pointer reaching in to
+        // click isn't chasing it.
         tooltip.revealed = true;
         if let Ok(mut node) = nodes.get_mut(tooltip.root) {
             node.display = Display::Flex;
@@ -349,12 +313,8 @@ fn tick(
     }
 }
 
-/// The tooltip itself, on [`MenuSurface`] - the same popup surface a
-/// context menu or a dropdown's own list uses - stacked above both
-/// per [`crate::theme::Layers::tooltip`], and each nested tooltip
-/// above the one it opened from. Pickable, not `Pickable::IGNORE`, so
-/// its own `Over`/`Out` can hold it open and content inside it (a
-/// link, say) can be clicked.
+/// A tooltip's [`MenuSurface`], layered by
+/// [`crate::theme::Layers::tooltip`] plus its depth.
 fn spawn_tooltip<B>(
     world: &mut World,
     root: Entity,
