@@ -318,27 +318,38 @@ impl Composer<FynixHost> for TrackArea {
                 ui.compose(TimeAxis);
             })
             .with(|ui| {
+                // Clips the viewport and the hint, both its children,
+                // so a scrolled-off hint cannot bleed up over the time
+                // axis. `PlayheadLine` sits outside this on purpose:
+                // it runs the ruler's full height.
                 let space = ui.theme.space;
-                ui.elem(elem!(
-                    ScrollArea,
+                let mut clip = ui.elem(elem!(
+                    Frame,
                     width = percent(100),
-                    flex_grow = 1.0f32
-                ))
-                .insert(TrackViewport)
-                .remove::<ScrollAreaBehavior>()
-                .watch(
-                    value_changed(move |world, _| {
-                        block_view(world, space)
-                    }),
-                    build_block_boxes,
-                );
-            });
+                    flex_grow = 1.0f32,
+                    overflow = Overflow::clip()
+                ));
 
-        // A sibling of the `.watch()`-owned `ScrollArea`, so a rebuild
-        // of the box list keeps it.
-        root.with(|ui| {
-            ui.compose(hint::Hint);
-        });
+                clip.with(|ui| {
+                    ui.elem(elem!(
+                        ScrollArea,
+                        width = percent(100),
+                        flex_grow = 1.0f32
+                    ))
+                    .insert(TrackViewport)
+                    .remove::<ScrollAreaBehavior>()
+                    .watch(
+                        value_changed(move |world, _| {
+                            block_view(world, space)
+                        }),
+                        build_block_boxes,
+                    );
+
+                    // A sibling of the `.watch()`-owned `ScrollArea`,
+                    // so a rebuild of the box list keeps it.
+                    ui.compose(hint::Hint);
+                });
+            });
 
         root.handle()
     }
