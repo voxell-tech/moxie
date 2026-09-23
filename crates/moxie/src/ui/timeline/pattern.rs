@@ -20,10 +20,10 @@ impl FromWorld for DelayPattern {
     }
 }
 
-/// An 8x8 diagonal hatch.
+/// A 16x16 diagonal hatch.
 fn hatch() -> Image {
-    const SIZE: u32 = 8;
-    const STRIPE: u32 = 2;
+    const SIZE: u32 = 16;
+    const STRIPE: u32 = 4;
 
     let mut data = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     for y in 0..SIZE {
