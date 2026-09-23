@@ -494,7 +494,8 @@ impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for BlockHeader<F> {
             },
             border = block_color.with_alpha(0.5),
             dragged_border = block_color.with_alpha(0.2),
-            selected = is_selected
+            selected = is_selected,
+            radius = px(theme.space.card_radius)
         ));
         header.insert(retime::BoxPath(path.clone())).with(
             move |ui| {
@@ -741,6 +742,7 @@ fn build_node(
             );
             let mut action = ui.elem(elem!(
                 TimelineAction,
+                radius = px(theme.space.radius),
                 icon = icon.map(|image| elem!(
                     Icon,
                     image = image,
