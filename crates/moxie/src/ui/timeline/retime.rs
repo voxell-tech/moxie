@@ -32,6 +32,12 @@ use super::{BlockFoldState, RebuildTick};
 use crate::block_layout::{self, Placed};
 use crate::{EditorScene, TimelineView};
 
+/// Registers the drag's state and its Escape cancel.
+pub(super) fn plugin(app: &mut App) {
+    app.init_resource::<Dragging>()
+        .add_systems(Update, cancel_on_escape);
+}
+
 /// An edge handle's width.
 pub(crate) const EDGE_HANDLE_PX: f32 = 6.0;
 
@@ -179,7 +185,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
 
 /// Drops the drag without committing, re-laying the untouched tree to
 /// undo the preview.
-pub(crate) fn cancel_on_escape(
+fn cancel_on_escape(
     keys: Res<ButtonInput<KeyCode>>,
     mut dragging: ResMut<Dragging>,
     editor_scene: Res<EditorScene>,

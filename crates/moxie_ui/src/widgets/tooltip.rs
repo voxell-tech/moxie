@@ -5,12 +5,11 @@
 use core::time::Duration;
 
 use bevy::picking::events::{Out, Over, Pointer};
-use bevy::picking::pointer::PointerLocation;
 use bevy::prelude::*;
-use bevy::ui::UiScale;
 use bevy_fynix::WorldEntityMut;
 use fynix::prelude::*;
 
+use crate::cursor::Cursor;
 use crate::elements::{Frame, Label, MenuSurface};
 use crate::reactive::{BevyUi, watch_root};
 use crate::theme::EditorTheme;
@@ -237,8 +236,7 @@ fn enclosing_tooltip(
 /// Counts each tooltip's show delay and hide grace.
 fn tick(
     time: Res<Time>,
-    scale: Res<UiScale>,
-    pointers: Query<&PointerLocation>,
+    pointer: Cursor,
     marks: Query<(Entity, &TooltipMark)>,
     sources: Query<Entity>,
     mut nodes: Query<&mut Node>,
@@ -259,10 +257,7 @@ fn tick(
     }
 
     let delta = time.delta();
-    let cursor = pointers
-        .iter()
-        .find_map(|pointer| pointer.location())
-        .map(|location| location.position / scale.0);
+    let cursor = pointer.position();
 
     // Held open by its source, itself, or a tooltip opened from it.
     // Deepest first, since those come later.

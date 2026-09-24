@@ -14,8 +14,8 @@ use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::UiScale;
 
-use bevy_fynix::WorldEntityMut;
 use crate::reactive::BevyFynix;
+use bevy_fynix::WorldEntityMut;
 use fynix::element::Element;
 use fynix::ui::ElementMut;
 

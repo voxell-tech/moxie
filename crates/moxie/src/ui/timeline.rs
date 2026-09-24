@@ -3,7 +3,9 @@
 //! block's own header box already carries its label.
 
 mod create;
+mod hint;
 mod pattern;
+mod prune;
 mod reorder;
 mod retime;
 
@@ -40,7 +42,7 @@ use moxie_ui::elements::{
 };
 use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use moxie_ui::reactive::{
-    BevyUi, FynixHost, FynixSet, resource_changed, value_changed,
+    BevyUi, FynixHost, resource_changed, value_changed,
 };
 
 /// The timeline's resources and interaction systems.
@@ -51,19 +53,13 @@ impl Plugin for TimelinePlugin {
         app.init_resource::<TimelineView>()
             .init_resource::<BlockFoldState>()
             .init_resource::<RebuildTick>()
-            .init_resource::<DelayPattern>()
-            .init_resource::<retime::Dragging>()
-            .init_resource::<reorder::Dragging>()
-            .add_systems(
-                Update,
-                (retime::cancel_on_escape, reorder::cancel_on_escape),
-            )
-            .add_systems(
-                Update,
-                (reorder::preview, create::preview).after(FynixSet),
-            )
-            .add_observer(reorder::on_drag_end)
-            .add_observer(create::on_drop)
+            .add_plugins((
+                pattern::plugin,
+                retime::plugin,
+                reorder::plugin,
+                create::plugin,
+                hint::plugin,
+            ))
             .add_observer(on_fit_timeline);
     }
 }
@@ -332,38 +328,10 @@ impl Composer<FynixHost> for TrackArea {
 
         // Siblings of the `.watch()`-owned `ScrollArea`: a hint built
         // inside that would be gone the next time the box list
-        // rebuilds. `reorder` shows and places them.
-        let track_area = root.id();
+        // rebuilds. A drag shows and hides them with `hint` events.
         root.with(|ui| {
-            let insert = ui.theme.color.accent;
-            let merge = ui.theme.palette.purple;
-            let hint_z = ui.theme.layer.drop_hint;
-            let edge = px(ui.theme.space.edge);
-            let line = ui
-                .elem(elem!(
-                    Frame,
-                    position = PositionType::Absolute,
-                    display = Display::None,
-                    background = insert,
-                    z = Some(hint_z)
-                ))
-                .insert(Pickable::IGNORE)
-                .id();
-            let outline = ui
-                .elem(elem!(
-                    Frame,
-                    position = PositionType::Absolute,
-                    display = Display::None,
-                    background = merge.with_alpha(0.15),
-                    border = edge,
-                    border_color = merge,
-                    z = Some(hint_z)
-                ))
-                .insert(Pickable::IGNORE)
-                .id();
-            ui.world.insert_resource(reorder::Visuals::new(
-                track_area, line, outline,
-            ));
+            ui.compose(hint::Landing::Line);
+            ui.compose(hint::Landing::Outline);
         });
 
         root.handle()

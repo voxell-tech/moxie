@@ -12,8 +12,8 @@ use bevy::prelude::*;
 use bevy::ui::UiScale;
 use bevy::window::SystemCursorIcon;
 
-use bevy_fynix::WorldEntityMut;
 use crate::reactive::BevyFynix;
+use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 

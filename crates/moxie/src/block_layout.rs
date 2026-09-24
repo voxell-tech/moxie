@@ -9,7 +9,6 @@
 use core::time::Duration;
 use std::collections::BTreeSet;
 
-use bevy::math::Vec2;
 use bevy::ui::{Val, percent, px};
 use bevy_motiongfx::scene::backend::Backend;
 use motiongfx_scene::block::{Block, Combinator, Node};
@@ -120,20 +119,6 @@ impl Placed {
 
     pub(crate) fn gap_width(&self) -> Val {
         self.span(self.x - self.gap_x.unwrap_or(self.x))
-    }
-
-    /// Top-left of the box within its parent, in pixels.
-    pub(crate) fn offset(&self) -> Vec2 {
-        let (x, y) = self.parent.map_or((0.0, 0.0), |p| (p.x, p.y));
-        Vec2::new(self.x - x, self.y - y)
-    }
-
-    /// Top-left of the gap within its parent, in pixels.
-    pub(crate) fn gap_offset(&self) -> Vec2 {
-        let mut offset = self.offset();
-        offset.x = self.gap_x.unwrap_or(self.x)
-            - self.parent.map_or(0.0, |p| p.x);
-        offset
     }
 
     /// The link's left, top, width and height inside the parent.

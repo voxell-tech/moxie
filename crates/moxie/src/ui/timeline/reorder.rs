@@ -8,27 +8,24 @@
 //! has moved, while the rest of the layout stays put. A slim line or
 //! an outline marks where a release would land.
 
-use std::collections::HashSet;
-
 use bevy::feathers::cursor::OverrideCursor;
 use bevy::picking::events::{DragEnd, DragStart, Pointer};
-use bevy::picking::pointer::{PointerButton, PointerLocation};
+use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
 use bevy_fynix::WorldEntityMut;
-use bevy_motiongfx::scene::asset::MotionGfxScene;
 use bevy_motiongfx::scene::backend::Backend;
-use bevy_motiongfx::scene::id::SceneUid;
 use fynix::element::Element;
 use fynix::ui::ElementMut;
 use motiongfx_scene::block::{Block, Combinator, Node as SceneNode};
-use motiongfx_scene::refs::FieldRef;
+use moxie_ui::cursor::Cursor;
 use moxie_ui::drag::{grab, ungrab};
 use moxie_ui::layout::logical_rect;
-use moxie_ui::reactive::BevyFynix;
-use moxie_ui::reactive::FynixHost;
+use moxie_ui::reactive::{BevyFynix, FynixHost, FynixSet};
 use moxie_ui::theme::EditorTheme;
 
+use super::hint::{HideLanding, ShowLanding};
+use super::prune;
 use super::retime::{BoxPath, GapPath};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
 use crate::block_layout::{self, HEADER_HEIGHT, Placed};
@@ -40,12 +37,28 @@ const EDGE_MARGIN_PX: f32 = 8.0;
 /// How much of a node's core, at either end, chains rather than
 /// overlaps.
 const CHAIN_BAND: f32 = 0.25;
-/// How far the merge outline sits outside the node it marks.
-const OUTLINE_GROW: f32 = 2.0;
+
+/// Registers the drag state, the preview, and what ends a drag.
+pub(super) fn plugin(app: &mut App) {
+    app.init_resource::<Dragging>()
+        .add_systems(Update, cancel_on_escape)
+        .add_systems(
+            Update,
+            preview.run_if(Dragging::active).after(FynixSet),
+        )
+        .add_observer(on_drag_end);
+}
 
 /// The node being dragged, if any.
 #[derive(Resource, Default)]
-pub(crate) struct Dragging(Option<Gesture>);
+struct Dragging(Option<Gesture>);
+
+impl Dragging {
+    /// Whether a node is being dragged, as a run condition.
+    fn active(dragging: Res<Self>) -> bool {
+        dragging.0.is_some()
+    }
+}
 
 /// Where a dragged node lands when released.
 #[derive(Clone, Debug, PartialEq)]
@@ -81,34 +94,6 @@ impl Axis {
             Axis::X => point.x,
             Axis::Y => point.y,
         }
-    }
-}
-
-/// The landing hints, both children of `area` (the track area frame)
-/// so they outlive the box list's rebuilds.
-#[derive(Resource)]
-pub(crate) struct Visuals {
-    area: Entity,
-    line: Entity,
-    outline: Entity,
-}
-
-impl Visuals {
-    pub(super) fn new(
-        area: Entity,
-        line: Entity,
-        outline: Entity,
-    ) -> Self {
-        Self {
-            area,
-            line,
-            outline,
-        }
-    }
-
-    /// The track-area frame the hints are parented to.
-    pub(super) fn area(&self) -> Entity {
-        self.area
     }
 }
 
@@ -154,133 +139,105 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
     )
 }
 
-/// The mouse pointer in logical screen space, if it has a location.
-fn cursor(
-    pointers: &Query<&PointerLocation>,
-    scale: &UiScale,
-) -> Option<Vec2> {
-    pointers
-        .iter()
-        .find_map(|pointer| pointer.location())
-        .map(|location| location.position / scale.0)
-}
-
 /// Each frame of a drag: lays the tree out, offsets the dragged
 /// subtree to the cursor, and marks where a release would land.
-pub(crate) fn preview(
+fn preview(
     kernel: Res<BevyFynix>,
-    scale: Res<UiScale>,
+    pointer: Cursor,
     editor_scene: Res<EditorScene>,
     folded: Res<BlockFoldState>,
-    visuals: Option<Res<Visuals>>,
     view: Res<TimelineView>,
     mut dragging: ResMut<Dragging>,
-    pointers: Query<&PointerLocation>,
     q_viewport: Query<
         (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
         With<TrackViewport>,
     >,
-    q_area: Query<(&ComputedNode, &UiGlobalTransform)>,
     q_boxes: Query<(Entity, &BoxPath, Option<&ChildOf>)>,
     q_gaps: Query<(Entity, &GapPath), Without<BoxPath>>,
     mut nodes: Query<&mut Node>,
-    mut backgrounds: Query<&mut BackgroundColor>,
-    mut borders: Query<&mut BorderColor>,
     mut commands: Commands,
 ) {
-    let (Some(gesture), Some(visuals)) =
-        (dragging.0.as_mut(), visuals)
+    let Some(gesture) = dragging.0.as_mut() else {
+        return;
+    };
+    let Some(cursor) = pointer.position() else {
+        return;
+    };
+    let Ok((viewport_node, viewport_transform, scroll)) =
+        q_viewport.single()
     else {
         return;
     };
-    let Some(cursor) = cursor(&pointers, &scale) else {
-        return;
-    };
-    let Ok((vp_node, vp_transform, scroll)) = q_viewport.single()
-    else {
-        return;
-    };
-    let Ok((area_node, area_transform)) = q_area.get(visuals.area)
-    else {
-        return;
-    };
-    let vp_rect = logical_rect(vp_node, vp_transform);
+    let viewport_rect =
+        logical_rect(viewport_node, viewport_transform);
     let drag_z = kernel.theme().layer.drag;
 
     let content = Vec2::new(
-        cursor.x - vp_rect.min.x,
-        cursor.y - vp_rect.min.y + scroll.y,
+        cursor.x - viewport_rect.min.x,
+        cursor.y - viewport_rect.min.y + scroll.y,
     );
     let root = &editor_scene.scene().0.animation;
     let layout = block_layout::layout(root, *view, folded.paths());
 
-    // Only the dragged box moves: its children are nested inside it
-    // and ride along, so a block carries them rather than sliding out
-    // of its own border. Its ancestors stop clipping so it can leave
-    // their bounds.
+    // Detaches to the root's parent.
+    // The rebuild that ends the drag puts it back.
+    let drag_parent = q_boxes
+        .iter()
+        .find(|(_, box_path, _)| box_path.0.is_empty())
+        .and_then(|(_, _, child_of)| child_of.map(ChildOf::parent));
     let delta = content - gesture.cursor_start;
+
     for (entity, box_path, child_of) in &q_boxes {
         if box_path.0 != gesture.path {
             continue;
         }
         commands.entity(entity).insert(GlobalZIndex(drag_z));
+        if let Some(drag_parent) = drag_parent
+            && child_of.map(ChildOf::parent) != Some(drag_parent)
+        {
+            commands.entity(entity).insert(ChildOf(drag_parent));
+        }
         let Some(placed) =
             layout.iter().find(|p| p.path == box_path.0)
         else {
             continue;
         };
         if let Ok(mut node) = nodes.get_mut(entity) {
-            let at = placed.offset() + delta;
+            let at = Vec2::new(placed.x, placed.y) + delta;
             node.left = px(at.x);
             node.top = px(at.y);
-        }
-
-        let mut up = child_of.map(ChildOf::parent);
-        while let Some(ancestor) = up {
-            let Ok((_, _, above)) = q_boxes.get(ancestor) else {
-                break;
-            };
-            if let Ok(mut node) = nodes.get_mut(ancestor)
-                && node.overflow != Overflow::visible()
-            {
-                node.overflow = Overflow::visible();
-            }
-            up = above.map(ChildOf::parent);
+            node.width = px(placed.w);
+            node.height = px(placed.h);
         }
     }
+
     for (entity, gap_path) in &q_gaps {
         if gap_path.0 != gesture.path {
             continue;
         }
         commands.entity(entity).insert(GlobalZIndex(drag_z));
+        if let Some(drag_parent) = drag_parent {
+            commands.entity(entity).insert(ChildOf(drag_parent));
+        }
         if let Some(placed) =
             layout.iter().find(|p| p.path == gap_path.0)
-            && placed.gap_x.is_some()
+            && let Some(gap_x) = placed.gap_x
             && let Ok(mut node) = nodes.get_mut(entity)
         {
-            let at = placed.gap_offset() + delta;
+            let at = Vec2::new(gap_x, placed.y) + delta;
             node.left = px(at.x);
             node.top = px(at.y);
+            node.width = px(placed.x - gap_x);
         }
     }
 
     gesture.target = resolve(content, &layout, root, &gesture.path);
-    let to_area = Vec2::new(
-        vp_rect.min.x - logical_rect(area_node, area_transform).min.x,
-        vp_rect.min.y
-            - scroll.y
-            - logical_rect(area_node, area_transform).min.y,
-    );
-    show_landing(
-        &mut nodes,
-        &mut backgrounds,
-        &mut borders,
-        &visuals,
+    announce_landing(
+        &mut commands,
         kernel.theme(),
         gesture.target.as_ref(),
         &layout,
         root,
-        to_area,
     );
 }
 
@@ -319,20 +276,16 @@ fn end_drag(
 /// Global: a child [`Button`](bevy::ui_widgets::Button) (the fold
 /// chevron among them) stops `DragEnd` propagating and would
 /// otherwise strand the gesture until Escape.
-pub(crate) fn on_drag_end(
+fn on_drag_end(
     _: On<Pointer<DragEnd>>,
-    visuals: Option<Res<Visuals>>,
     mut dragging: ResMut<Dragging>,
-    mut nodes: Query<&mut Node>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
 ) {
     let Some(gesture) = dragging.0.take() else {
         return;
     };
-    if let Some(visuals) = &visuals {
-        hide_landing(&mut nodes, visuals);
-    }
+    commands.trigger(HideLanding);
     end_drag(&mut override_cursor, &mut commands);
 
     let Some(target) = gesture.target else {
@@ -347,11 +300,9 @@ pub(crate) fn on_drag_end(
 }
 
 /// Drops whatever's being dragged without committing it.
-pub(crate) fn cancel_on_escape(
+fn cancel_on_escape(
     keys: Res<ButtonInput<KeyCode>>,
-    visuals: Res<Visuals>,
     mut dragging: ResMut<Dragging>,
-    mut nodes: Query<&mut Node>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
 ) {
@@ -361,7 +312,7 @@ pub(crate) fn cancel_on_escape(
     if dragging.0.take().is_none() {
         return;
     }
-    hide_landing(&mut nodes, &visuals);
+    commands.trigger(HideLanding);
     end_drag(&mut override_cursor, &mut commands);
 }
 
@@ -520,8 +471,11 @@ pub(crate) fn delete(world: &mut World, path: &[usize]) {
     if take(&mut editor_scene.edit().animation, path).is_none() {
         return;
     }
-    prune_empty(&mut editor_scene.edit().animation, &mut kept);
-    prune_stage(editor_scene.edit());
+    prune::empty_blocks(
+        &mut editor_scene.edit().animation,
+        &mut kept,
+    );
+    prune::stage(editor_scene.edit());
 
     if let Some(mut selected) =
         world.get_resource_mut::<SelectedAction>()
@@ -579,7 +533,10 @@ fn commit(world: &mut World, from: &[usize], target: &Target) {
         path.extend(tail);
         path
     });
-    prune_empty(&mut editor_scene.edit().animation, &mut kept);
+    prune::empty_blocks(
+        &mut editor_scene.edit().animation,
+        &mut kept,
+    );
 
     if let Some(mut selected) =
         world.get_resource_mut::<SelectedAction>()
@@ -666,92 +623,6 @@ fn merge(
     landed.push(*onto_index);
     landed.push(if before { 0 } else { 1 });
     Some(landed)
-}
-
-/// Drops every empty block, innermost first so one emptied by losing
-/// its last nested block goes too. The root stays, empty or not.
-/// `keep` is a path to carry through the renumbering, cleared if it
-/// pointed inside a pruned block.
-fn prune_empty(
-    block: &mut Block<Backend>,
-    keep: &mut Option<Vec<usize>>,
-) {
-    let mut i = 0;
-    while i < block.children.len() {
-        let SceneNode::Block { block: inner, .. } =
-            &mut block.children[i]
-        else {
-            i += 1;
-            continue;
-        };
-
-        let mut inner_keep = match keep.as_deref() {
-            Some([first, rest @ ..]) if *first == i => {
-                Some(rest.to_vec())
-            }
-            _ => None,
-        };
-        prune_empty(inner, &mut inner_keep);
-        if keep.as_deref().and_then(<[usize]>::first) == Some(&i) {
-            match inner_keep {
-                Some(rest) => {
-                    let k = keep.as_mut().unwrap();
-                    k.truncate(1);
-                    k.extend(rest);
-                }
-                None => *keep = None,
-            }
-        }
-
-        if inner.children.is_empty() {
-            block.children.remove(i);
-            match keep.as_deref() {
-                Some([first, ..]) if *first == i => *keep = None,
-                Some([first, ..]) if *first > i => {
-                    keep.as_mut().unwrap()[0] -= 1;
-                }
-                _ => {}
-            }
-        } else {
-            i += 1;
-        }
-    }
-}
-
-/// Drops any `Stage` entry no surviving action still animates -
-/// staging only ever appends when an action is created ([`create`](
-/// super::create)), so deleting the last action on a field otherwise
-/// leaves its seed behind forever.
-fn prune_stage(scene: &mut MotionGfxScene) {
-    let mut used = HashSet::new();
-    collect_used_fields(&scene.animation, &mut used);
-
-    for subject in &mut scene.stage.subjects {
-        subject.fields.retain(|seed| {
-            used.contains(&(subject.id, seed.field.clone()))
-        });
-    }
-    scene
-        .stage
-        .subjects
-        .retain(|subject| !subject.fields.is_empty());
-}
-
-fn collect_used_fields(
-    block: &Block<Backend>,
-    used: &mut HashSet<(SceneUid, FieldRef)>,
-) {
-    for child in &block.children {
-        match child {
-            SceneNode::Block { block, .. } => {
-                collect_used_fields(block, used)
-            }
-            SceneNode::Action { action, .. } => {
-                used.insert((action.subject, action.field.clone()));
-            }
-            SceneNode::Draft { .. } => {}
-        }
-    }
 }
 
 /// Pulls the node at `path` out of the tree.
@@ -868,119 +739,79 @@ pub(super) fn rect(placed: &Placed) -> Rect {
 // Drawing.
 //
 
-/// Shows the landing hints `target` calls for and hides the rest. An
-/// insert draws the line; a merge outlines the node it lands on, or
-/// the half the dragged node takes for a chain.
-pub(super) fn show_landing(
-    nodes: &mut Query<&mut Node>,
-    backgrounds: &mut Query<&mut BackgroundColor>,
-    borders: &mut Query<&mut BorderColor>,
-    visuals: &Visuals,
+/// Tells the landing hint where `target` would land, or hides it when
+/// there is nowhere. An insert draws the line; a merge outlines the
+/// node it lands on, or the half the dragged node takes for a chain.
+pub(super) fn announce_landing(
+    commands: &mut Commands,
     theme: &EditorTheme,
     target: Option<&Target>,
     layout: &[Placed],
     root: &Block<Backend>,
-    to_area: Vec2,
 ) {
-    hide_landing(nodes, visuals);
-    match target {
+    let shown = match target {
         Some(Target::Insert { parent, index }) => {
-            let Some(axis) = axis_of(root, parent) else {
-                return;
-            };
-            let Some(bounds) = line_rect(
-                parent,
-                *index,
-                layout,
-                axis,
-                theme.space.edge,
-            ) else {
-                return;
-            };
-            place(nodes, visuals.line, bounds, to_area);
+            axis_of(root, parent)
+                .and_then(|axis| {
+                    line_rect(
+                        parent,
+                        *index,
+                        layout,
+                        axis,
+                        theme.space.edge,
+                    )
+                })
+                .map(ShowLanding::Insert)
         }
         Some(Target::Merge {
             path,
             combinator,
             before,
-        }) => {
-            let Some(bounds) = layout
-                .iter()
-                .find(|placed| placed.path == *path)
-                .map(rect)
-            else {
-                return;
-            };
-            let color = match combinator {
-                Combinator::Chain => theme.palette.orange,
-                Combinator::All | Combinator::Flow(_) => {
-                    theme.palette.purple
-                }
-            };
-            // A chain lands to one side, so the outline covers that
-            // half. An overlap takes the whole node.
-            let marked = if *combinator == Combinator::Chain {
-                let mid = bounds.center().x;
-                if *before {
-                    Rect::new(
-                        bounds.min.x,
-                        bounds.min.y,
-                        mid,
-                        bounds.max.y,
-                    )
-                } else {
-                    Rect::new(
-                        mid,
-                        bounds.min.y,
-                        bounds.max.x,
-                        bounds.max.y,
-                    )
-                }
-            } else {
-                bounds
-            };
+        }) => layout.iter().find(|placed| placed.path == *path).map(
+            |placed| {
+                merge_landing(
+                    rect(placed),
+                    combinator,
+                    *before,
+                    theme,
+                )
+            },
+        ),
+        None => None,
+    };
 
-            paint(backgrounds, borders, visuals.outline, color);
-            place(
-                nodes,
-                visuals.outline,
-                marked.inflate(OUTLINE_GROW),
-                to_area,
-            );
-        }
-        None => {}
+    match shown {
+        Some(show) => commands.trigger(show),
+        None => commands.trigger(HideLanding),
     }
 }
 
-/// Reveals `entity` at `bounds`, offset by `to_area` into the visuals'
-/// space.
-fn place(
-    nodes: &mut Query<&mut Node>,
-    entity: Entity,
+/// The outline for a merge onto `bounds`.
+fn merge_landing(
     bounds: Rect,
-    to_area: Vec2,
-) {
-    if let Ok(mut node) = nodes.get_mut(entity) {
-        node.display = Display::Flex;
-        node.left = px(bounds.min.x + to_area.x);
-        node.top = px(bounds.min.y + to_area.y);
-        node.width = px(bounds.width());
-        node.height = px(bounds.height());
-    }
-}
-
-/// Recolors `entity`.
-fn paint(
-    backgrounds: &mut Query<&mut BackgroundColor>,
-    borders: &mut Query<&mut BorderColor>,
-    entity: Entity,
-    color: Color,
-) {
-    if let Ok(mut background) = backgrounds.get_mut(entity) {
-        background.0 = color.with_alpha(0.15);
-    }
-    if let Ok(mut border) = borders.get_mut(entity) {
-        *border = BorderColor::all(color);
+    combinator: &Combinator,
+    before: bool,
+    theme: &EditorTheme,
+) -> ShowLanding {
+    let color = match combinator {
+        Combinator::Chain => theme.palette.orange,
+        Combinator::All | Combinator::Flow(_) => theme.palette.purple,
+    };
+    // A chain lands to one side, so the outline covers that half. An
+    // overlap takes the whole node.
+    let marked = if *combinator == Combinator::Chain {
+        let mid = bounds.center().x;
+        if before {
+            Rect::new(bounds.min.x, bounds.min.y, mid, bounds.max.y)
+        } else {
+            Rect::new(mid, bounds.min.y, bounds.max.x, bounds.max.y)
+        }
+    } else {
+        bounds
+    };
+    ShowLanding::Merge {
+        bounds: marked,
+        color,
     }
 }
 
@@ -1045,70 +876,12 @@ fn line_rect(
     Some(band_across(content, axis, at, width))
 }
 
-/// Hides both landing hints.
-pub(super) fn hide_landing(
-    nodes: &mut Query<&mut Node>,
-    visuals: &Visuals,
-) {
-    for entity in [visuals.line, visuals.outline] {
-        if let Ok(mut node) = nodes.get_mut(entity) {
-            node.display = Display::None;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use core::time::Duration;
     use std::collections::BTreeSet;
 
-    use bevy::asset::uuid::Uuid;
-    use bevy_motiongfx::scene::backend::AnimOp;
-    use bevy_motiongfx::scene::id::EntityUid;
-    use bevy_motiongfx::scene::value_pool::ValuePool;
-    use motiongfx_scene::block::{
-        ActionCmd, Block, Node as SceneNode,
-    };
-    use motiongfx_scene::scene::{FieldSeed, Scene, Stage, Subject};
-
     use super::*;
-
-    fn action(subject: SceneUid, field: &str) -> SceneNode<Backend> {
-        SceneNode::action(ActionCmd {
-            subject,
-            field: FieldRef::new("T", field),
-            op: AnimOp::To,
-            value: Uuid::nil(),
-            duration: Duration::ZERO,
-            ease: None,
-            interp: None,
-            name: None,
-        })
-    }
-
-    fn seeded(subject: SceneUid, field: &str) -> Subject<Backend> {
-        Subject {
-            id: subject,
-            fields: vec![FieldSeed {
-                field: FieldRef::new("T", field),
-                value: Uuid::nil(),
-            }],
-        }
-    }
-
-    fn leaf() -> SceneNode<Backend> {
-        SceneNode::Draft {
-            delay: None,
-            duration: Duration::ZERO,
-            name: None,
-        }
-    }
-
-    fn block(
-        children: Vec<SceneNode<Backend>>,
-    ) -> SceneNode<Backend> {
-        SceneNode::block(Block::chain(children))
-    }
 
     fn timed() -> SceneNode<Backend> {
         SceneNode::Draft {
@@ -1236,95 +1009,6 @@ mod tests {
                 combinator: Combinator::Chain,
                 before: true
             })
-        );
-    }
-
-    #[test]
-    fn prune_shifts_kept_past_a_removed_sibling() {
-        let mut root = Block::chain(vec![block(vec![]), leaf()]);
-        let mut keep = Some(vec![1]);
-        prune_empty(&mut root, &mut keep);
-        assert_eq!(keep, Some(vec![0]));
-        assert_eq!(root.children.len(), 1);
-    }
-
-    #[test]
-    fn prune_leaves_kept_before_a_removed_sibling() {
-        let mut root = Block::chain(vec![leaf(), block(vec![])]);
-        let mut keep = Some(vec![0]);
-        prune_empty(&mut root, &mut keep);
-        assert_eq!(keep, Some(vec![0]));
-    }
-
-    #[test]
-    fn prune_clears_kept_inside_a_removed_block() {
-        let mut root =
-            Block::chain(vec![block(vec![block(vec![])]), leaf()]);
-        let mut keep = Some(vec![0, 0]);
-        prune_empty(&mut root, &mut keep);
-        assert_eq!(keep, None);
-        assert_eq!(root.children.len(), 1);
-    }
-
-    #[test]
-    fn prune_rebases_kept_in_a_surviving_nested_block() {
-        let mut root = Block::chain(vec![
-            block(vec![block(vec![]), leaf()]),
-            leaf(),
-        ]);
-        let mut keep = Some(vec![0, 1]);
-        prune_empty(&mut root, &mut keep);
-        assert_eq!(keep, Some(vec![0, 0]));
-    }
-
-    #[test]
-    fn prune_stage_drops_a_field_no_action_targets_anymore() {
-        let subject = SceneUid::Entity(EntityUid::new());
-        let mut scene = MotionGfxScene(Scene {
-            stage: Stage {
-                subjects: vec![seeded(subject, "x")],
-            },
-            animation: Block::chain(vec![]),
-            values: ValuePool::default(),
-        });
-        prune_stage(&mut scene);
-        assert!(scene.stage.subjects.is_empty());
-    }
-
-    #[test]
-    fn prune_stage_keeps_a_field_still_targeted() {
-        let subject = SceneUid::Entity(EntityUid::new());
-        let mut scene = MotionGfxScene(Scene {
-            stage: Stage {
-                subjects: vec![seeded(subject, "x")],
-            },
-            animation: Block::chain(vec![action(subject, "x")]),
-            values: ValuePool::default(),
-        });
-        prune_stage(&mut scene);
-        assert_eq!(scene.stage.subjects.len(), 1);
-    }
-
-    #[test]
-    fn prune_stage_keeps_a_sibling_field_on_the_same_subject() {
-        let subject = SceneUid::Entity(EntityUid::new());
-        let mut fields = seeded(subject, "x").fields;
-        fields.extend(seeded(subject, "y").fields);
-        let mut scene = MotionGfxScene(Scene {
-            stage: Stage {
-                subjects: vec![Subject {
-                    id: subject,
-                    fields,
-                }],
-            },
-            animation: Block::chain(vec![action(subject, "y")]),
-            values: ValuePool::default(),
-        });
-        prune_stage(&mut scene);
-        assert_eq!(scene.stage.subjects[0].fields.len(), 1);
-        assert_eq!(
-            scene.stage.subjects[0].fields[0].field,
-            FieldRef::new("T", "y")
         );
     }
 }

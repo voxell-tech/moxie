@@ -7,6 +7,7 @@
 
 pub mod asset;
 pub mod context_menu;
+pub mod cursor;
 pub mod drag;
 pub mod elements;
 pub mod fold;
