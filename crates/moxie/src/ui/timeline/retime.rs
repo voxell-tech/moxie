@@ -165,7 +165,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                 end.propagate(false);
                 // The release can land off the handle, which leaves
                 // its pressed highlight stuck. A rebuild respawns it.
-                tick.0 = tick.0.wrapping_add(1);
+                tick.bump();
                 let Some(gesture) = dragging.0.take() else {
                     return;
                 };

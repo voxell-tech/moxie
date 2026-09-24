@@ -261,13 +261,7 @@ fn end_drag(
     commands: &mut Commands,
 ) {
     ungrab(override_cursor);
-    commands.queue(|world: &mut World| {
-        if let Some(mut tick) =
-            world.get_resource_mut::<RebuildTick>()
-        {
-            tick.0 = tick.0.wrapping_add(1);
-        }
-    });
+    commands.queue(RebuildTick::bump_in);
 }
 
 /// Ends the `body` drag in progress and commits the drop, unless it
@@ -482,9 +476,7 @@ pub(crate) fn delete(world: &mut World, path: &[usize]) {
     {
         selected.0 = kept;
     }
-    if let Some(mut tick) = world.get_resource_mut::<RebuildTick>() {
-        tick.0 = tick.0.wrapping_add(1);
-    }
+    RebuildTick::bump_in(world);
 }
 
 /// Writes the drop's result back into the scene, following the
@@ -544,9 +536,7 @@ fn commit(world: &mut World, from: &[usize], target: &Target) {
     {
         selected.0 = kept;
     }
-    if let Some(mut tick) = world.get_resource_mut::<RebuildTick>() {
-        tick.0 = tick.0.wrapping_add(1);
-    }
+    RebuildTick::bump_in(world);
 }
 
 /// Moves `from` to `index` among `parent`'s children, returning where

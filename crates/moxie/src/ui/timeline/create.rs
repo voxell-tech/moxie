@@ -263,9 +263,7 @@ fn create(
     {
         selected.0 = Some(path);
     }
-    if let Some(mut tick) = world.get_resource_mut::<RebuildTick>() {
-        tick.0 = tick.0.wrapping_add(1);
-    }
+    RebuildTick::bump_in(world);
 }
 
 /// Stages `field` on `subject` at `value`, unless it already is -

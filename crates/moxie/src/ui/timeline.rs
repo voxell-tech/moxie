@@ -373,7 +373,21 @@ fn block_placements(world: &World, _: Entity) -> Vec<Placed> {
 
 /// Counter bumped by every committed reorder.
 #[derive(Resource, Default)]
-pub(crate) struct RebuildTick(pub(crate) u64);
+pub(crate) struct RebuildTick(u64);
+
+impl RebuildTick {
+    /// Forces the box list to rebuild.
+    pub(crate) fn bump(&mut self) {
+        self.0 = self.0.wrapping_add(1);
+    }
+
+    /// [`bump`](Self::bump) from a command or other `&mut World` code.
+    pub(crate) fn bump_in(world: &mut World) {
+        if let Some(mut tick) = world.get_resource_mut::<Self>() {
+            tick.bump();
+        }
+    }
+}
 
 /// The boxes plus which one, if any, is selected. The watcher's
 /// signal: a box rebuilds only when a node is added, removed,
