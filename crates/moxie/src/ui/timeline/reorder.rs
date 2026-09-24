@@ -573,7 +573,7 @@ fn merge(
     combinator: Combinator,
     before: bool,
 ) -> Option<Vec<usize>> {
-    let mut node = take(root, from)?;
+    let node = take(root, from)?;
     let onto = after_removal(onto, from)?;
     let (onto_index, onto_parent) = onto.split_last()?;
 
@@ -581,13 +581,9 @@ fn merge(
     if *onto_index >= block.children.len() {
         return None;
     }
-    let mut host = block.children.remove(*onto_index);
+    let host = block.children.remove(*onto_index);
 
-    // The pair starts where the replaced node did: its delay moves out
-    // to the wrapper, and neither child keeps a head start.
-    let delay = delay_of(&mut host).take();
-    *delay_of(&mut node) = None;
-
+    // Each delay stays on the node it belongs to; the wrapper has none.
     let children = if before {
         vec![node, host]
     } else {
@@ -596,7 +592,7 @@ fn merge(
     block.children.insert(
         *onto_index,
         SceneNode::Block {
-            delay,
+            delay: None,
             block: Block {
                 combinator,
                 children,
@@ -689,16 +685,6 @@ fn axis_of(root: &Block<Backend>, path: &[usize]) -> Option<Axis> {
         Combinator::Chain => Axis::X,
         Combinator::All | Combinator::Flow(_) => Axis::Y,
     })
-}
-
-fn delay_of(
-    node: &mut SceneNode<Backend>,
-) -> &mut Option<core::time::Duration> {
-    match node {
-        SceneNode::Block { delay, .. }
-        | SceneNode::Action { delay, .. }
-        | SceneNode::Draft { delay, .. } => delay,
-    }
 }
 
 /// Whether `path` is `prefix` itself or sits under it.
@@ -875,6 +861,49 @@ mod tests {
             duration: Duration::from_secs(1),
             name: None,
         }
+    }
+
+    fn delayed(secs: u64) -> SceneNode<Backend> {
+        SceneNode::Draft {
+            delay: Some(Duration::from_secs(secs)),
+            duration: Duration::from_secs(1),
+            name: None,
+        }
+    }
+
+    fn delay(node: &SceneNode<Backend>) -> Option<Duration> {
+        match node {
+            SceneNode::Block { delay, .. }
+            | SceneNode::Action { delay, .. }
+            | SceneNode::Draft { delay, .. } => *delay,
+        }
+    }
+
+    #[test]
+    fn merging_leaves_each_delay_on_its_own_node() {
+        let mut root =
+            combined(Combinator::All, vec![delayed(2), delayed(3)]);
+
+        let landed =
+            merge(&mut root, &[1], &[0], Combinator::Chain, false);
+
+        assert_eq!(landed, Some(vec![0, 1]));
+        let SceneNode::Block {
+            delay: wrapper,
+            block,
+        } = &root.children[0]
+        else {
+            panic!("the pair should be wrapped in a block");
+        };
+        assert_eq!(*wrapper, None);
+        assert_eq!(
+            delay(&block.children[0]),
+            Some(Duration::from_secs(2))
+        );
+        assert_eq!(
+            delay(&block.children[1]),
+            Some(Duration::from_secs(3))
+        );
     }
 
     fn combined(
