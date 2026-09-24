@@ -30,7 +30,7 @@ use moxie_ui::reactive::FynixHost;
 use super::super::action::{node_at, node_at_mut};
 use super::block_layout::{self, Placed};
 use super::{BlockFoldState, RebuildTick};
-use crate::{EditorScene, TimelineView};
+use crate::{EditorScene, EditorSettings, TimelineView};
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<Dragging>()
@@ -39,9 +39,6 @@ pub(super) fn plugin(app: &mut App) {
 
 /// An edge handle's width.
 pub(crate) const EDGE_HANDLE_PX: f32 = 6.0;
-
-/// Never resized shorter than this.
-const MIN_DURATION: Duration = Duration::from_millis(50);
 
 /// The field an edge handle edits.
 #[derive(Clone, Copy, PartialEq)]
@@ -129,6 +126,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                   editor_scene: Res<EditorScene>,
                   folded: Res<BlockFoldState>,
                   view: Res<TimelineView>,
+                  settings: Res<EditorSettings>,
                   boxes: Query<(&BoxPath, &mut Node)>,
                   gaps: Query<
                 (&GapPath, &mut Node),
@@ -142,15 +140,20 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                 let Some(gesture) = &mut dragging.0 else {
                     return;
                 };
-                let dx_secs =
-                    view.secs_from_dx(drag.distance.x / scale.0);
+                let step = settings.min_duration().as_secs_f32();
+                let dx_secs = (view
+                    .secs_from_dx(drag.distance.x / scale.0)
+                    / step)
+                    .round()
+                    * step;
 
                 gesture.value_secs = match gesture.kind {
                     Kind::Delay => {
                         (gesture.base_secs + dx_secs).max(0.0)
                     }
-                    Kind::Resize => (gesture.base_secs + dx_secs)
-                        .max(MIN_DURATION.as_secs_f32()),
+                    Kind::Resize => {
+                        (gesture.base_secs + dx_secs).max(step)
+                    }
                 };
 
                 relayout(

@@ -20,7 +20,6 @@ const ROW_HEIGHT: f32 = 26.0;
 pub(crate) const HEADER_HEIGHT: f32 = 24.0;
 /// Vertical gap between lanes that would otherwise overlap in time.
 const LANE_GAP: f32 = 2.0;
-const MIN_WIDTH: f32 = 2.0;
 
 /// The right-angle line from the middle of the flow gap between two
 /// siblings' slot starts, down to this one's row and along to its own
@@ -81,7 +80,8 @@ impl Placed {
     /// of its width, or plain pixels for the root.
     fn along(&self, x: f32) -> Val {
         match self.parent {
-            Some(p) => percent((x - p.x) / p.w * 100.0),
+            Some(p) if p.w > 0.0 => percent((x - p.x) / p.w * 100.0),
+            Some(_) => Val::ZERO,
             None => px(x),
         }
     }
@@ -89,7 +89,8 @@ impl Placed {
     /// A content-space length as a size inside the parent.
     fn span(&self, w: f32) -> Val {
         match self.parent {
-            Some(p) => percent(w / p.w * 100.0),
+            Some(p) if p.w > 0.0 => percent(w / p.w * 100.0),
+            Some(_) => Val::ZERO,
             None => px(w),
         }
     }
@@ -426,7 +427,7 @@ fn flatten(
     out: &mut Vec<Placed>,
 ) {
     let x = view.x_from_time(measured.start);
-    let w = (view.x_from_time(measured.end) - x).max(MIN_WIDTH);
+    let w = view.x_from_time(measured.end) - x;
     let gap_x = (measured.gap > Duration::ZERO).then(|| {
         view.x_from_time(measured.start.saturating_sub(measured.gap))
     });

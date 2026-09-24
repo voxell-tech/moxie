@@ -38,8 +38,8 @@ use moxie_ui::elements::{
     Button, ButtonCursor, Frame, GhostButton, Icon, IconCursor,
     Label, NumberField, NumberFieldCursor, Panel, PlayheadLine,
     PlayheadLineCursor, ScrollArea, TimeLabel, TimeTick,
-    TimelineAction, TimelineBlock, TimelineGap, TimelineLink,
-    TintButton,
+    TimelineAction, TimelineBlock, TimelineBlockCursor, TimelineGap,
+    TimelineLink, TintButton,
 };
 use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use moxie_ui::reactive::{
@@ -349,9 +349,10 @@ fn current_time(world: &World) -> Duration {
         .unwrap_or(Duration::ZERO)
 }
 
-/// The editor scene's animation tree, laid out as nested boxes.
+/// The editor scene's animation tree, laid out as nested boxes. Nested
+/// boxes are a percent of their parent, so the layout ignores the view
+/// and only the root box follows it.
 fn block_placements(world: &World, _: Entity) -> Vec<Placed> {
-    let view = *world.resource::<TimelineView>();
     let empty = BTreeSet::new();
     let folded = world
         .get_resource::<BlockFoldState>()
@@ -362,7 +363,7 @@ fn block_placements(world: &World, _: Entity) -> Vec<Placed> {
         .map(|editor_scene| {
             block_layout::layout(
                 &editor_scene.scene().0.animation,
-                view,
+                TimelineView::UNIT,
                 folded,
             )
         })
@@ -615,7 +616,7 @@ fn build_node(
 
     match &placed.label {
         Some(label) => {
-            ui.compose(BlockHeader {
+            let mut header = ui.compose(BlockHeader {
                 path: placed.path.clone(),
                 left: placed.left(),
                 top: placed.top(),
@@ -643,6 +644,29 @@ fn build_node(
                     }
                 },
             });
+            if placed.path.is_empty() {
+                let secs = placed.w;
+                header
+                    .bind(
+                        |block| block.left(),
+                        resource_changed::<TimelineView>(),
+                        |WorldNodeRef { world, .. }| {
+                            px(world
+                                .resource::<TimelineView>()
+                                .x_from_time(Duration::ZERO))
+                        },
+                    )
+                    .bind(
+                        |block| block.width(),
+                        resource_changed::<TimelineView>(),
+                        move |WorldNodeRef { world, .. }| {
+                            px(secs
+                                * world
+                                    .resource::<TimelineView>()
+                                    .px_per_second)
+                        },
+                    );
+            }
         }
         // An action leaf's own element: position, colors and
         // selection are all typed fields, and it owns its

@@ -26,7 +26,7 @@ use moxie_ui::inspector::{
 use moxie_ui::reactive::{BevyUi, FynixHost, value_changed};
 
 use super::hierarchy;
-use crate::{EditorScene, SelectedAction};
+use crate::{EditorScene, EditorSettings, SelectedAction};
 
 /// The action panel, as kernel nodes.
 pub(super) struct ActionPanel;
@@ -526,6 +526,10 @@ impl Source for Property {
     }
 
     fn set(&self, world: &mut World, value: &dyn PartialReflect) {
+        let min_duration = world
+            .get_resource::<EditorSettings>()
+            .map(EditorSettings::min_duration)
+            .unwrap_or_default();
         let Some(mut editor) =
             world.get_resource_mut::<EditorScene>()
         else {
@@ -583,7 +587,7 @@ impl Source for Property {
             }
             (edit, node) => {
                 if let Some(value) = f32::from_reflect(value) {
-                    set_seconds(node, edit, value);
+                    set_seconds(node, edit, value, min_duration);
                 }
             }
         }
@@ -643,7 +647,12 @@ fn named(value: String) -> Option<String> {
 }
 
 /// Writes one of the properties measured in seconds.
-fn set_seconds(node: &mut Node<Backend>, edit: Edit, value: f32) {
+fn set_seconds(
+    node: &mut Node<Backend>,
+    edit: Edit,
+    value: f32,
+    min_duration: Duration,
+) {
     let seconds = clamp_seconds(value);
 
     match (edit, node) {
@@ -656,10 +665,10 @@ fn set_seconds(node: &mut Node<Backend>, edit: Edit, value: f32) {
             block.combinator = Combinator::Flow(seconds);
         }
         (Edit::Duration, Node::Action { action, .. }) => {
-            action.duration = seconds;
+            action.duration = seconds.max(min_duration);
         }
         (Edit::Duration, Node::Draft { duration, .. }) => {
-            *duration = seconds;
+            *duration = seconds.max(min_duration);
         }
         _ => {}
     }
