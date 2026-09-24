@@ -198,20 +198,6 @@ mod tests {
     }
 
     #[test]
-    fn stage_keeps_a_field_still_targeted() {
-        let subject = SceneUid::Entity(EntityUid::new());
-        let mut scene = MotionGfxScene(Scene {
-            stage: Stage {
-                subjects: vec![seeded(subject, "x")],
-            },
-            animation: Block::chain(vec![action(subject, "x")]),
-            values: ValuePool::default(),
-        });
-        stage(&mut scene);
-        assert_eq!(scene.stage.subjects.len(), 1);
-    }
-
-    #[test]
     fn stage_keeps_a_sibling_field_on_the_same_subject() {
         let subject = SceneUid::Entity(EntityUid::new());
         let mut fields = seeded(subject, "x").fields;

@@ -982,48 +982,34 @@ mod tests {
     }
 
     #[test]
-    fn a_flow_block_can_still_be_merged_into() {
-        let root = combined(
-            Combinator::All,
-            vec![
-                SceneNode::block(combined(
-                    Combinator::Flow(Duration::from_millis(500)),
-                    vec![timed(), timed()],
-                )),
-                timed(),
-            ],
-        );
+    fn a_chain_edge_merges_into_a_block_it_cannot_join() {
+        let merged = Some(Target::Merge {
+            path: vec![0],
+            combinator: Combinator::Chain,
+            before: true,
+        });
+        // An `All` block doesn't run its children in a chain, and a
+        // `Flow` block never matches what a drop asks for.
+        for (inner, x) in [
+            (Combinator::All, 20.0),
+            (Combinator::Flow(Duration::from_millis(500)), 40.0),
+        ] {
+            let root = combined(
+                Combinator::All,
+                vec![
+                    SceneNode::block(combined(
+                        inner.clone(),
+                        vec![timed(), timed()],
+                    )),
+                    timed(),
+                ],
+            );
 
-        assert_eq!(
-            drop_at(&root, Vec2::new(40.0, 36.0)),
-            Some(Target::Merge {
-                path: vec![0],
-                combinator: Combinator::Chain,
-                before: true
-            })
-        );
-    }
-
-    #[test]
-    fn a_chain_edge_still_merges_into_an_all_block() {
-        let root = combined(
-            Combinator::All,
-            vec![
-                SceneNode::block(combined(
-                    Combinator::All,
-                    vec![timed(), timed()],
-                )),
-                timed(),
-            ],
-        );
-
-        assert_eq!(
-            drop_at(&root, Vec2::new(20.0, 36.0)),
-            Some(Target::Merge {
-                path: vec![0],
-                combinator: Combinator::Chain,
-                before: true
-            })
-        );
+            assert_eq!(
+                drop_at(&root, Vec2::new(x, 36.0)),
+                merged,
+                "into {inner:?}"
+            );
+        }
     }
 }
