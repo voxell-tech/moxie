@@ -6,20 +6,25 @@ use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
 use moxie_ui::cursor::PointerEventExt as _;
 
+use super::TrackViewport;
 use crate::playback::x_from_cursor;
-use crate::ui::timeline::TrackViewport;
 use crate::{EditorState, TimelineView};
 
 /// Zoom factor per wheel notch.
 const WHEEL_STEP: f32 = 1.1;
 
+/// Registers the fit observer.
+pub(super) fn plugin(app: &mut App) {
+    app.add_observer(on_fit_timeline);
+}
+
 /// Command to fit the animation to the panel, dispatched from the fit
 /// button and handled in [`on_fit_timeline`].
 #[derive(Event)]
-pub(crate) struct FitTimeline;
+pub(super) struct FitTimeline;
 
 /// Scale the view so the animation spans the track viewport.
-pub(crate) fn on_fit_timeline(
+fn on_fit_timeline(
     _fit: On<FitTimeline>,
     q_viewport: Query<&ComputedNode, With<TrackViewport>>,
     state: Res<EditorState>,
@@ -34,7 +39,7 @@ pub(crate) fn on_fit_timeline(
 
 /// Zoom on Alt+wheel, pan sideways on Shift+wheel or a
 /// horizontal wheel, and scroll the tracks otherwise.
-pub(crate) fn on_track_scroll(
+pub(super) fn on_track_scroll(
     mut scroll: On<Pointer<Scroll>>,
     keys: Res<ButtonInput<KeyCode>>,
     ui_scale: Res<UiScale>,

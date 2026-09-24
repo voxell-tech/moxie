@@ -2,14 +2,19 @@
 //! scrubbable track viewport, edge to edge. No name gutter: a
 //! block's own header box already carries its label.
 
+mod block_layout;
 mod create;
 mod hint;
 mod pattern;
 mod prune;
 mod reorder;
 mod retime;
+mod time_axis;
+mod zoom;
 
+use block_layout::Placed;
 use pattern::DelayPattern;
+use zoom::{FitTimeline, on_track_scroll};
 
 use bevy_fynix::tag::TagExt as _;
 use core::time::Duration;
@@ -20,16 +25,12 @@ use bevy::prelude::*;
 use bevy::ui_widgets::{Activate, ScrollArea as ScrollAreaBehavior};
 use bevy_motiongfx::prelude::MotionGfxManager;
 
-use crate::block_layout::{self, Placed};
 use crate::playback::{
     TogglePlayback, on_time_entered, on_track_cancel,
     on_track_click_release, on_track_drag, on_track_press,
     on_track_release,
 };
-use crate::zoom::{FitTimeline, on_fit_timeline, on_track_scroll};
-use crate::{
-    EditorScene, EditorState, SelectedAction, TimelineView, time_axis,
-};
+use crate::{EditorScene, EditorState, SelectedAction, TimelineView};
 use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
 use fynix::prelude::*;
@@ -59,8 +60,8 @@ impl Plugin for TimelinePlugin {
                 reorder::plugin,
                 create::plugin,
                 hint::plugin,
-            ))
-            .add_observer(on_fit_timeline);
+                zoom::plugin,
+            ));
     }
 }
 
@@ -603,7 +604,8 @@ fn build_node(
             width = width,
             height = height,
             color = theme.color.text_dim
-        ));
+        ))
+        .insert(retime::LinkPath(placed.path.clone()));
     }
 
     match &placed.label {

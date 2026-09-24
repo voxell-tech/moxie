@@ -5,15 +5,12 @@
     reason = "Inherent to Bevy ECS: systems take many params and query tuples."
 )]
 
-mod block_layout;
 mod icons;
 mod playback;
 mod project;
 mod scene;
-mod time_axis;
 mod ui;
 mod view;
-mod zoom;
 
 use core::time::Duration;
 use std::path::PathBuf;

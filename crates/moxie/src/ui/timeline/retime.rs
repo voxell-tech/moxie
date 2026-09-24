@@ -28,8 +28,8 @@ use motiongfx_scene::block::Node as SceneNode;
 use moxie_ui::reactive::FynixHost;
 
 use super::super::action::{node_at, node_at_mut};
+use super::block_layout::{self, Placed};
 use super::{BlockFoldState, RebuildTick};
-use crate::block_layout::{self, Placed};
 use crate::{EditorScene, TimelineView};
 
 /// Registers the drag's state and its Escape cancel.
@@ -77,6 +77,11 @@ pub(crate) struct BoxPath(pub(crate) Vec<usize>);
 /// [`TimelineGap`](moxie_ui::elements::TimelineGap).
 #[derive(Component, Clone)]
 pub(crate) struct GapPath(pub(crate) Vec<usize>);
+
+/// The same, for the link leading into a flow child
+/// ([`TimelineLink`](moxie_ui::elements::TimelineLink)).
+#[derive(Component, Clone)]
+pub(crate) struct LinkPath(pub(crate) Vec<usize>);
 
 /// Makes `handle` an edge: dragging it edits `path`'s `delay`
 /// (`Kind::Move`) or `duration` (`Kind::Resize`).
@@ -129,6 +134,10 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                   gaps: Query<
                 (&GapPath, &mut Node),
                 Without<BoxPath>,
+            >,
+                  links: Query<
+                (&LinkPath, &mut Node),
+                (Without<BoxPath>, Without<GapPath>),
             >| {
                 drag.propagate(false);
                 let Some(gesture) = &mut dragging.0 else {
@@ -154,6 +163,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                     gesture.value_secs,
                     boxes,
                     gaps,
+                    links,
                 );
             },
         )
@@ -193,6 +203,10 @@ fn cancel_on_escape(
     view: Res<TimelineView>,
     boxes: Query<(&BoxPath, &mut Node)>,
     gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
+    links: Query<
+        (&LinkPath, &mut Node),
+        (Without<BoxPath>, Without<GapPath>),
+    >,
 ) {
     if !keys.just_pressed(KeyCode::Escape) {
         return;
@@ -209,6 +223,7 @@ fn cancel_on_escape(
         gesture.base_secs,
         boxes,
         gaps,
+        links,
     );
 }
 
@@ -223,6 +238,10 @@ fn relayout(
     secs: f32,
     boxes: Query<(&BoxPath, &mut Node)>,
     gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
+    links: Query<
+        (&LinkPath, &mut Node),
+        (Without<BoxPath>, Without<GapPath>),
+    >,
 ) {
     let mut animation = editor_scene.scene().0.animation.clone();
     let Some(node) = node_at_mut(&mut animation, path) else {
@@ -232,14 +251,19 @@ fn relayout(
 
     let layout =
         block_layout::layout(&animation, view, folded.paths());
-    apply_layout(&layout, boxes, gaps);
+    apply_layout(&layout, boxes, gaps, links);
 }
 
-/// Pushes `layout` onto the spawned box and gap entities by path.
+/// Pushes `layout` onto the spawned box, gap and link entities by
+/// path.
 fn apply_layout(
     layout: &[Placed],
     mut boxes: Query<(&BoxPath, &mut Node)>,
     mut gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
+    mut links: Query<
+        (&LinkPath, &mut Node),
+        (Without<BoxPath>, Without<GapPath>),
+    >,
 ) {
     for (box_path, mut node) in &mut boxes {
         let Some(placed) =
@@ -266,6 +290,24 @@ fn apply_layout(
         node.top = placed.top();
         node.width = placed.gap_width();
         node.height = px(placed.h);
+    }
+
+    // A link the drag has since dropped hides. One it newly creates
+    // waits for the next real rebuild, like a gap.
+    for (link_path, mut node) in &mut links {
+        let rect = layout
+            .iter()
+            .find(|p| p.path == link_path.0)
+            .and_then(Placed::link_rect);
+        let Some([left, top, width, height]) = rect else {
+            node.display = Display::None;
+            continue;
+        };
+        node.display = Display::Flex;
+        node.left = left;
+        node.top = top;
+        node.width = width;
+        node.height = height;
     }
 }
 

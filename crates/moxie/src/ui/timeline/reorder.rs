@@ -24,11 +24,11 @@ use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::{BevyFynix, FynixHost, FynixSet};
 use moxie_ui::theme::EditorTheme;
 
+use super::block_layout::{self, HEADER_HEIGHT, Placed};
 use super::hint::{HideLanding, ShowLanding};
 use super::prune;
 use super::retime::{BoxPath, GapPath};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
-use crate::block_layout::{self, HEADER_HEIGHT, Placed};
 use crate::{EditorScene, SelectedAction, TimelineView};
 
 /// How close to a node's own edge a drop stops being about that node
