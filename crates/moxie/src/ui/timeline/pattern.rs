@@ -5,7 +5,6 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::render::render_resource::{Extent3d, TextureDimension};
 
-/// Builds the hatch texture once, at startup.
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<DelayPattern>();
 }

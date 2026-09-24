@@ -13,7 +13,6 @@ use crate::{EditorState, TimelineView};
 /// Zoom factor per wheel notch.
 const WHEEL_STEP: f32 = 1.1;
 
-/// Registers the fit observer.
 pub(super) fn plugin(app: &mut App) {
     app.add_observer(on_fit_timeline);
 }

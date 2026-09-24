@@ -5,8 +5,8 @@
 //! generic field drag ([`DraggedField`]). This module is the timeline
 //! half: the landing preview while a field is held over the track, and
 //! on release splicing a fresh [`SceneNode::Action`] into the tree.
-//! Drop resolution (merge / chain / plain insert) and the landing
-//! hints are shared with [`reorder`].
+//! Drop resolution (merge / chain / plain insert) and the drop hint
+//! are shared with [`reorder`].
 
 use core::time::Duration;
 use std::collections::BTreeSet;
@@ -25,7 +25,7 @@ use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::{BevyFynix, FynixSet};
 
 use super::block_layout;
-use super::hint::HideLanding;
+use super::hint::HintNode;
 use super::reorder::{self, Target};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
 use crate::ui::inspector::field_ref_of;
@@ -39,7 +39,6 @@ const DEFAULT_DURATION: Duration = Duration::from_secs(1);
 /// against the node being moved - a fresh node is under nothing.
 const NO_NODE: &[usize] = &[usize::MAX];
 
-/// Registers the hover preview and the drop.
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(Update, preview.after(FynixSet))
         .add_observer(on_drop);
@@ -50,6 +49,7 @@ pub(super) fn plugin(app: &mut App) {
 fn preview(
     kernel: Res<BevyFynix>,
     pointer: Cursor,
+    hint: HintNode,
     dragged: Res<DraggedField>,
     editor_scene: Res<EditorScene>,
     folded: Res<BlockFoldState>,
@@ -69,7 +69,7 @@ fn preview(
             // The drag may have ended without a `DragDrop` over the
             // track (e.g. released elsewhere) - `on_drop` never ran
             // to hide the hint this hovering left showing.
-            commands.trigger(HideLanding);
+            hint.hide(&mut commands);
         }
         *was_dragging = false;
         return;
@@ -80,13 +80,13 @@ fn preview(
         Ok((viewport_node, viewport_transform, scroll)),
     ) = (pointer.position(), q_viewport.single())
     else {
-        commands.trigger(HideLanding);
+        hint.hide(&mut commands);
         return;
     };
     let viewport_rect =
         logical_rect(viewport_node, viewport_transform);
     if !viewport_rect.contains(cursor) {
-        commands.trigger(HideLanding);
+        hint.hide(&mut commands);
         return;
     }
 
@@ -98,8 +98,9 @@ fn preview(
     let layout = block_layout::layout(root, *view, folded.paths());
     let target = reorder::resolve(content, &layout, root, NO_NODE);
 
-    reorder::announce_landing(
+    reorder::announce_hint(
         &mut commands,
+        &hint,
         kernel.theme(),
         target.as_ref(),
         &layout,
@@ -110,6 +111,7 @@ fn preview(
 /// On release over the track: build the action and splice it in.
 fn on_drop(
     drop: On<Pointer<DragDrop>>,
+    hint: HintNode,
     scale: Res<UiScale>,
     view: Res<TimelineView>,
     folded: Res<BlockFoldState>,
@@ -125,7 +127,7 @@ fn on_drop(
     let Some(field) = dragged.field.take() else {
         return;
     };
-    commands.trigger(HideLanding);
+    hint.hide(&mut commands);
     let cursor = drop.logical(&scale);
     let Ok((viewport_node, viewport_transform, scroll)) =
         q_viewport.single()

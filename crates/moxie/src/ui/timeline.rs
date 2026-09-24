@@ -59,7 +59,6 @@ impl Plugin for TimelinePlugin {
                 retime::plugin,
                 reorder::plugin,
                 create::plugin,
-                hint::plugin,
                 zoom::plugin,
             ));
     }
@@ -327,12 +326,10 @@ impl Composer<FynixHost> for TrackArea {
                 .watch(value_changed(block_view), build_block_boxes);
             });
 
-        // Siblings of the `.watch()`-owned `ScrollArea`: a hint built
-        // inside that would be gone the next time the box list
-        // rebuilds. A drag shows and hides them with `hint` events.
+        // A sibling of the `.watch()`-owned `ScrollArea`, so a rebuild
+        // of the box list keeps it.
         root.with(|ui| {
-            ui.compose(hint::Landing::Line);
-            ui.compose(hint::Landing::Outline);
+            ui.compose(hint::Hint);
         });
 
         root.handle()
@@ -382,7 +379,7 @@ impl RebuildTick {
         self.0 = self.0.wrapping_add(1);
     }
 
-    /// [`bump`](Self::bump) from a command or other `&mut World` code.
+    /// Bumps the world's tick, if it has one.
     pub(crate) fn bump_in(world: &mut World) {
         if let Some(mut tick) = world.get_resource_mut::<Self>() {
             tick.bump();

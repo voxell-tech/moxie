@@ -32,7 +32,6 @@ use super::block_layout::{self, Placed};
 use super::{BlockFoldState, RebuildTick};
 use crate::{EditorScene, TimelineView};
 
-/// Registers the drag's state and its Escape cancel.
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<Dragging>()
         .add_systems(Update, cancel_on_escape);
@@ -78,8 +77,8 @@ pub(crate) struct BoxPath(pub(crate) Vec<usize>);
 #[derive(Component, Clone)]
 pub(crate) struct GapPath(pub(crate) Vec<usize>);
 
-/// The same, for the link leading into a flow child
-/// ([`TimelineLink`](moxie_ui::elements::TimelineLink)).
+/// The path a [`TimelineLink`](moxie_ui::elements::TimelineLink) was
+/// built for.
 #[derive(Component, Clone)]
 pub(crate) struct LinkPath(pub(crate) Vec<usize>);
 

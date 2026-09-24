@@ -27,7 +27,7 @@ pub struct Label {
     /// What `color` travels to while hovered; `None` rests. Element
     /// state: nothing draws it, only the anim line reads it.
     pub hover_color: Option<Color>,
-    /// The same, while dragged.
+    /// What `color` travels to while dragged; `None` rests.
     pub dragged_color: Option<Color>,
     #[elem(patch = PatchBold)]
     pub bold: bool,

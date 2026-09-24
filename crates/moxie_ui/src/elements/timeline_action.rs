@@ -40,10 +40,10 @@ pub struct TimelineAction {
     /// What `fill` travels to under the cursor.
     #[elem(ignore, default = theme.color.clip_hover)]
     pub hover_fill: Color,
-    /// While held.
+    /// What `fill` travels to while held.
     #[elem(ignore, default = theme.color.clip_press)]
     pub press_fill: Color,
-    /// While dragged.
+    /// What `fill` travels to while dragged.
     #[elem(ignore, default = theme.color.clip.with_alpha(0.2))]
     pub dragged_fill: Color,
     #[elem(default = Color::NONE, patch = PatchBorderColor, anim(

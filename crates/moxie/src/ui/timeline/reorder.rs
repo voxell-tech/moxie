@@ -25,7 +25,7 @@ use moxie_ui::reactive::{BevyFynix, FynixHost, FynixSet};
 use moxie_ui::theme::EditorTheme;
 
 use super::block_layout::{self, HEADER_HEIGHT, Placed};
-use super::hint::{HideLanding, ShowLanding};
+use super::hint::{HintNode, Shape};
 use super::prune;
 use super::retime::{BoxPath, GapPath};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
@@ -38,7 +38,6 @@ const EDGE_MARGIN_PX: f32 = 8.0;
 /// overlaps.
 const CHAIN_BAND: f32 = 0.25;
 
-/// Registers the drag state, the preview, and what ends a drag.
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<Dragging>()
         .add_systems(Update, cancel_on_escape)
@@ -54,7 +53,6 @@ pub(super) fn plugin(app: &mut App) {
 struct Dragging(Option<Gesture>);
 
 impl Dragging {
-    /// Whether a node is being dragged, as a run condition.
     fn active(dragging: Res<Self>) -> bool {
         dragging.0.is_some()
     }
@@ -163,6 +161,7 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
 fn preview(
     kernel: Res<BevyFynix>,
     pointer: Cursor,
+    hint: HintNode,
     editor_scene: Res<EditorScene>,
     folded: Res<BlockFoldState>,
     view: Res<TimelineView>,
@@ -249,8 +248,9 @@ fn preview(
     }
 
     gesture.target = resolve(content, &layout, root, &gesture.path);
-    announce_landing(
+    announce_hint(
         &mut commands,
+        &hint,
         kernel.theme(),
         gesture.target.as_ref(),
         &layout,
@@ -285,6 +285,7 @@ fn end_drag(
 /// settled where it started.
 fn on_drag_end(
     _: On<Pointer<DragEnd>>,
+    hint: HintNode,
     mut dragging: ResMut<Dragging>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
@@ -292,7 +293,7 @@ fn on_drag_end(
     let Some(gesture) = dragging.0.take() else {
         return;
     };
-    commands.trigger(HideLanding);
+    hint.hide(&mut commands);
     end_drag(&mut override_cursor, &mut commands);
 
     let Some(target) = gesture.target else {
@@ -309,6 +310,7 @@ fn on_drag_end(
 /// Drops whatever's being dragged without committing it.
 fn cancel_on_escape(
     keys: Res<ButtonInput<KeyCode>>,
+    hint: HintNode,
     mut dragging: ResMut<Dragging>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
@@ -319,7 +321,7 @@ fn cancel_on_escape(
     if dragging.0.take().is_none() {
         return;
     }
-    commands.trigger(HideLanding);
+    hint.hide(&mut commands);
     end_drag(&mut override_cursor, &mut commands);
 }
 
@@ -728,11 +730,10 @@ pub(super) fn rect(placed: &Placed) -> Rect {
 // Drawing.
 //
 
-/// Tells the landing hint where `target` would land, or hides it when
-/// there is nowhere. An insert draws the line; a merge outlines the
-/// node it lands on, or the half the dragged node takes for a chain.
-pub(super) fn announce_landing(
+/// Shows the hint for `target`, or hides it when there is none.
+pub(super) fn announce_hint(
     commands: &mut Commands,
+    hint: &HintNode,
     theme: &EditorTheme,
     target: Option<&Target>,
     layout: &[Placed],
@@ -750,7 +751,7 @@ pub(super) fn announce_landing(
                         theme.space.edge,
                     )
                 })
-                .map(ShowLanding::Insert)
+                .map(Shape::Insert)
         }
         Some(Target::Merge {
             path,
@@ -758,30 +759,24 @@ pub(super) fn announce_landing(
             before,
         }) => layout.iter().find(|placed| placed.path == *path).map(
             |placed| {
-                merge_landing(
-                    rect(placed),
-                    combinator,
-                    *before,
-                    theme,
-                )
+                merge_hint(rect(placed), combinator, *before, theme)
             },
         ),
         None => None,
     };
 
     match shown {
-        Some(show) => commands.trigger(show),
-        None => commands.trigger(HideLanding),
+        Some(shape) => hint.show(commands, shape),
+        None => hint.hide(commands),
     }
 }
 
-/// The outline for a merge onto `bounds`.
-fn merge_landing(
+fn merge_hint(
     bounds: Rect,
     combinator: &Combinator,
     before: bool,
     theme: &EditorTheme,
-) -> ShowLanding {
+) -> Shape {
     let color = match combinator {
         Combinator::Chain => theme.palette.orange,
         Combinator::All | Combinator::Flow(_) => theme.palette.purple,
@@ -798,7 +793,7 @@ fn merge_landing(
     } else {
         bounds
     };
-    ShowLanding::Merge {
+    Shape::Merge {
         bounds: marked,
         color,
     }

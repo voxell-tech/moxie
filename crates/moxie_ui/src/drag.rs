@@ -48,9 +48,7 @@ pub fn ghost(
     )
 }
 
-/// Tags a node that is being dragged. An element with an
-/// `on(Dragged, ...)` line fades to its `dragged_*` colors while it
-/// holds this.
+/// Tag on a node being dragged.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Dragged;
 

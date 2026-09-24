@@ -1,5 +1,4 @@
-//! Where the pointer is: polled every frame by [`Cursor`], or read off
-//! a picking event with [`PointerEventExt`].
+//! The pointer's position in logical screen space.
 
 use core::fmt::Debug;
 
