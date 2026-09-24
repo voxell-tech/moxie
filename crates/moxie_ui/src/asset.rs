@@ -19,6 +19,7 @@ use bevy_fynix::WorldEntityMut;
 use fynix::element::Element;
 use fynix::ui::ElementMut;
 
+use crate::cursor::PointerEventExt as _;
 use crate::drag::{follow, ghost};
 use crate::reactive::FynixHost;
 
@@ -49,7 +50,7 @@ pub fn draggable<'r, 'u, 'a, E: Element<FynixHost>>(
                 return;
             }
 
-            let at = start.pointer_location.position / scale.0;
+            let at = start.logical(&scale);
 
             dragging.path = Some(path.clone());
             dragging.kind = Some(kind);
@@ -71,10 +72,7 @@ pub fn draggable<'r, 'u, 'a, E: Element<FynixHost>>(
             let Ok(mut node) = nodes.get_mut(ghost) else {
                 return;
             };
-            follow(
-                &mut node,
-                drag.pointer_location.position / scale.0,
-            );
+            follow(&mut node, drag.logical(&scale));
         },
     )
     .observe(

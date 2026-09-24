@@ -13,6 +13,7 @@ use bevy::ui_widgets::popover::{
 use bevy_fynix::WorldEntityMut;
 use fynix::prelude::*;
 
+use crate::cursor::PointerEventExt as _;
 use crate::elements::{Frame, MenuSurface, Overlay, menu_item};
 use crate::reactive::{BevyUi, watch_root};
 use crate::theme::EditorTheme;
@@ -63,7 +64,7 @@ pub fn context_menu(
             if press.button != PointerButton::Secondary {
                 return;
             }
-            let at = press.pointer_location.position / scale.0;
+            let at = press.logical(&scale);
 
             let build = build.clone();
             commands.queue(move |world: &mut World| {

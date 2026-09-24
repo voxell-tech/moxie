@@ -4,6 +4,7 @@ use bevy::input::mouse::MouseScrollUnit;
 use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
+use moxie_ui::cursor::PointerEventExt as _;
 
 use crate::playback::x_from_cursor;
 use crate::ui::timeline::TrackViewport;
@@ -60,7 +61,7 @@ pub(crate) fn on_track_scroll(
 
     if keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]) {
         let notches = delta.y / px_per_notch;
-        let cursor = scroll.pointer_location.position / ui_scale.0;
+        let cursor = scroll.logical(&ui_scale);
         let anchor_x = x_from_cursor(cursor, computed, transform);
         let anchor_time = view.time_from_x(anchor_x);
         view.zoom_to(anchor_x, anchor_time, WHEEL_STEP.powf(notches));

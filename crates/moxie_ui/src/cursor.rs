@@ -1,9 +1,24 @@
-//! Where the pointer is, for systems that poll it every frame.
+//! Where the pointer is: polled every frame by [`Cursor`], or read off
+//! a picking event with [`PointerEventExt`].
+
+use core::fmt::Debug;
 
 use bevy::ecs::system::SystemParam;
+use bevy::picking::events::Pointer;
 use bevy::picking::pointer::PointerLocation;
 use bevy::prelude::*;
 use bevy::ui::UiScale;
+
+/// A picking event's pointer position in logical screen space.
+pub trait PointerEventExt {
+    fn logical(&self, scale: &UiScale) -> Vec2;
+}
+
+impl<E: Debug + Clone + Reflect> PointerEventExt for Pointer<E> {
+    fn logical(&self, scale: &UiScale) -> Vec2 {
+        self.pointer_location.position / scale.0
+    }
+}
 
 /// The pointer in logical screen space.
 #[derive(SystemParam)]

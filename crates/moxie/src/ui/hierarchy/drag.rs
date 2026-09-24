@@ -15,6 +15,7 @@ use bevy::ui::{UiGlobalTransform, UiScale};
 use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::id::EntityUid;
 use fynix::prelude::*;
+use moxie_ui::cursor::PointerEventExt as _;
 use moxie_ui::drag::{follow, ghost};
 use moxie_ui::elements::Button;
 use moxie_ui::layout::logical_rect;
@@ -85,7 +86,7 @@ pub(super) fn rows<'r, 'u, 'a>(
                     return;
                 };
                 let rect = logical_rect(computed, transform);
-                let cursor = over.pointer_location.position / scale.0;
+                let cursor = over.logical(&scale);
                 let frac = (cursor.y - rect.min.y) / rect.height();
 
                 let at = if frac < EDGE {
@@ -145,7 +146,7 @@ pub(super) fn rows<'r, 'u, 'a>(
                     names.get(subject).ok(),
                     uids.get(subject).ok(),
                 );
-                let at = start.pointer_location.position / scale.0;
+                let at = start.logical(&scale);
 
                 dragging.subject = Some(subject);
                 dragging.ghost = Some(
@@ -166,10 +167,7 @@ pub(super) fn rows<'r, 'u, 'a>(
                 let Ok(mut node) = nodes.get_mut(ghost) else {
                     return;
                 };
-                follow(
-                    &mut node,
-                    drag.pointer_location.position / scale.0,
-                );
+                follow(&mut node, drag.logical(&scale));
             },
         )
         .observe(

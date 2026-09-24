@@ -10,6 +10,7 @@ use super::reconcile::NodeBinding;
 use super::registry::WindowRegistry;
 use super::tabs::DockTabRow;
 use super::tree::{DockTree, Edge as TreeEdge, TabId};
+use crate::cursor::PointerEventExt as _;
 use crate::drag::{grab, ungrab};
 use crate::layout::logical_rect;
 use crate::reactive::BevyFynix;
@@ -93,10 +94,7 @@ fn on_tab_drag_start(
         tab_id: tab.tab_id,
         window_id: tab.window_id.clone(),
         window_name: display_name,
-        start_pos: Vec2::new(
-            trigger.event().pointer_location.position.x,
-            trigger.event().pointer_location.position.y,
-        ) / ui_scale.0,
+        start_pos: trigger.event().logical(&ui_scale),
     };
 }
 
@@ -133,10 +131,7 @@ fn on_drag_move(
     let drag_z = kernel.theme().layer.drag;
     let hint_z = kernel.theme().layer.drop_hint;
     let drag_event = trigger.event();
-    let cursor_pos_ui = Vec2::new(
-        drag_event.pointer_location.position.x,
-        drag_event.pointer_location.position.y,
-    ) / ui_scale.0;
+    let cursor_pos_ui = drag_event.logical(&ui_scale);
 
     match &*drag_state {
         DockDragState::PendingDrag {

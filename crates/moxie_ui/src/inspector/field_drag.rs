@@ -18,6 +18,7 @@ use fynix::composer::Composer;
 use fynix::prelude::*;
 
 use super::Field;
+use crate::cursor::PointerEventExt as _;
 use crate::drag::{follow, ghost};
 use crate::elements::{Frame, FrameCursor, Label};
 use crate::reactive::{BevyUi, FynixHost, value_changed};
@@ -167,7 +168,7 @@ pub(crate) fn draggable_field(
                 if start.button != PointerButton::Primary {
                     return;
                 }
-                let at = start.pointer_location.position / scale.0;
+                let at = start.logical(&scale);
 
                 dragged.field = Some(field.clone());
                 dragged.ghost = Some(
@@ -192,10 +193,7 @@ pub(crate) fn draggable_field(
                 let Ok(mut node) = nodes.get_mut(ghost) else {
                     return;
                 };
-                follow(
-                    &mut node,
-                    drag.pointer_location.position / scale.0,
-                );
+                follow(&mut node, drag.logical(&scale));
             },
         )
         .observe(

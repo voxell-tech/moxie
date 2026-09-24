@@ -11,6 +11,7 @@ use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
 use bevy::ui_widgets::ValueChange;
 use bevy_motiongfx::prelude::*;
+use moxie_ui::cursor::PointerEventExt as _;
 
 use crate::{EditorState, TimelineView};
 use bevy_motiongfx::prelude::TimelineId;
@@ -157,7 +158,7 @@ pub(crate) fn on_track_press(
     press.propagate(false);
     commands.entity(track).insert(Scrubbing);
 
-    let cursor = press.pointer_location.position / ui_scale.0;
+    let cursor = press.logical(&ui_scale);
     let time = view
         .time_from_x(x_from_cursor(cursor, computed, transform))
         .min(state.duration);
@@ -183,7 +184,7 @@ pub(crate) fn on_track_drag(
     };
     drag.propagate(false);
 
-    let cursor = drag.pointer_location.position / ui_scale.0;
+    let cursor = drag.logical(&ui_scale);
     let time = view
         .time_from_x(x_from_cursor(cursor, computed, transform))
         .min(state.duration);

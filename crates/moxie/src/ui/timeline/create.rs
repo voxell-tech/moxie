@@ -19,7 +19,7 @@ use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
 use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
 use motiongfx_scene::refs::FieldRef;
 use motiongfx_scene::scene::{FieldSeed, Subject};
-use moxie_ui::cursor::Cursor;
+use moxie_ui::cursor::{Cursor, PointerEventExt as _};
 use moxie_ui::inspector::{DraggedField, Field};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::{BevyFynix, FynixSet};
@@ -130,7 +130,7 @@ fn on_drop(
         return;
     };
     commands.trigger(HideLanding);
-    let cursor = drop.pointer_location.position / scale.0;
+    let cursor = drop.logical(&scale);
     let Ok((viewport_node, viewport_transform, scroll)) =
         q_viewport.single()
     else {

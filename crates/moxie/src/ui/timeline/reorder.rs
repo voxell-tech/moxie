@@ -18,7 +18,7 @@ use bevy_motiongfx::scene::backend::Backend;
 use fynix::element::Element;
 use fynix::ui::ElementMut;
 use motiongfx_scene::block::{Block, Combinator, Node as SceneNode};
-use moxie_ui::cursor::Cursor;
+use moxie_ui::cursor::{Cursor, PointerEventExt as _};
 use moxie_ui::drag::{grab, ungrab};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::{BevyFynix, FynixHost, FynixSet};
@@ -126,7 +126,7 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
                 return;
             };
 
-            let cursor = start.pointer_location.position / scale.0;
+            let cursor = start.logical(&scale);
             grab(&mut override_cursor);
             dragging.0 = Some(Gesture {
                 path: path.clone(),
