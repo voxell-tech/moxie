@@ -10,6 +10,7 @@ mod icons;
 mod playback;
 mod project;
 mod scene;
+mod shape;
 mod time_axis;
 mod ui;
 mod view;
@@ -39,6 +40,7 @@ impl Plugin for MoxiePlugin {
             BevyMotionGfxPlugin,
             SettingsPlugin::new("org.voxell.motiongfx.editor"),
             MoxieAssetPlugin,
+            shape::ShapePlugin,
             ui::UiPlugin,
         ))
         .add_systems(PreUpdate, ensure_scene_root);

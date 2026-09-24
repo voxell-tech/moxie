@@ -1,4 +1,4 @@
-//! Generates a default material file at `editor/assets/materials/default.mat`.
+//! Generates the default material at `assets/materials/default.mat`.
 
 use std::path::Path;
 
@@ -20,7 +20,7 @@ fn main() {
             .expect("should serialize default material");
 
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../assets/materials/default.mat");
+        .join("../../assets/materials/default.mat");
     let _ = std::fs::create_dir_all(path.parent().unwrap());
     std::fs::write(&path, ron).expect("should write default.mat");
 }

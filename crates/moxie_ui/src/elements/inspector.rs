@@ -27,7 +27,7 @@ use super::frame::FrameCursor;
 use super::icon::IconCursor;
 use super::{
     Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Icon,
-    Label, TintButton, menu_item,
+    Label, TintButton, group_heading, menu_item,
 };
 use crate::context_menu::context_menu;
 use crate::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
@@ -241,35 +241,6 @@ impl Composer<FynixHost> for AddComponent {
             })
             .handle()
     }
-}
-
-/// A group's own name, heading the run of [`add_component_item`]s
-/// under it.
-fn group_heading(ui: &mut BevyUi, name: &str) {
-    let theme = ui.theme;
-    let (fill, radius, small, text_dim) = (
-        theme.color.fill,
-        theme.space.menu_item_radius,
-        theme.text.small,
-        theme.color.text_dim,
-    );
-    ui.elem(elem!(
-        Frame,
-        width = percent(100),
-        padding = UiRect::new(px(8), px(8), px(4), px(4)),
-        background = fill,
-        radius = px(radius)
-    ))
-    .with(move |ui| {
-        ui.elem(elem!(
-            Label,
-            text = name.to_string(),
-            size = small,
-            bold = true,
-            wrap = false,
-            color = text_dim
-        ));
-    });
 }
 
 /// One entry in [`AddComponent`]'s list. Picking it inserts the
