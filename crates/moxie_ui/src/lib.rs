@@ -37,6 +37,7 @@ use inspector::InspectPlugin;
 use moxie_asset::AssetKinds;
 use reactive::FynixPlugin;
 use widgets::dock::DockPlugin;
+use widgets::tooltip::TooltipPlugin;
 
 /// Everything a consumer needs to render a moxie UI: feathers theming,
 /// the dock engine, the
@@ -53,6 +54,7 @@ impl Plugin for MoxieUiPlugin {
         app.add_plugins((
             FeathersPlugins,
             DockPlugin,
+            TooltipPlugin,
             FynixPlugin::default(),
             InspectPlugin,
         ))

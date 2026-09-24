@@ -16,6 +16,7 @@ use moxie_ui::elements::{
 };
 use moxie_ui::inspector::ReflectEssential;
 use moxie_ui::reactive::{BevyUi, FynixHost};
+use moxie_ui::widgets::tooltip::TooltipExt as _;
 
 use crate::shape::{Shape2d, Shape2dKind};
 use crate::{SceneRoot, SelectedEntity};
@@ -42,11 +43,13 @@ impl Composer<FynixHost> for AddMenu {
         ))
         .with(|ui| {
             ui.elem(elem!(DropdownMenu)).with(|ui| {
-                ui.elem(elem!(
+                let mut button = ui.elem(elem!(
                     !TintButton::default(),
                     icon = elem!(Icon, image = crate::icons::PLUS)
-                ))
-                .insert((MenuButton, ActivateOnPress));
+                ));
+                button
+                    .insert((MenuButton, ActivateOnPress))
+                    .tooltip("New entity");
 
                 let margin = ui.theme.space.menu_margin;
                 ui.elem(elem!(DropdownList))

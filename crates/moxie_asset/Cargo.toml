@@ -1,6 +1,6 @@
 [package]
 name = "moxie_asset"
-description = "Asset-kind registry, absolute asset source, and the .mat loader for the MotionGfx editor."
+description = "Asset-kind registry for the MotionGfx editor."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -8,14 +8,18 @@
 
 ## Introduction
 
-**Moxie** is a `bevy_ui` based editor for the
-[MotionGfx](https://github.com/voxell-tech/motiongfx) framework:
-timeline, hierarchy, inspector, dockable panels, and a scene document
-backed by `motiongfx_scene`.
+**Moxie** is an animation editor built on top of
+[MotionGfx](https://github.com/voxell-tech/motiongfx), a backend
+agnostic motion graphics framework. We often call it the "LEGO for
+animation".
 
-It renders a docked timeline panel for the first `Timeline` it finds:
-scrub by pressing or dragging the track, toggle play/pause with the
-button or spacebar, and scroll the track with a resizable name column.
+### Why Moxie exists
+
+We want creating and editing animations to be extremely simple. In
+Moxie you build an animation by arranging action blocks, and you edit
+it by moving those blocks around. Action blocks also work well with
+touch input, so editing on touch screens like tablets is one of our
+main focuses.
 
 ### Workspace
 
@@ -27,10 +31,7 @@ button or spacebar, and scroll the track with a resizable name column.
 
 ## Running
 
-`bevy_motiongfx` / `motiongfx_scene` come from the `vendor/motiongfx`
-git submodule (`voxell-tech/motiongfx`, on branch `moxie`), not yet
-published in that form. Clone with submodules, or fetch them into an
-existing checkout:
+Clone with submodules, or fetch them into an existing checkout:
 
 ```sh
 git clone --recurse-submodules https://github.com/voxell-tech/moxie.git
