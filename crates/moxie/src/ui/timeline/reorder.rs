@@ -78,6 +78,8 @@ pub(super) enum Target {
 struct Gesture {
     path: Vec<usize>,
     cursor_start: Vec2,
+    /// Where the cursor sits inside the box, set on the first preview.
+    hold: Option<Vec2>,
     target: Option<Target>,
 }
 
@@ -149,6 +151,7 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
                 cursor_start: to_content(
                     cursor, node, transform, scroll,
                 ),
+                hold: None,
                 target: None,
             });
         },
@@ -201,7 +204,14 @@ fn preview(
         .iter()
         .find(|(_, box_path, _)| box_path.0.is_empty())
         .and_then(|(_, _, child_of)| child_of.map(ChildOf::parent));
-    let delta = content - gesture.cursor_start;
+    let Some(placed) = layout.iter().find(|p| p.path == gesture.path)
+    else {
+        return;
+    };
+    let hold = *gesture.hold.get_or_insert(
+        gesture.cursor_start - Vec2::new(placed.x, placed.y),
+    );
+    let at = content - hold;
 
     for (entity, box_path, child_of) in &q_boxes {
         if box_path.0 != gesture.path {
@@ -213,13 +223,7 @@ fn preview(
         {
             commands.entity(entity).insert(ChildOf(drag_parent));
         }
-        let Some(placed) =
-            layout.iter().find(|p| p.path == box_path.0)
-        else {
-            continue;
-        };
         if let Ok(mut node) = nodes.get_mut(entity) {
-            let at = Vec2::new(placed.x, placed.y) + delta;
             node.left = px(at.x);
             node.top = px(at.y);
             node.width = px(placed.w);
@@ -235,13 +239,10 @@ fn preview(
         if let Some(drag_parent) = drag_parent {
             commands.entity(entity).insert(ChildOf(drag_parent));
         }
-        if let Some(placed) =
-            layout.iter().find(|p| p.path == gap_path.0)
-            && let Some(gap_x) = placed.gap_x
+        if let Some(gap_x) = placed.gap_x
             && let Ok(mut node) = nodes.get_mut(entity)
         {
-            let at = Vec2::new(gap_x, placed.y) + delta;
-            node.left = px(at.x);
+            node.left = px(at.x - (placed.x - gap_x));
             node.top = px(at.y);
             node.width = px(placed.x - gap_x);
         }
