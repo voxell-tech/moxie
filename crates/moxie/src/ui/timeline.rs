@@ -624,7 +624,7 @@ fn build_node(
                         edge_handle(
                             ui,
                             placed.path.clone(),
-                            retime::Kind::Move,
+                            retime::Kind::Delay,
                         );
                     }
                     while placements.get(next).is_some_and(|child| {
@@ -664,7 +664,7 @@ fn build_node(
             } else {
                 Color::NONE
             };
-            let mut clip = ui.elem(elem!(
+            let mut action = ui.elem(elem!(
                 TimelineAction,
                 label = elem!(
                     Label,
@@ -686,7 +686,8 @@ fn build_node(
                 border = border,
                 selected = is_selected
             ));
-            clip.insert(retime::BoxPath(placed.path.clone()))
+            action
+                .insert(retime::BoxPath(placed.path.clone()))
                 .pointer_tags()
                 .observe({
                     let path = path.clone();
@@ -695,11 +696,11 @@ fn build_node(
                         selected.0 = Some(path.clone());
                     }
                 });
-            reorder::body(&mut clip, path.clone());
+            reorder::body(&mut action, path.clone());
             {
                 let delete_path = path.clone();
                 moxie_ui::context_menu::context_menu(
-                    &mut clip,
+                    &mut action,
                     move |menu| {
                         let critical = menu.theme().color.critical;
                         let path = delete_path.clone();
@@ -713,8 +714,8 @@ fn build_node(
                     },
                 );
             }
-            clip.with(|ui| {
-                edge_handle(ui, path.clone(), retime::Kind::Move);
+            action.with(|ui| {
+                edge_handle(ui, path.clone(), retime::Kind::Delay);
                 edge_handle(ui, path, retime::Kind::Resize);
             });
         }
@@ -732,7 +733,7 @@ fn edge_handle(
 ) {
     let accent = ui.theme.color.accent;
     let inset = match kind {
-        retime::Kind::Move => {
+        retime::Kind::Delay => {
             UiRect::new(Val::ZERO, auto(), Val::ZERO, auto())
         }
         retime::Kind::Resize => {

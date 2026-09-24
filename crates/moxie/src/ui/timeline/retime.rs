@@ -48,7 +48,7 @@ const MIN_DURATION: Duration = Duration::from_millis(50);
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Kind {
     /// The left edge: `delay`.
-    Move,
+    Delay,
     /// The right edge: `duration`.
     Resize,
 }
@@ -138,7 +138,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                     view.secs_from_dx(drag.distance.x / scale.0);
 
                 gesture.value_secs = match gesture.kind {
-                    Kind::Move => {
+                    Kind::Delay => {
                         (gesture.base_secs + dx_secs).max(0.0)
                     }
                     Kind::Resize => (gesture.base_secs + dx_secs)
@@ -278,7 +278,7 @@ fn base_seconds(
 ) -> Option<f32> {
     let node = node_at(&editor_scene.scene().0.animation, path)?;
     match kind {
-        Kind::Move => Some(delay_secs(node)),
+        Kind::Delay => Some(delay_secs(node)),
         Kind::Resize => duration_secs(node),
     }
 }
@@ -323,7 +323,7 @@ fn commit(world: &mut World, path: &[usize], kind: Kind, secs: f32) {
 /// `kind`'s edit, applied in place to whichever field it names.
 fn apply_edit(node: &mut SceneNode<Backend>, kind: Kind, secs: f32) {
     match kind {
-        Kind::Move => {
+        Kind::Delay => {
             let delay = match node {
                 SceneNode::Block { delay, .. }
                 | SceneNode::Action { delay, .. }
