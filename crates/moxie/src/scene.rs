@@ -17,6 +17,8 @@ use motiongfx_scene::block::{ActionCmd, Block, Node};
 use motiongfx_scene::error::CompileError;
 use motiongfx_scene::scene::{Scene, Stage};
 
+use crate::shape::{Shape2d, ShapeColor};
+
 /// The project: a scene plus the registry that resolves its names.
 ///
 /// The action panel edits the tree, the timeline panel's row layout
@@ -58,7 +60,13 @@ impl EditorScene {
             .register_bundle(path!(<Transform>::translation::z))
             .register_bundle(path!(<Transform>::scale::x))
             .register_bundle(path!(<Transform>::scale::y))
-            .register_bundle(path!(<Transform>::scale::z));
+            .register_bundle(path!(<Transform>::scale::z))
+            .register_bundle(path!(<Shape2d>::size::x))
+            .register_bundle(path!(<Shape2d>::size::y))
+            .register_bundle(path!(<ShapeColor>::0::red))
+            .register_bundle(path!(<ShapeColor>::0::green))
+            .register_bundle(path!(<ShapeColor>::0::blue))
+            .register_bundle(path!(<ShapeColor>::0::alpha));
 
         Self {
             scene,

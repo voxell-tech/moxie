@@ -12,6 +12,8 @@ use bevy::asset::{AssetServer, LoadFromPath};
 use bevy::light::CascadeShadowConfig;
 use bevy::prelude::*;
 use bevy::reflect::TypeRegistry;
+use bevy::sprite::Anchor;
+use bevy::text::{LetterSpacing, LineHeight};
 use bevy::world_serialization::serde::{
     DynamicWorldSerializer, WorldDeserializer,
 };
@@ -26,6 +28,7 @@ use serde::de::{DeserializeSeed, MapAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserializer, Serialize, Serializer};
 
+use crate::shape::{Shape2d, ShapeColor};
 use crate::{
     EditorScene, ProjectBookmarks, ProjectPath, SceneRoot,
     SelectedAction, SelectedEntity,
@@ -221,6 +224,15 @@ fn subject_components() -> WorldFilter {
         .allow::<Mesh3d>()
         .allow::<MeshMaterial3d<StandardMaterial>>()
         .allow::<Camera2d>()
+        .allow::<Shape2d>()
+        .allow::<ShapeColor>()
+        .allow::<Text2d>()
+        .allow::<TextLayout>()
+        .allow::<TextFont>()
+        .allow::<TextColor>()
+        .allow::<LineHeight>()
+        .allow::<LetterSpacing>()
+        .allow::<Anchor>()
 }
 
 enum Dialog {

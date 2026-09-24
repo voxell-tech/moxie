@@ -314,6 +314,34 @@ pub fn menu_item(
     );
 }
 
+/// A group's own name, heading the run of rows under it.
+pub fn group_heading(ui: &mut BevyUi, name: &str) {
+    let theme = ui.theme;
+    let (fill, radius, small, text_dim) = (
+        theme.color.fill,
+        theme.space.menu_item_radius,
+        theme.text.small,
+        theme.color.text_dim,
+    );
+    ui.elem(elem!(
+        Frame,
+        width = percent(100),
+        padding = UiRect::new(px(8), px(8), px(4), px(4)),
+        background = fill,
+        radius = px(radius)
+    ))
+    .with(move |ui| {
+        ui.elem(elem!(
+            Label,
+            text = name.to_string(),
+            size = small,
+            bold = true,
+            wrap = false,
+            color = text_dim
+        ));
+    });
+}
+
 /// A menu's own floating surface. Pair with an explicit `inset` to
 /// place it.
 pub struct MenuSurface;

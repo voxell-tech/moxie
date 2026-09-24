@@ -8,12 +8,12 @@
 //! that branch. Depth is the nesting: a subtree indents what it
 //! holds.
 
+mod add;
 mod drag;
 
 pub(crate) use drag::Dragging;
 
 use bevy::ecs::query::QueryState;
-use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
 use bevy::ui_widgets::Activate;
 use bevy_fynix::WorldEntityMut;
@@ -22,11 +22,10 @@ use fynix::composer::Composer;
 use fynix::prelude::*;
 use moxie_ui::context_menu::context_menu;
 use moxie_ui::elements::{
-    Button, ButtonCursor, Frame, FrameCursor, GhostButton, Icon,
-    Label, LabelCursor, Panel, ScrollArea, TintButton,
+    Button, ButtonCursor, Frame, FrameCursor, GhostButton, Label,
+    LabelCursor, Panel, ScrollArea,
 };
 use moxie_ui::fold::{Foldable, FoldsOn};
-use moxie_ui::inspector::ReflectEssential;
 use moxie_ui::reactive::{
     BevyUi, FynixHost, component_changed_on, value_changed,
 };
@@ -51,43 +50,9 @@ impl Composer<FynixHost> for HierarchyPanel {
         ui.elem(elem!(Panel))
             .with(|ui| {
                 ui.compose(Roots);
-                ui.compose(AddButton);
+                ui.compose(add::AddMenu);
             })
             .handle()
-    }
-}
-
-/// The one thing that acts on the list.
-///
-/// Floated over the corner, so it stays put however far the list is
-/// scrolled.
-struct AddButton;
-
-impl Composer<FynixHost> for AddButton {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let pad = ui.theme.space.xl;
-        ui.elem(elem!(
-            Frame,
-            position = PositionType::Absolute,
-            inset = UiRect::new(auto(), px(pad), auto(), px(pad))
-        ))
-        .with(move |ui| {
-            ui.elem(elem!(
-                !TintButton::default(),
-                icon = elem!(Icon, image = crate::icons::PLUS)
-            ))
-            .observe(
-                |_: On<Activate>, mut commands: Commands| {
-                    commands.queue(spawn_new_entity);
-                },
-            );
-        })
-        .handle()
     }
 }
 
@@ -134,57 +99,6 @@ impl Composer<FynixHost> for Roots {
             build_roots,
         )
         .handle()
-    }
-}
-
-/// Spawns a subject at the top level, and selects it so the inspector
-/// is already pointed at what was just made.
-///
-/// Nothing of the animation changes: a [`Stage`](motiongfx_scene::scene::Stage)
-/// seeds the fields an action drives, and a subject with no action on
-/// it keeps whatever it was spawned holding.
-fn spawn_new_entity(world: &mut World) {
-    let Ok(root) = world
-        .query_filtered::<Entity, With<SceneRoot>>()
-        .single(world)
-    else {
-        error!("Scene root does not exist!");
-        return;
-    };
-
-    let entity = world.spawn((EntityUid::new(), ChildOf(root))).id();
-    insert_essential(world, entity);
-
-    world.insert_resource(SelectedEntity(Some(entity)));
-}
-
-/// Inserts every [`register_essential`](
-/// moxie_ui::inspector::InspectAppExt::register_essential)
-/// component's default value onto `entity` - `Name`, `Transform`,
-/// `Visibility` today, whatever the registry answers for tomorrow.
-fn insert_essential(world: &mut World, entity: Entity) {
-    let registry = world.resource::<AppTypeRegistry>().clone();
-    let registry = registry.read();
-
-    let essentials = registry
-        .iter()
-        .filter_map(|registration| {
-            Some((
-                registration.data::<ReflectComponent>()?,
-                registration.data::<ReflectEssential>()?.spawn(),
-            ))
-        })
-        .collect::<Vec<_>>();
-
-    let Ok(mut entity) = world.get_entity_mut(entity) else {
-        return;
-    };
-    for (reflect_component, value) in &essentials {
-        reflect_component.insert(
-            &mut entity,
-            value.as_partial_reflect(),
-            &registry,
-        );
     }
 }
 
