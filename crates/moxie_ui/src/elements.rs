@@ -65,7 +65,10 @@ pub use segmented_control::SegmentedControl;
 pub use tab::{
     Tab, TabBar, TabBarCursor, TabCursor, TabRow, TabRowCursor,
 };
-pub use timeline_action::{TimelineAction, TimelineActionCursor};
+pub use timeline_action::{
+    ACTION_ICON_SIZE, TimelineAction, TimelineActionCursor,
+    fit_action_icons, icon_fit,
+};
 pub use timeline_block::{TimelineBlock, TimelineBlockCursor};
 pub use timeline_gap::{TimelineGap, TimelineGapCursor};
 pub use timeline_link::{TimelineLink, TimelineLinkCursor};

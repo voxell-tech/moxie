@@ -22,9 +22,11 @@ use crate::{
     view,
 };
 use bevy_fynix::WorldEntityMut;
+use bevy_motiongfx::motiongfx::field_path::field;
 use fynix::prelude::*;
 use moxie_ui::MoxieUiPlugin;
 use moxie_ui::elements::{Frame, FrameCursor, Panel};
+use moxie_ui::field_icon::FieldIconAppExt as _;
 use moxie_ui::reactive::{BevyUi, FynixSet, value_changed};
 use moxie_ui::widgets::dock::{
     DockAreaStyle, DockLeaf, DockNode, DockTree,
@@ -44,6 +46,18 @@ impl Plugin for UiPlugin {
             .insert_resource(moxie_ui::inspector::FieldHasAction(
                 Some(inspector::has_action),
             ))
+            .register_field_icon(
+                field!(<Transform>::translation),
+                crate::icons::TRANSLATE,
+            )
+            .register_field_icon(
+                field!(<Transform>::rotation),
+                crate::icons::ROTATE,
+            )
+            .register_field_icon(
+                field!(<Transform>::scale),
+                crate::icons::SCALE,
+            )
             .init_resource::<EditorState>()
             .init_resource::<SelectedAction>()
             .init_resource::<SelectedEntity>()

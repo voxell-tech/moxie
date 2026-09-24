@@ -195,7 +195,12 @@ fn preview(
         cursor.y - viewport_rect.min.y + scroll.y,
     );
     let root = &editor_scene.scene().0.animation;
-    let layout = block_layout::layout(root, *view, folded.paths());
+    let layout = block_layout::layout(
+        root,
+        *view,
+        folded.paths(),
+        kernel.theme().space,
+    );
 
     // Detaches to the root's parent.
     // The rebuild that ends the drag puts it back.
@@ -938,6 +943,7 @@ mod tests {
             root,
             TimelineView::default(),
             &BTreeSet::new(),
+            EditorTheme::default().space,
         );
         resolve(cursor, &layout, root, &[1])
     }

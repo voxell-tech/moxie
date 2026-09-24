@@ -40,6 +40,9 @@ pub struct TimelineBlock {
     pub dragged_border: Color,
     #[elem(patch = PatchSelected)]
     pub selected: bool,
+    /// `Val::ZERO` for square corners, the unstyled default.
+    #[elem(default = ::ZERO, patch = PatchRadius)]
+    pub radius: Val,
 }
 
 impl TimelineBlock {
