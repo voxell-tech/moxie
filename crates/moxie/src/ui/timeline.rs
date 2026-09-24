@@ -469,7 +469,13 @@ impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for BlockHeader<F> {
             width = width,
             height = px(height),
             background = background,
+            dragged_background = if is_selected {
+                background.with_alpha(0.2)
+            } else {
+                background
+            },
             border = block_color.with_alpha(0.5),
+            dragged_border = block_color.with_alpha(0.2),
             selected = is_selected
         ));
         header.insert(retime::BoxPath(path.clone())).with(
@@ -522,6 +528,7 @@ impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for BlockHeader<F> {
                         image = moxie_ui::icons::CHEVRON,
                         size = px(7),
                         color = chevron_color,
+                        dragged_color = chevron_color.with_alpha(0.2),
                         rotation = if folded {
                             CHEVRON_SHUT
                         } else {
@@ -541,7 +548,8 @@ impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for BlockHeader<F> {
                         Label,
                         text = label,
                         wrap = false,
-                        color = label_color
+                        color = label_color,
+                        dragged_color = label_color.with_alpha(0.2)
                     ));
                 });
                 children(ui);
@@ -666,17 +674,19 @@ fn build_node(
             } else {
                 Color::NONE
             };
+            let label_color = if placed.draft {
+                theme.color.critical.with_alpha(0.9)
+            } else {
+                theme.palette.blue.with_alpha(0.9)
+            };
             let mut action = ui.elem(elem!(
                 TimelineAction,
                 label = elem!(
                     Label,
                     text = label,
                     size = theme.text.small,
-                    color = if placed.draft {
-                        theme.color.critical.with_alpha(0.9)
-                    } else {
-                        theme.palette.blue.with_alpha(0.9)
-                    }
+                    color = label_color,
+                    dragged_color = label_color.with_alpha(0.2)
                 ),
                 top = placed.top(),
                 left = placed.left(),
@@ -685,7 +695,13 @@ fn build_node(
                 fill = fill,
                 hover_fill = theme.color.clip_hover,
                 press_fill = theme.color.clip_press,
+                dragged_fill = fill.with_alpha(0.2),
                 border = border,
+                dragged_border = if border == Color::NONE {
+                    border
+                } else {
+                    border.with_alpha(0.2)
+                },
                 selected = is_selected
             ));
             action

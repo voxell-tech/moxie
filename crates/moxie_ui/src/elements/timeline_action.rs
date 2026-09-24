@@ -9,6 +9,7 @@ use fynix::element::element;
 
 use super::Label;
 use super::patch::*;
+use crate::drag::Dragged;
 
 /// One action's clip on the timeline: a colored, absolutely
 /// positioned, bordered hit area, its name (if any) pinned to its
@@ -28,21 +29,32 @@ pub struct TimelineAction {
     pub width: Val,
     #[elem(patch = PatchHeight)]
     pub height: Val,
-    #[elem(default = Color::NONE, patch = PatchBackground, anim(
+    #[elem(default = theme.color.clip, patch = PatchBackground, anim(
         duration = theme.motion.interact,
         ease = theme.motion.ease,
-        on(Pressed, read = Self::pressed),
-        on(Hovered, read = Self::hovered),
+        on(Dragged, read = dragged_fill),
+        on(Pressed, read = press_fill),
+        on(Hovered, read = hover_fill),
     ))]
     pub fill: Color,
-    /// What `fill` travels to under the cursor; `None` rests.
-    #[elem(ignore)]
-    pub hover_fill: Option<Color>,
-    /// While held. Falls back to `hover_fill` when unset.
-    #[elem(ignore)]
-    pub press_fill: Option<Color>,
-    #[elem(default = Color::NONE, patch = PatchBorderColor)]
+    /// What `fill` travels to under the cursor.
+    #[elem(ignore, default = theme.color.clip_hover)]
+    pub hover_fill: Color,
+    /// While held.
+    #[elem(ignore, default = theme.color.clip_press)]
+    pub press_fill: Color,
+    /// While dragged.
+    #[elem(ignore, default = theme.color.clip.with_alpha(0.2))]
+    pub dragged_fill: Color,
+    #[elem(default = Color::NONE, patch = PatchBorderColor, anim(
+        duration = theme.motion.interact,
+        ease = theme.motion.ease,
+        on(Dragged, read = dragged_border),
+    ))]
     pub border: Color,
+    /// What `border` travels to while dragged.
+    #[elem(ignore, default = Color::NONE)]
+    pub dragged_border: Color,
     #[elem(patch = PatchSelected)]
     pub selected: bool,
 }
@@ -64,24 +76,5 @@ impl TimelineAction {
             ButtonBehavior,
             EntityCursor::System(SystemCursorIcon::Pointer),
         ));
-    }
-}
-
-impl TimelineAction {
-    /// Where `fill` heads under the cursor, or its own colour when
-    /// none was set, so it stays put.
-    fn hovered(&self) -> &Color {
-        match &self.hover_fill {
-            Some(color) => color,
-            None => &self.fill,
-        }
-    }
-
-    /// While held, falling back to the hover shade.
-    fn pressed(&self) -> &Color {
-        match &self.press_fill {
-            Some(color) => color,
-            None => self.hovered(),
-        }
     }
 }

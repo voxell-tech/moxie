@@ -7,6 +7,7 @@ use bevy_fynix::tag::Hovered;
 use fynix::element::element;
 
 use super::patch::*;
+use crate::drag::Dragged;
 
 /// An image at a size of its own, which is what a [`Button`] shows.
 ///
@@ -19,12 +20,15 @@ pub struct Icon {
     #[elem(patch = PatchColor, anim(
         duration = theme.motion.interact,
         ease = theme.motion.ease,
+        on(Dragged, read = Self::dragged),
         on(Hovered, read = Self::lit),
     ))]
     pub color: Color,
     /// What `color` travels to while hovered; `None` rests. Element
     /// state: nothing draws it, only the anim line reads it.
     pub hover_color: Option<Color>,
+    /// The same, while dragged.
+    pub dragged_color: Option<Color>,
     #[elem(default = px(11), patch = PatchIconSize)]
     pub size: Val,
     /// Clockwise, in degrees.
@@ -41,6 +45,13 @@ impl Icon {
     /// set, otherwise its own resting colour, so nothing moves.
     fn lit(&self) -> &Color {
         match &self.hover_color {
+            Some(color) => color,
+            None => &self.color,
+        }
+    }
+
+    fn dragged(&self) -> &Color {
+        match &self.dragged_color {
             Some(color) => color,
             None => &self.color,
         }

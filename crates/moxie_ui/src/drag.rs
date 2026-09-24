@@ -48,6 +48,12 @@ pub fn ghost(
     )
 }
 
+/// Tags a node that is being dragged. An element with an
+/// `on(Dragged, ...)` line fades to its `dragged_*` colors while it
+/// holds this.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Dragged;
+
 /// Moves a [`ghost`]'s node to `cursor`, in logical screen space.
 pub fn follow(node: &mut Node, cursor: Vec2) {
     node.left = px(cursor.x + GHOST_OFFSET.x);

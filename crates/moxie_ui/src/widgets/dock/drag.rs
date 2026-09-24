@@ -123,13 +123,13 @@ fn on_drag_move(
     mut override_cursor: ResMut<OverrideCursor>,
     kernel: Res<BevyFynix>,
 ) {
-    // The accent, at low alpha, so the panel underneath still reads
-    // through it.
-    let drop_tint = kernel.theme().color.accent.with_alpha(0.18);
-    let text_primary = kernel.theme().color.text;
-    let ghost_fill = kernel.theme().color.fill;
-    let drag_z = kernel.theme().layer.drag;
-    let hint_z = kernel.theme().layer.drop_hint;
+    let theme = kernel.theme();
+
+    let drop_tint = theme.color.accent.with_alpha(0.18);
+    let text_primary = theme.color.text;
+    let ghost_fill = theme.color.fill;
+    let drag_z = theme.layer.drag;
+    let hint_z = theme.layer.drop_hint;
     let drag_event = trigger.event();
     let cursor_pos_ui = drag_event.logical(&ui_scale);
 
@@ -216,7 +216,7 @@ fn on_drag_move(
                 ui_transform,
                 children,
                 parent,
-            ) in &tab_rows
+            ) in tab_rows.iter()
             {
                 let row_rect = logical_rect(computed, ui_transform);
                 let parent_contains =

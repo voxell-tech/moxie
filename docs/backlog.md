@@ -184,6 +184,29 @@ a direct field, rather than treating it as one opaque child.
 - [ ] Convert `ButtonElem`, `Frame`, `ScrollArea`, `Panel`, and
       `field.rs`/`dropdown.rs`'s elements over once flattening lands.
 
+## Let an `on(...)` line's `read` return an `Option`
+
+`Label` and `Icon` each keep a `dragged_color: Option<Color>` and a
+`dragged()` method that returns `&self.color` when it is `None`. That
+falls back to the base color by hand, and it is not the same as the
+`Dragged` tag doing nothing: a node that is both dragged and hovered
+shows its base color instead of its hover color.
+
+`fynix` can't express this today. `read` has to return `&T`, which the
+macro wraps as `resolve(..).map(path)`. And `FieldLines::resolve` picks
+a line by its tag alone, so a `None` read would still win the line and
+`tick` would drop the transition, leaving the field where it was.
+
+- [ ] Make `fynix` a submodule here so the change can land alongside.
+- [ ] Macro: accept a `read` returning `Option<&T>`
+      (`fynix_macros/src/element.rs`, `.map(path)` to `.and_then(path)`).
+- [ ] `fynix/src/anim.rs`: have `FieldLines::resolve` skip a line whose
+      access returns `None`, so the field falls to the next active line
+      or to base. It needs the pool passed in, which touches
+      `reresolve`, `set_tag` and `unset_tag`.
+- [ ] Then drop the fallback methods on `Label` and `Icon` and make
+      `dragged_color` read straight from the `Option`.
+
 ## Assigning and treating assets in the inspector
 
 `Handle<T>` fields (`MeshMaterial3d<StandardMaterial>`, `Mesh3d`, and

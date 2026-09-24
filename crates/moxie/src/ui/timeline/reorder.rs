@@ -19,7 +19,7 @@ use fynix::element::Element;
 use fynix::ui::ElementMut;
 use motiongfx_scene::block::{Block, Combinator, Node as SceneNode};
 use moxie_ui::cursor::{Cursor, PointerEventExt as _};
-use moxie_ui::drag::{grab, ungrab};
+use moxie_ui::drag::{Dragged, grab, ungrab};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::{BevyFynix, FynixHost, FynixSet};
 use moxie_ui::theme::EditorTheme;
@@ -113,6 +113,9 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
             (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
             With<TrackViewport>,
         >,
+              q_boxes: Query<(Entity, &BoxPath)>,
+              q_children: Query<&Children>,
+              mut kernel: ResMut<BevyFynix>,
               mut dragging: ResMut<Dragging>,
               mut override_cursor: ResMut<OverrideCursor>| {
             if start.button != PointerButton::Primary
@@ -128,6 +131,19 @@ pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
 
             let cursor = start.logical(&scale);
             grab(&mut override_cursor);
+            // The box, not `start.entity`: a block's handle is its
+            // header button, inside the box. The rebuild that ends the
+            // drag respawns everything, so the tag never needs clearing.
+            if let Some((dragged, _)) = q_boxes
+                .iter()
+                .find(|(_, box_path)| box_path.0 == path)
+            {
+                for node in core::iter::once(dragged)
+                    .chain(q_children.iter_descendants(dragged))
+                {
+                    kernel.set_tag(node, Dragged);
+                }
+            }
             dragging.0 = Some(Gesture {
                 path: path.clone(),
                 cursor_start: to_content(
