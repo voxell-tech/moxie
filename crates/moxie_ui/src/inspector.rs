@@ -19,6 +19,7 @@ mod text;
 mod tree;
 mod vector;
 
+use core::time::Duration;
 use std::any::TypeId;
 
 use bevy::light::CascadeShadowConfig;
@@ -63,6 +64,7 @@ impl Plugin for InspectPlugin {
             .register_inspect::<i64>()
             .register_inspect::<u32>()
             .register_inspect::<u64>()
+            .register_inspect::<Duration>()
             .register_inspect::<Vec2>()
             .register_inspect::<Vec3>()
             .register_inspect::<Vec4>()

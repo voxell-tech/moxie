@@ -5,8 +5,11 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::render::render_resource::{Extent3d, TextureDimension};
 
-/// A small tileable diagonal hatch, for
-/// [`TimelineGap`](moxie_ui::elements::TimelineGap).
+pub(super) fn plugin(app: &mut App) {
+    app.init_resource::<DelayPattern>();
+}
+
+/// A small tileable diagonal hatch.
 #[derive(Resource)]
 pub(crate) struct DelayPattern(pub(crate) Handle<Image>);
 
@@ -17,9 +20,7 @@ impl FromWorld for DelayPattern {
     }
 }
 
-/// An 8x8 diagonal hatch: opaque on the stripe, transparent between -
-/// [`TimelineGap`](moxie_ui::elements::TimelineGap) tints and dims it
-/// with its own `color`.
+/// An 8x8 diagonal hatch.
 fn hatch() -> Image {
     const SIZE: u32 = 8;
     const STRIPE: u32 = 2;

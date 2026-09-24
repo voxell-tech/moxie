@@ -14,7 +14,9 @@ use core::time::Duration;
 
 use bevy::feathers::cursor::EntityCursor;
 use bevy::input::ButtonInput;
-use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
+use bevy::picking::events::{
+    Click, Drag, DragEnd, DragStart, Pointer, Press, Release,
+};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::UiScale;
@@ -26,21 +28,23 @@ use motiongfx_scene::block::Node as SceneNode;
 use moxie_ui::reactive::FynixHost;
 
 use super::super::action::{node_at, node_at_mut};
-use super::BlockFoldState;
-use crate::block_layout::{self, Placed};
-use crate::{EditorScene, TimelineView};
+use super::block_layout::{self, Placed};
+use super::{BlockFoldState, RebuildTick};
+use crate::{EditorScene, EditorSettings, TimelineView};
+
+pub(super) fn plugin(app: &mut App) {
+    app.init_resource::<Dragging>()
+        .add_systems(Update, cancel_on_escape);
+}
 
 /// An edge handle's width.
 pub(crate) const EDGE_HANDLE_PX: f32 = 6.0;
-
-/// Never resized shorter than this.
-const MIN_DURATION: Duration = Duration::from_millis(50);
 
 /// The field an edge handle edits.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Kind {
     /// The left edge: `delay`.
-    Move,
+    Delay,
     /// The right edge: `duration`.
     Resize,
 }
@@ -70,12 +74,10 @@ pub(crate) struct BoxPath(pub(crate) Vec<usize>);
 #[derive(Component, Clone)]
 pub(crate) struct GapPath(pub(crate) Vec<usize>);
 
-/// The path and edge a handle drags.
+/// The path a [`TimelineLink`](moxie_ui::elements::TimelineLink) was
+/// built for.
 #[derive(Component, Clone)]
-pub(crate) struct EdgePath {
-    pub(crate) path: Vec<usize>,
-    pub(crate) kind: Kind,
-}
+pub(crate) struct LinkPath(pub(crate) Vec<usize>);
 
 /// Makes `handle` an edge: dragging it edits `path`'s `delay`
 /// (`Kind::Move`) or `duration` (`Kind::Resize`).
@@ -86,14 +88,20 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
 ) -> &'r mut ElementMut<'u, 'a, FynixHost, E> {
     handle
         .insert(EntityCursor::System(SystemCursorIcon::EwResize))
-        .insert(EdgePath {
-            path: path.clone(),
-            kind,
+        .observe(|mut press: On<Pointer<Press>>| {
+            press.propagate(false);
+        })
+        .observe(|mut release: On<Pointer<Release>>| {
+            release.propagate(false);
+        })
+        .observe(|mut click: On<Pointer<Click>>| {
+            click.propagate(false);
         })
         .observe(
-            move |start: On<Pointer<DragStart>>,
+            move |mut start: On<Pointer<DragStart>>,
                   editor_scene: Res<EditorScene>,
                   mut dragging: ResMut<Dragging>| {
+                start.propagate(false);
                 if start.button != PointerButton::Primary {
                     return;
                 }
@@ -112,33 +120,40 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
             },
         )
         .observe(
-            move |drag: On<Pointer<Drag>>,
+            move |mut drag: On<Pointer<Drag>>,
                   scale: Res<UiScale>,
                   mut dragging: ResMut<Dragging>,
                   editor_scene: Res<EditorScene>,
                   folded: Res<BlockFoldState>,
                   view: Res<TimelineView>,
+                  settings: Res<EditorSettings>,
                   boxes: Query<(&BoxPath, &mut Node)>,
                   gaps: Query<
                 (&GapPath, &mut Node),
                 Without<BoxPath>,
             >,
-                  edges: Query<
-                (&EdgePath, &mut Node),
+                  links: Query<
+                (&LinkPath, &mut Node),
                 (Without<BoxPath>, Without<GapPath>),
             >| {
+                drag.propagate(false);
                 let Some(gesture) = &mut dragging.0 else {
                     return;
                 };
-                let dx_secs =
-                    view.secs_from_dx(drag.distance.x / scale.0);
+                let step = settings.min_duration().as_secs_f32();
+                let dx_secs = (view
+                    .secs_from_dx(drag.distance.x / scale.0)
+                    / step)
+                    .round()
+                    * step;
 
                 gesture.value_secs = match gesture.kind {
-                    Kind::Move => {
+                    Kind::Delay => {
                         (gesture.base_secs + dx_secs).max(0.0)
                     }
-                    Kind::Resize => (gesture.base_secs + dx_secs)
-                        .max(MIN_DURATION.as_secs_f32()),
+                    Kind::Resize => {
+                        (gesture.base_secs + dx_secs).max(step)
+                    }
                 };
 
                 relayout(
@@ -150,14 +165,19 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                     gesture.value_secs,
                     boxes,
                     gaps,
-                    edges,
+                    links,
                 );
             },
         )
         .observe(
-            move |_: On<Pointer<DragEnd>>,
+            move |mut end: On<Pointer<DragEnd>>,
                   mut dragging: ResMut<Dragging>,
+                  mut tick: ResMut<RebuildTick>,
                   mut commands: Commands| {
+                end.propagate(false);
+                // The release can land off the handle, which leaves
+                // its pressed highlight stuck. A rebuild respawns it.
+                tick.bump();
                 let Some(gesture) = dragging.0.take() else {
                     return;
                 };
@@ -177,7 +197,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
 
 /// Drops the drag without committing, re-laying the untouched tree to
 /// undo the preview.
-pub(crate) fn cancel_on_escape(
+fn cancel_on_escape(
     keys: Res<ButtonInput<KeyCode>>,
     mut dragging: ResMut<Dragging>,
     editor_scene: Res<EditorScene>,
@@ -185,8 +205,8 @@ pub(crate) fn cancel_on_escape(
     view: Res<TimelineView>,
     boxes: Query<(&BoxPath, &mut Node)>,
     gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
-    edges: Query<
-        (&EdgePath, &mut Node),
+    links: Query<
+        (&LinkPath, &mut Node),
         (Without<BoxPath>, Without<GapPath>),
     >,
 ) {
@@ -205,7 +225,7 @@ pub(crate) fn cancel_on_escape(
         gesture.base_secs,
         boxes,
         gaps,
-        edges,
+        links,
     );
 }
 
@@ -220,8 +240,8 @@ fn relayout(
     secs: f32,
     boxes: Query<(&BoxPath, &mut Node)>,
     gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
-    edges: Query<
-        (&EdgePath, &mut Node),
+    links: Query<
+        (&LinkPath, &mut Node),
         (Without<BoxPath>, Without<GapPath>),
     >,
 ) {
@@ -233,17 +253,17 @@ fn relayout(
 
     let layout =
         block_layout::layout(&animation, view, folded.paths());
-    apply_layout(&layout, boxes, gaps, edges);
+    apply_layout(&layout, boxes, gaps, links);
 }
 
-/// Pushes `layout` onto the spawned box, gap and handle entities by
+/// Pushes `layout` onto the spawned box, gap and link entities by
 /// path.
 fn apply_layout(
     layout: &[Placed],
     mut boxes: Query<(&BoxPath, &mut Node)>,
     mut gaps: Query<(&GapPath, &mut Node), Without<BoxPath>>,
-    mut edges: Query<
-        (&EdgePath, &mut Node),
+    mut links: Query<
+        (&LinkPath, &mut Node),
         (Without<BoxPath>, Without<GapPath>),
     >,
 ) {
@@ -253,42 +273,43 @@ fn apply_layout(
         else {
             continue;
         };
-        node.left = px(placed.x);
-        node.top = px(placed.y);
-        node.width = px(placed.w);
+        node.left = placed.left();
+        node.top = placed.top();
+        node.width = placed.width();
         node.height = px(placed.h);
     }
 
+    // A gap the drag has since closed collapses to nothing rather
+    // than show a stale width. One the drag opens where none existed
+    // waits for the next real rebuild.
     for (gap_path, mut node) in &mut gaps {
         let Some(placed) =
             layout.iter().find(|p| p.path == gap_path.0)
         else {
             continue;
         };
-        // A gap the drag has since closed collapses to nothing
-        // rather than show a stale width. One the drag opens where
-        // none existed waits for the next real rebuild.
-        let width = placed.gap_x.map_or(0.0, |gap_x| {
-            node.left = px(gap_x);
-            node.top = px(placed.y);
-            node.height = px(placed.h);
-            placed.x - gap_x
-        });
-        node.width = px(width);
+        node.left = placed.gap_left();
+        node.top = placed.top();
+        node.width = placed.gap_width();
+        node.height = px(placed.h);
     }
 
-    for (edge, mut node) in &mut edges {
-        let Some(placed) =
-            layout.iter().find(|p| p.path == edge.path)
-        else {
+    // A link the drag has since dropped hides. One it newly creates
+    // waits for the next real rebuild, like a gap.
+    for (link_path, mut node) in &mut links {
+        let rect = layout
+            .iter()
+            .find(|p| p.path == link_path.0)
+            .and_then(Placed::link_rect);
+        let Some([left, top, width, height]) = rect else {
+            node.display = Display::None;
             continue;
         };
-        node.top = px(placed.y);
-        node.height = px(placed.h);
-        node.left = px(match edge.kind {
-            Kind::Move => placed.x,
-            Kind::Resize => placed.x + placed.w - EDGE_HANDLE_PX,
-        });
+        node.display = Display::Flex;
+        node.left = left;
+        node.top = top;
+        node.width = width;
+        node.height = height;
     }
 }
 
@@ -301,7 +322,7 @@ fn base_seconds(
 ) -> Option<f32> {
     let node = node_at(&editor_scene.scene().0.animation, path)?;
     match kind {
-        Kind::Move => Some(delay_secs(node)),
+        Kind::Delay => Some(delay_secs(node)),
         Kind::Resize => duration_secs(node),
     }
 }
@@ -346,7 +367,7 @@ fn commit(world: &mut World, path: &[usize], kind: Kind, secs: f32) {
 /// `kind`'s edit, applied in place to whichever field it names.
 fn apply_edit(node: &mut SceneNode<Backend>, kind: Kind, secs: f32) {
     match kind {
-        Kind::Move => {
+        Kind::Delay => {
             let delay = match node {
                 SceneNode::Block { delay, .. }
                 | SceneNode::Action { delay, .. }

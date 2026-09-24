@@ -1,6 +1,8 @@
 //! [`Inspect`] impls for the primitive types the inspector edits out
 //! of the box.
 
+use core::time::Duration;
+
 use bevy::feathers::controls::{NumberFormat, NumberInputValue};
 use bevy::prelude::*;
 use bevy::ui_widgets::ValueChange;
@@ -127,4 +129,5 @@ number_widget! {
     // clamp on the way back - `as` alone would wrap or truncate.
     u32 => I64, I64, i64, |value: i64| value.clamp(0, u32::MAX as i64) as u32, |value| value as i64;
     u64 => I64, I64, i64, |value: i64| value.max(0) as u64, |value| value as i64;
+    Duration => F32, F32, f32, |secs: f32| Duration::from_secs_f32(secs.max(0.0)), |value: Duration| value.as_secs_f32();
 }

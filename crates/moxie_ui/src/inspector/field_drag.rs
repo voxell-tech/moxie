@@ -12,15 +12,16 @@ use bevy::prelude::*;
 use bevy::ui::UiScale;
 use bevy::window::SystemCursorIcon;
 
-use bevy_fynix::{BevyFynix, WorldEntityMut};
+use crate::reactive::BevyFynix;
+use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 
 use super::Field;
+use crate::cursor::PointerEventExt as _;
 use crate::drag::{follow, ghost};
 use crate::elements::{Frame, FrameCursor, Label};
 use crate::reactive::{BevyUi, FynixHost, value_changed};
-use crate::theme::EditorTheme;
 
 /// The host's answer to "can this field be animated?", set from the
 /// editor's scene registry. `None` (the default) leaves every field
@@ -160,14 +161,14 @@ pub(crate) fn draggable_field(
     elem.insert(EntityCursor::System(SystemCursorIcon::Grab))
         .observe(
             move |start: On<Pointer<DragStart>>,
-                  kernel: Res<BevyFynix<EditorTheme>>,
+                  kernel: Res<BevyFynix>,
                   scale: Res<UiScale>,
                   mut dragged: ResMut<DraggedField>,
                   mut commands: Commands| {
                 if start.button != PointerButton::Primary {
                     return;
                 }
-                let at = start.pointer_location.position / scale.0;
+                let at = start.logical(&scale);
 
                 dragged.field = Some(field.clone());
                 dragged.ghost = Some(
@@ -192,10 +193,7 @@ pub(crate) fn draggable_field(
                 let Ok(mut node) = nodes.get_mut(ghost) else {
                     return;
                 };
-                follow(
-                    &mut node,
-                    drag.pointer_location.position / scale.0,
-                );
+                follow(&mut node, drag.logical(&scale));
             },
         )
         .observe(

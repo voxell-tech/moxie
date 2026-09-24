@@ -48,6 +48,10 @@ pub fn ghost(
     )
 }
 
+/// Tag on a node being dragged.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Dragged;
+
 /// Moves a [`ghost`]'s node to `cursor`, in logical screen space.
 pub fn follow(node: &mut Node, cursor: Vec2) {
     node.left = px(cursor.x + GHOST_OFFSET.x);

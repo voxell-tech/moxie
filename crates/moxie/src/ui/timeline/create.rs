@@ -5,29 +5,29 @@
 //! generic field drag ([`DraggedField`]). This module is the timeline
 //! half: the landing preview while a field is held over the track, and
 //! on release splicing a fresh [`SceneNode::Action`] into the tree.
-//! Drop resolution (merge / chain / plain insert) and the landing
-//! hints are shared with [`reorder`].
+//! Drop resolution (merge / chain / plain insert) and the drop hint
+//! are shared with [`reorder`].
 
 use core::time::Duration;
 use std::collections::BTreeSet;
 
 use bevy::picking::events::{DragDrop, Pointer};
-use bevy::picking::pointer::PointerLocation;
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
-use bevy_fynix::BevyFynix;
 use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
 use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
 use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
 use motiongfx_scene::refs::FieldRef;
 use motiongfx_scene::scene::{FieldSeed, Subject};
+use moxie_ui::cursor::{Cursor, PointerEventExt as _};
 use moxie_ui::inspector::{DraggedField, Field};
 use moxie_ui::layout::logical_rect;
-use moxie_ui::theme::EditorTheme;
+use moxie_ui::reactive::{BevyFynix, FynixSet};
 
+use super::block_layout;
+use super::hint::HintNode;
 use super::reorder::{self, Target};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
-use crate::block_layout;
 use crate::ui::inspector::field_ref_of;
 use crate::{EditorScene, SelectedAction, TimelineView};
 
@@ -39,118 +39,87 @@ const DEFAULT_DURATION: Duration = Duration::from_secs(1);
 /// against the node being moved - a fresh node is under nothing.
 const NO_NODE: &[usize] = &[usize::MAX];
 
-/// The pointer in logical screen space, if it has a location.
-fn cursor(
-    pointers: &Query<&PointerLocation>,
-    scale: &UiScale,
-) -> Option<Vec2> {
-    pointers
-        .iter()
-        .find_map(|pointer| pointer.location())
-        .map(|location| location.position / scale.0)
+pub(super) fn plugin(app: &mut App) {
+    app.add_systems(Update, preview.after(FynixSet))
+        .add_observer(on_drop);
 }
 
 /// Each frame a field is held: resolve where a release would land and
 /// draw the same hints `reorder` uses.
-pub(super) fn preview(
-    kernel: Res<BevyFynix<EditorTheme>>,
-    scale: Res<UiScale>,
+fn preview(
+    kernel: Res<BevyFynix>,
+    pointer: Cursor,
+    hint: HintNode,
     dragged: Res<DraggedField>,
     editor_scene: Res<EditorScene>,
     folded: Res<BlockFoldState>,
-    visuals: Option<Res<reorder::Visuals>>,
     view: Res<TimelineView>,
-    pointers: Query<&PointerLocation>,
     q_viewport: Query<
         (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
         With<TrackViewport>,
     >,
-    q_area: Query<(&ComputedNode, &UiGlobalTransform)>,
-    mut nodes: Query<&mut Node>,
-    mut backgrounds: Query<&mut BackgroundColor>,
-    mut borders: Query<&mut BorderColor>,
     mut was_dragging: Local<bool>,
+    mut commands: Commands,
 ) {
-    let Some(visuals) = visuals else {
-        return;
-    };
-    let clear = |nodes: &mut Query<&mut Node>| {
-        reorder::hide_landing(nodes, &visuals);
-    };
-
     if dragged.field.is_none() {
         // Gated on the edge: this branch runs on every frame nothing
-        // is field-dragged, and `reorder` shares this `Visuals` for
-        // its own hint.
+        // is field-dragged, and `reorder` shares this hint for its
+        // own.
         if *was_dragging {
             // The drag may have ended without a `DragDrop` over the
             // track (e.g. released elsewhere) - `on_drop` never ran
             // to hide the hint this hovering left showing.
-            clear(&mut nodes);
+            hint.hide(&mut commands);
         }
         *was_dragging = false;
         return;
     }
     *was_dragging = true;
-    let (Some(cursor), Ok((vp_node, vp_transform, scroll))) =
-        (cursor(&pointers, &scale), q_viewport.single())
+    let (
+        Some(cursor),
+        Ok((viewport_node, viewport_transform, scroll)),
+    ) = (pointer.position(), q_viewport.single())
     else {
-        clear(&mut nodes);
+        hint.hide(&mut commands);
         return;
     };
-    let Ok((area_node, area_transform)) = q_area.get(visuals.area())
-    else {
-        return;
-    };
-    let vp_rect = logical_rect(vp_node, vp_transform);
-    if !vp_rect.contains(cursor) {
-        clear(&mut nodes);
+    let viewport_rect =
+        logical_rect(viewport_node, viewport_transform);
+    if !viewport_rect.contains(cursor) {
+        hint.hide(&mut commands);
         return;
     }
 
     let content = Vec2::new(
-        cursor.x - vp_rect.min.x,
-        cursor.y - vp_rect.min.y + scroll.y,
+        cursor.x - viewport_rect.min.x,
+        cursor.y - viewport_rect.min.y + scroll.y,
     );
     let root = &editor_scene.scene().0.animation;
     let layout = block_layout::layout(root, *view, folded.paths());
     let target = reorder::resolve(content, &layout, root, NO_NODE);
 
-    let area_rect = logical_rect(area_node, area_transform);
-    let to_area = Vec2::new(
-        vp_rect.min.x - area_rect.min.x,
-        vp_rect.min.y - scroll.y - area_rect.min.y,
-    );
-    reorder::show_landing(
-        &mut nodes,
-        &mut backgrounds,
-        &mut borders,
-        &visuals,
+    reorder::announce_hint(
+        &mut commands,
+        &hint,
         kernel.theme(),
         target.as_ref(),
         &layout,
         root,
-        to_area,
     );
 }
 
 /// On release over the track: build the action and splice it in.
-///
-/// Global, like [`reorder::on_drag_end`]: `Pointer<DragDrop>` fires on
-/// whatever is under the cursor, and a child button would stop it
-/// propagating from a per-entity observer.
-pub(super) fn on_drop(
+fn on_drop(
     drop: On<Pointer<DragDrop>>,
+    hint: HintNode,
     scale: Res<UiScale>,
     view: Res<TimelineView>,
     folded: Res<BlockFoldState>,
-    visuals: Option<Res<reorder::Visuals>>,
     mut dragged: ResMut<DraggedField>,
     q_viewport: Query<
         (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
         With<TrackViewport>,
     >,
-    mut nodes: Query<&mut Node>,
     mut commands: Commands,
 ) {
     // DragEnd still runs and despawns the tag; taking it here stops a
@@ -158,22 +127,22 @@ pub(super) fn on_drop(
     let Some(field) = dragged.field.take() else {
         return;
     };
-    if let Some(visuals) = &visuals {
-        reorder::hide_landing(&mut nodes, visuals);
-    }
-    let cursor = drop.pointer_location.position / scale.0;
-    let Ok((vp_node, vp_transform, scroll)) = q_viewport.single()
+    hint.hide(&mut commands);
+    let cursor = drop.logical(&scale);
+    let Ok((viewport_node, viewport_transform, scroll)) =
+        q_viewport.single()
     else {
         return;
     };
-    let vp_rect = logical_rect(vp_node, vp_transform);
-    if !vp_rect.contains(cursor) {
+    let viewport_rect =
+        logical_rect(viewport_node, viewport_transform);
+    if !viewport_rect.contains(cursor) {
         return;
     }
 
     let content = Vec2::new(
-        cursor.x - vp_rect.min.x,
-        cursor.y - vp_rect.min.y + scroll.y,
+        cursor.x - viewport_rect.min.x,
+        cursor.y - viewport_rect.min.y + scroll.y,
     );
     let view = *view;
     let folded = folded.paths().clone();
@@ -292,9 +261,7 @@ fn create(
     {
         selected.0 = Some(path);
     }
-    if let Some(mut tick) = world.get_resource_mut::<RebuildTick>() {
-        tick.0 = tick.0.wrapping_add(1);
-    }
+    RebuildTick::bump_in(world);
 }
 
 /// Stages `field` on `subject` at `value`, unless it already is -

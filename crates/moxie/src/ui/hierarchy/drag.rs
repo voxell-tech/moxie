@@ -12,14 +12,15 @@ use bevy::picking::events::{
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::{UiGlobalTransform, UiScale};
-use bevy_fynix::{BevyFynix, WorldEntityMut};
+use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::id::EntityUid;
 use fynix::prelude::*;
+use moxie_ui::cursor::PointerEventExt as _;
 use moxie_ui::drag::{follow, ghost};
 use moxie_ui::elements::Button;
 use moxie_ui::layout::logical_rect;
+use moxie_ui::reactive::BevyFynix;
 use moxie_ui::reactive::FynixHost;
-use moxie_ui::theme::EditorTheme;
 
 /// How much of a row's height, at each end, aims beside it rather than
 /// into it. The middle half is the drop-inside band.
@@ -85,7 +86,7 @@ pub(super) fn rows<'r, 'u, 'a>(
                     return;
                 };
                 let rect = logical_rect(computed, transform);
-                let cursor = over.pointer_location.position / scale.0;
+                let cursor = over.logical(&scale);
                 let frac = (cursor.y - rect.min.y) / rect.height();
 
                 let at = if frac < EDGE {
@@ -133,7 +134,7 @@ pub(super) fn rows<'r, 'u, 'a>(
             move |start: On<Pointer<DragStart>>,
                   names: Query<&Name>,
                   uids: Query<&EntityUid>,
-                  kernel: Res<BevyFynix<EditorTheme>>,
+                  kernel: Res<BevyFynix>,
                   scale: Res<UiScale>,
                   mut dragging: ResMut<Dragging>,
                   mut commands: Commands| {
@@ -145,7 +146,7 @@ pub(super) fn rows<'r, 'u, 'a>(
                     names.get(subject).ok(),
                     uids.get(subject).ok(),
                 );
-                let at = start.pointer_location.position / scale.0;
+                let at = start.logical(&scale);
 
                 dragging.subject = Some(subject);
                 dragging.ghost = Some(
@@ -166,10 +167,7 @@ pub(super) fn rows<'r, 'u, 'a>(
                 let Ok(mut node) = nodes.get_mut(ghost) else {
                     return;
                 };
-                follow(
-                    &mut node,
-                    drag.pointer_location.position / scale.0,
-                );
+                follow(&mut node, drag.logical(&scale));
             },
         )
         .observe(

@@ -7,6 +7,7 @@ use bevy_fynix::tag::Hovered;
 use fynix::element::element;
 
 use super::patch::*;
+use crate::drag::Dragged;
 
 /// A theme-inheriting text label.
 #[element(build = Self::build)]
@@ -19,12 +20,15 @@ pub struct Label {
     #[elem(default = ::NONE, patch = PatchTextColor, anim(
         duration = theme.motion.interact,
         ease = theme.motion.ease,
+        on(Dragged, read = Self::dragged),
         on(Hovered, read = Self::lit),
     ))]
     pub color: Color,
     /// What `color` travels to while hovered; `None` rests. Element
     /// state: nothing draws it, only the anim line reads it.
     pub hover_color: Option<Color>,
+    /// What `color` travels to while dragged; `None` rests.
+    pub dragged_color: Option<Color>,
     #[elem(patch = PatchBold)]
     pub bold: bool,
     #[elem(default = true, patch = PatchWrap)]
@@ -59,6 +63,13 @@ impl Label {
     /// set, otherwise its own resting colour, so nothing moves.
     fn lit(&self) -> &Color {
         match &self.hover_color {
+            Some(color) => color,
+            None => &self.color,
+        }
+    }
+
+    fn dragged(&self) -> &Color {
+        match &self.dragged_color {
             Some(color) => color,
             None => &self.color,
         }

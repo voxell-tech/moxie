@@ -4,6 +4,7 @@ use bevy_fynix::WorldEntityMut as _;
 use fynix::element::element;
 
 use super::patch::*;
+use crate::drag::Dragged;
 
 /// A block's header box: an absolutely positioned, bordered
 /// container. Every `Node::Block` in a scene's animation tree gets
@@ -19,10 +20,24 @@ pub struct TimelineBlock {
     pub width: Val,
     #[elem(patch = PatchHeight)]
     pub height: Val,
-    #[elem(default = Color::NONE, patch = PatchBackground)]
+    #[elem(default = theme.color.text.with_alpha(0.03), patch = PatchBackground, anim(
+        duration = theme.motion.interact,
+        ease = theme.motion.ease,
+        on(Dragged, read = dragged_background),
+    ))]
     pub background: Color,
-    #[elem(default = Color::NONE, patch = PatchBorderColor)]
+    /// What `background` travels to while dragged.
+    #[elem(ignore, default = theme.color.text.with_alpha(0.03))]
+    pub dragged_background: Color,
+    #[elem(default = theme.color.text.with_alpha(0.5), patch = PatchBorderColor, anim(
+        duration = theme.motion.interact,
+        ease = theme.motion.ease,
+        on(Dragged, read = dragged_border),
+    ))]
     pub border: Color,
+    /// What `border` travels to while dragged.
+    #[elem(ignore, default = theme.color.text.with_alpha(0.2))]
+    pub dragged_border: Color,
     #[elem(patch = PatchSelected)]
     pub selected: bool,
 }

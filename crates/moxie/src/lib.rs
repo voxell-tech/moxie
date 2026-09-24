@@ -5,15 +5,12 @@
     reason = "Inherent to Bevy ECS: systems take many params and query tuples."
 )]
 
-mod block_layout;
 mod icons;
 mod playback;
 mod project;
 mod scene;
-mod time_axis;
 mod ui;
 mod view;
-mod zoom;
 
 use core::time::Duration;
 use std::path::PathBuf;
@@ -97,6 +94,12 @@ impl Default for TimelineView {
 }
 
 impl TimelineView {
+    /// One pixel per second, unpanned.
+    pub(crate) const UNIT: Self = Self {
+        px_per_second: 1.0,
+        offset: Duration::ZERO,
+    };
+
     /// Horizontal pixel offset for a point `t` into the timeline.
     #[inline]
     pub(crate) fn x_from_time(&self, t: Duration) -> f32 {
@@ -214,6 +217,8 @@ pub(crate) struct ProjectPath(pub(crate) Option<PathBuf>);
 pub struct EditorSettings {
     hdr: bool,
     physical_size: UVec2,
+    /// The shortest an action runs, and the step retiming moves in.
+    min_duration: Duration,
 }
 
 impl Default for EditorSettings {
@@ -223,6 +228,13 @@ impl Default for EditorSettings {
             // Portrait 9:16 to match the current compositions; the
             // offscreen preview renders at this resolution.
             physical_size: UVec2::new(1920, 1080),
+            min_duration: Duration::from_millis(10),
         }
+    }
+}
+
+impl EditorSettings {
+    pub(crate) fn min_duration(&self) -> Duration {
+        self.min_duration.max(Duration::from_millis(1))
     }
 }

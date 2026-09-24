@@ -129,10 +129,25 @@ mod tests {
         assert_eq!(label(1_000, step), "1.0");
     }
 
-    /// Ticks should cover the visible range and labels should be evenly spaced.
+    /// Ticks cover the visible range, panned or not, and labels are
+    /// evenly spaced.
     #[test]
     fn marks_span_the_range_and_label_every_nth() {
         for (scale, _) in SCALES {
+            // Two screens in, so the pan bites at every scale rather
+            // than washing out against the clamp at the coarse end.
+            let panned =
+                ticks(&view(scale, 2.0 * 800.0 / scale), 800.0);
+            assert!(!panned.is_empty(), "no panned marks at {scale}");
+            assert!(
+                panned.first().unwrap().x <= 0.0,
+                "scale {scale} starts inside the panned view"
+            );
+            assert!(
+                panned.last().unwrap().x >= 800.0,
+                "scale {scale} stops short when panned"
+            );
+
             let marks = ticks(&view(scale, 0.0), 800.0);
             assert!(!marks.is_empty(), "no marks at {scale}");
 
@@ -167,28 +182,6 @@ mod tests {
                     "scale {scale} labels are uneven: {labelled:?}"
                 );
             }
-        }
-    }
-
-    /// A panned view is covered edge to edge, same as an unpanned one.
-    #[test]
-    fn marks_cover_a_panned_view() {
-        let width = 800.0;
-        for (scale, _) in SCALES {
-            // Two screens in, so the pan bites at every scale rather
-            // than washing out against the clamp at the coarse end.
-            let offset_secs = 2.0 * width / scale;
-            let marks = ticks(&view(scale, offset_secs), width);
-            assert!(!marks.is_empty(), "no marks at {scale}");
-
-            assert!(
-                marks.first().unwrap().x <= 0.0,
-                "scale {scale} starts inside the view"
-            );
-            assert!(
-                marks.last().unwrap().x >= width,
-                "scale {scale} stops short"
-            );
         }
     }
 }
