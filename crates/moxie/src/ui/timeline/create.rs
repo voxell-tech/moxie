@@ -108,10 +108,6 @@ fn preview(
 }
 
 /// On release over the track: build the action and splice it in.
-///
-/// Global, like [`reorder::on_drag_end`]: `Pointer<DragDrop>` fires on
-/// whatever is under the cursor, and a child button would stop it
-/// propagating from a per-entity observer.
 fn on_drop(
     drop: On<Pointer<DragDrop>>,
     scale: Res<UiScale>,
