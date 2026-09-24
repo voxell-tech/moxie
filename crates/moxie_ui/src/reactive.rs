@@ -1,29 +1,18 @@
 //! The signals a build or a binding fires on.
-//!
-//! The kernel itself is [`bevy_fynix`]; what lives here is the
-//! predicates the editor asks it to watch, none of which know
-//! anything about the kernel: each is a
-//! `FnMut(WorldNodeRef<FynixHost>) -> bool` that answers "has this changed
-//! since I last looked".
 
 use bevy::ecs::change_detection::{ComponentTicks, Tick};
 use bevy::prelude::*;
 use fynix::prelude::*;
 
-// `watch_root` stays generic over `Theme`, same as `bevy_fynix`
-// itself: `build`'s own type already fixes `Theme` to `EditorTheme`
-// for the compiler to infer.
 pub use bevy_fynix::{FynixSet, watch_root};
 
 use crate::theme::EditorTheme;
 
-/// Fixes [`bevy_fynix::host::BevyHost`]'s theme to [`EditorTheme`].
 pub type FynixHost = bevy_fynix::host::BevyHost<EditorTheme>;
-/// [`fynix::ui::Build`] against [`FynixHost`], for an element's own
-/// `fn build`.
 pub type FynixBuild<'a, E> = fynix::ui::Build<'a, FynixHost, E>;
 pub type BevyUi<'a> = bevy_fynix::BevyUi<'a, EditorTheme>;
 pub type FynixPlugin = bevy_fynix::FynixPlugin<EditorTheme>;
+pub type BevyFynix = bevy_fynix::BevyFynix<EditorTheme>;
 
 /// Fires when `R` changed since the last poll. Also fires on the first
 /// poll, so a binding starts out in sync with the world.

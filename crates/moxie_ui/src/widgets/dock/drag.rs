@@ -4,7 +4,6 @@
 use bevy::feathers::cursor::OverrideCursor;
 use bevy::prelude::*;
 use bevy::ui::{UiGlobalTransform, UiScale};
-use bevy_fynix::BevyFynix;
 
 use super::area::DockArea;
 use super::reconcile::NodeBinding;
@@ -13,7 +12,7 @@ use super::tabs::DockTabRow;
 use super::tree::{DockTree, Edge as TreeEdge, TabId};
 use crate::drag::{grab, ungrab};
 use crate::layout::logical_rect;
-use crate::theme::EditorTheme;
+use crate::reactive::BevyFynix;
 
 pub struct DockDragPlugin;
 
@@ -124,7 +123,7 @@ fn on_drag_move(
     parent_query: Query<&ChildOf>,
     ui_scale: Res<UiScale>,
     mut override_cursor: ResMut<OverrideCursor>,
-    kernel: Res<BevyFynix<EditorTheme>>,
+    kernel: Res<BevyFynix>,
 ) {
     // The accent, at low alpha, so the panel underneath still reads
     // through it.

@@ -15,7 +15,7 @@ use bevy::picking::events::{DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::{PointerButton, PointerLocation};
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
-use bevy_fynix::{BevyFynix, WorldEntityMut};
+use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::asset::MotionGfxScene;
 use bevy_motiongfx::scene::backend::Backend;
 use bevy_motiongfx::scene::id::SceneUid;
@@ -25,6 +25,7 @@ use motiongfx_scene::block::{Block, Combinator, Node as SceneNode};
 use motiongfx_scene::refs::FieldRef;
 use moxie_ui::drag::{grab, ungrab};
 use moxie_ui::layout::logical_rect;
+use moxie_ui::reactive::BevyFynix;
 use moxie_ui::reactive::FynixHost;
 use moxie_ui::theme::EditorTheme;
 
@@ -167,7 +168,7 @@ fn cursor(
 /// Each frame of a drag: lays the tree out, offsets the dragged
 /// subtree to the cursor, and marks where a release would land.
 pub(crate) fn preview(
-    kernel: Res<BevyFynix<EditorTheme>>,
+    kernel: Res<BevyFynix>,
     scale: Res<UiScale>,
     editor_scene: Res<EditorScene>,
     folded: Res<BlockFoldState>,

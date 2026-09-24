@@ -12,14 +12,14 @@ use bevy::picking::events::{
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::{UiGlobalTransform, UiScale};
-use bevy_fynix::{BevyFynix, WorldEntityMut};
+use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::id::EntityUid;
 use fynix::prelude::*;
 use moxie_ui::drag::{follow, ghost};
 use moxie_ui::elements::Button;
 use moxie_ui::layout::logical_rect;
+use moxie_ui::reactive::BevyFynix;
 use moxie_ui::reactive::FynixHost;
-use moxie_ui::theme::EditorTheme;
 
 /// How much of a row's height, at each end, aims beside it rather than
 /// into it. The middle half is the drop-inside band.
@@ -133,7 +133,7 @@ pub(super) fn rows<'r, 'u, 'a>(
             move |start: On<Pointer<DragStart>>,
                   names: Query<&Name>,
                   uids: Query<&EntityUid>,
-                  kernel: Res<BevyFynix<EditorTheme>>,
+                  kernel: Res<BevyFynix>,
                   scale: Res<UiScale>,
                   mut dragging: ResMut<Dragging>,
                   mut commands: Commands| {

@@ -14,13 +14,13 @@ use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::UiScale;
 
-use bevy_fynix::{BevyFynix, WorldEntityMut};
+use bevy_fynix::WorldEntityMut;
+use crate::reactive::BevyFynix;
 use fynix::element::Element;
 use fynix::ui::ElementMut;
 
 use crate::drag::{follow, ghost};
 use crate::reactive::FynixHost;
-use crate::theme::EditorTheme;
 
 /// The file being dragged, its kind, and what is following the cursor
 /// meanwhile. Empty whenever nothing is being dragged.
@@ -41,7 +41,7 @@ pub fn draggable<'r, 'u, 'a, E: Element<FynixHost>>(
 ) -> &'r mut ElementMut<'u, 'a, FynixHost, E> {
     elem.observe(
         move |start: On<Pointer<DragStart>>,
-              kernel: Res<BevyFynix<EditorTheme>>,
+              kernel: Res<BevyFynix>,
               scale: Res<UiScale>,
               mut dragging: ResMut<AssetDragging>,
               mut commands: Commands| {

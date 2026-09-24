@@ -15,7 +15,6 @@ use bevy::picking::events::{DragDrop, Pointer};
 use bevy::picking::pointer::PointerLocation;
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
-use bevy_fynix::BevyFynix;
 use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
 use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
 use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
@@ -23,7 +22,7 @@ use motiongfx_scene::refs::FieldRef;
 use motiongfx_scene::scene::{FieldSeed, Subject};
 use moxie_ui::inspector::{DraggedField, Field};
 use moxie_ui::layout::logical_rect;
-use moxie_ui::theme::EditorTheme;
+use moxie_ui::reactive::BevyFynix;
 
 use super::reorder::{self, Target};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
@@ -53,7 +52,7 @@ fn cursor(
 /// Each frame a field is held: resolve where a release would land and
 /// draw the same hints `reorder` uses.
 pub(super) fn preview(
-    kernel: Res<BevyFynix<EditorTheme>>,
+    kernel: Res<BevyFynix>,
     scale: Res<UiScale>,
     dragged: Res<DraggedField>,
     editor_scene: Res<EditorScene>,
