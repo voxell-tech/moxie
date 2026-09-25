@@ -3,6 +3,7 @@
 use crate::reactive::FynixBuild;
 use bevy::feathers::cursor::EntityCursor;
 use bevy::prelude::*;
+use bevy::ui_widgets::ScrollArea as ScrollAreaBehavior;
 use bevy::window::SystemCursorIcon;
 use bevy_fynix::WorldEntityMut as _;
 use fynix::element::element;
@@ -50,6 +51,7 @@ impl TabRow {
     fn build(&self, build: &mut FynixBuild<'_, Self>) {
         build.insert((
             DockTabRow,
+            ScrollAreaBehavior,
             Node {
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
@@ -173,6 +175,26 @@ mod tests {
     use super::*;
     use crate::reactive::FynixHost;
     use crate::theme::EditorTheme;
+
+    #[test]
+    fn tab_row_enables_horizontal_scroll_input() {
+        let mut world = World::new();
+        let theme = EditorTheme::default();
+        let mut store = fynix::store::Store::<FynixHost>::new();
+        let node = world.spawn_empty().id();
+
+        TabRow.build(&mut FynixBuild::new(
+            &mut world, node, &mut store, &theme,
+        ));
+
+        assert!(world.get::<DockTabRow>(node).is_some());
+        assert!(world.get::<ScrollAreaBehavior>(node).is_some());
+        assert!(world.get::<ScrollPosition>(node).is_some());
+        let layout = world.get::<Node>(node).unwrap();
+        assert_eq!(layout.overflow, Overflow::scroll_x());
+        assert_eq!(layout.min_width, px(0));
+        assert_eq!(layout.flex_shrink, 1.0);
+    }
 
     /// An active tab whose fill is [`Color::NONE`] still picks up a
     /// later non-transparent fill: [`PatchTabFill`] reads [`TabActive`],
