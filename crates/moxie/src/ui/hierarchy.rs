@@ -35,7 +35,7 @@ use moxie_ui::reactive::{
 };
 use moxie_ui::widgets::tooltip::TooltipExt as _;
 
-use crate::{SceneRoot, SelectedEntity, presets};
+use crate::{SceneRoot, SelectedEntity, presets, subject};
 
 /// The [`tail`]'s least height: room below the last row for the
 /// floating button, and a drop target even when the list is full.
@@ -646,14 +646,7 @@ pub(crate) fn placeholder_name(
     }
 
     match uid {
-        Some(uid) => uid_head(*uid),
+        Some(uid) => subject::uid_head(*uid),
         None => "?".to_string(),
     }
-}
-
-/// How much of an id a row shows. A whole uuid is unreadable; the
-/// first characters are enough to tell two subjects apart.
-pub(crate) fn uid_head(uid: EntityUid) -> String {
-    const HEAD: usize = 8;
-    uid.to_string().chars().take(HEAD).collect()
 }

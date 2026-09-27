@@ -15,7 +15,7 @@ use bevy::picking::events::{DragDrop, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
 use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
-use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
+use bevy_motiongfx::scene::id::SceneUid;
 use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
 use motiongfx_scene::refs::FieldRef;
 use motiongfx_scene::scene::{FieldSeed, Subject};
@@ -29,7 +29,7 @@ use super::hint::HintNode;
 use super::reorder::{self, Target};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
 use crate::ui::inspector::field_ref_of;
-use crate::{EditorScene, SelectedAction, TimelineView};
+use crate::{EditorScene, SelectedAction, TimelineView, subject};
 
 /// A dropped field's action runs this long until there is a reason to
 /// make it drag-configurable.
@@ -168,10 +168,7 @@ fn create(
 ) {
     use moxie_ui::inspector::Source;
 
-    let Some(&uid) = field
-        .entity()
-        .and_then(|entity| world.get::<EntityUid>(entity))
-    else {
+    let Some(subject) = subject::of_field(world, field) else {
         return;
     };
     let Some(field_ref) = field_ref_of(world, field) else {
@@ -211,7 +208,7 @@ fn create(
             .stage
             .subjects
             .iter()
-            .find(|s| s.id == SceneUid::Entity(uid))
+            .find(|s| s.id == subject)
             .and_then(|s| {
                 s.fields
                     .iter()
@@ -245,13 +242,13 @@ fn create(
         // already holds.
         seed_field(
             &mut scene.0.stage.subjects,
-            SceneUid::Entity(uid),
+            subject,
             field_ref.clone(),
             seed_id,
         );
 
         let node = SceneNode::action(ActionCmd {
-            subject: SceneUid::Entity(uid),
+            subject,
             field: field_ref,
             op: AnimOp::To,
             value: id,

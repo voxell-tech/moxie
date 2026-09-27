@@ -5,7 +5,7 @@ use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
 use bevy::reflect::PartialReflect;
 use bevy_motiongfx::scene::backend::Backend;
-use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
+use bevy_motiongfx::scene::id::SceneUid;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 use motiongfx_scene::block::{Block, Node};
@@ -20,18 +20,15 @@ use moxie_ui::reactive::{
     resource_changed, structure_changed,
 };
 
-use crate::SelectedEntity;
 use crate::scene::EditorScene;
+use crate::{SelectedEntity, subject};
 
 /// Whether `field` can be animated: it belongs to a scene subject and
 /// its [`FieldRef`] is registered in the scene registry. This is what
 /// makes an inspector row's label a drag source
 /// ([`moxie_ui::inspector::FieldAnimatable`]).
 pub(crate) fn is_animatable(world: &World, field: &Field) -> bool {
-    let subject = field
-        .entity()
-        .and_then(|entity| world.get::<EntityUid>(entity));
-    if subject.is_none() {
+    if subject::of_field(world, field).is_none() {
         return false;
     }
     let Some(field_ref) = field_ref_of(world, field) else {
@@ -46,21 +43,14 @@ pub(crate) fn is_animatable(world: &World, field: &Field) -> bool {
 /// scene - what turns its label's diamond blue instead of neutral
 /// ([`moxie_ui::inspector::FieldHasAction`]).
 pub(crate) fn has_action(world: &World, field: &Field) -> bool {
-    let Some(&uid) = field
-        .entity()
-        .and_then(|entity| world.get::<EntityUid>(entity))
-    else {
+    let Some(subject) = subject::of_field(world, field) else {
         return false;
     };
     let Some(field_ref) = field_ref_of(world, field) else {
         return false;
     };
     world.get_resource::<EditorScene>().is_some_and(|scene| {
-        block_drives(
-            &scene.scene().0.animation,
-            SceneUid::Entity(uid),
-            &field_ref,
-        )
+        block_drives(&scene.scene().0.animation, subject, &field_ref)
     })
 }
 

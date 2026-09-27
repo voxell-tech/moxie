@@ -12,10 +12,9 @@ use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
 use bevy::reflect::PartialReflect;
 use bevy_motiongfx::scene::backend::{AnimEase, AnimInterp, Backend};
-use bevy_motiongfx::scene::id::{SceneUid, SceneUidMap};
 use fynix::composer::Composer;
 use fynix::prelude::*;
-use motiongfx_scene::block::{ActionCmd, Block, Combinator, Node};
+use motiongfx_scene::block::{Block, Combinator, Node};
 use motiongfx_scene::refs::FieldRef;
 use moxie_ui::elements::{
     Frame, Label, ScrollArea, SegmentedControl, display_name,
@@ -25,8 +24,7 @@ use moxie_ui::inspector::{
 };
 use moxie_ui::reactive::{BevyUi, FynixHost, value_changed};
 
-use super::hierarchy;
-use crate::{EditorScene, EditorSettings, SelectedAction};
+use crate::{EditorScene, EditorSettings, SelectedAction, subject};
 
 /// The action panel, as kernel nodes.
 pub(super) struct ActionPanel;
@@ -81,7 +79,7 @@ struct Shape {
     /// Empty when the path no longer lands on a node.
     kind: &'static str,
     /// Set only for an action: a block has none to show.
-    subject: Option<Subject>,
+    subject: Option<subject::Label>,
     /// Set only for a block: which of Chain/All/Flow it is, for the
     /// Type row's picker. An action has none to show.
     combinator: Option<&'static str>,
@@ -90,17 +88,6 @@ struct Shape {
     /// The action's target value. Which widget draws it is the
     /// registry's business.
     value: Option<Pooled>,
-}
-
-/// An action's subject, split so its id can render muted where its
-/// name cannot.
-#[derive(Clone, PartialEq)]
-struct Subject {
-    /// Its [`Name`], if it still has an entity.
-    name: Option<String>,
-    /// The head of its id - a whole uuid is unreadable, but two
-    /// entities sharing a name still need telling apart.
-    head: String,
 }
 
 /// The action's target value, wherever the pool keeps it.
@@ -327,7 +314,7 @@ fn summarize(world: &World, path: &[usize]) -> Option<Shape> {
     Some(Shape {
         path: Some(path.to_vec()),
         kind: "Action",
-        subject: Some(subject_of(world, action)),
+        subject: Some(subject::label(world, action.subject)),
         combinator: None,
         value: Some(Pooled(action.value)),
         rows: vec![
@@ -671,23 +658,6 @@ fn set_seconds(
             *duration = seconds.max(min_duration);
         }
         _ => {}
-    }
-}
-
-/// The action's subject, as its own [`Name`] (if it still has an
-/// entity) and the head of its id.
-fn subject_of(world: &World, action: &ActionCmd<Backend>) -> Subject {
-    let SceneUid::Entity(uid) = action.subject;
-
-    let name = world
-        .get_resource::<SceneUidMap>()
-        .and_then(|map| map.entity(uid))
-        .and_then(|entity| world.get::<Name>(entity))
-        .map(|name| name.as_str().to_string());
-
-    Subject {
-        name,
-        head: hierarchy::uid_head(uid),
     }
 }
 

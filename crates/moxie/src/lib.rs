@@ -12,6 +12,7 @@ mod playback;
 mod presets;
 mod project;
 mod scene;
+mod subject;
 #[cfg(test)]
 mod tests;
 mod thumbnails;
