@@ -21,9 +21,10 @@ pub type CreateAsset = fn(
 ) -> Option<UntypedHandle>;
 
 /// What the editor knows about each asset type, by the asset's own
-/// [`TypeId`]. Filled in through [`AssetTypeAppExt::asset_type`].
+/// [`TypeId`], in the order they were first registered. Filled in
+/// through [`AssetTypeAppExt::asset_type`].
 #[derive(Resource, Default)]
-pub struct AssetTypes(HashMap<TypeId, AssetType>);
+pub struct AssetTypes(Vec<(TypeId, AssetType)>);
 
 /// What the editor knows about one asset type.
 #[derive(Clone, Default)]
@@ -42,20 +43,25 @@ pub struct AssetType {
 
 impl AssetTypes {
     pub fn get(&self, kind: TypeId) -> Option<&AssetType> {
-        self.0.get(&kind)
+        self.0
+            .iter()
+            .find(|(known, _)| *known == kind)
+            .map(|(_, info)| info)
     }
 
-    /// The type `path`'s extension loads as, if any.
+    /// The type `path`'s extension loads as, if any. When two claim it,
+    /// the one registered last.
     pub fn kind_of(&self, path: &Path) -> Option<TypeId> {
         let extension = path.extension()?.to_str()?;
         self.0
             .iter()
+            .rev()
             .find(|(_, info)| {
                 info.extensions.iter().any(|known| {
                     known.eq_ignore_ascii_case(extension)
                 })
             })
-            .map(|(&kind, _)| kind)
+            .map(|(kind, _)| *kind)
     }
 }
 
@@ -69,7 +75,19 @@ impl AssetTypeAppExt for App {
         self.world_mut()
             .get_resource_or_insert_with(AssetTypes::default)
             .map_unchanged(|types| {
-                types.0.entry(TypeId::of::<T>()).or_default()
+                let kind = TypeId::of::<T>();
+                let index = match types
+                    .0
+                    .iter()
+                    .position(|(known, _)| *known == kind)
+                {
+                    Some(index) => index,
+                    None => {
+                        types.0.push((kind, AssetType::default()));
+                        types.0.len() - 1
+                    }
+                };
+                &mut types.0[index].1
             })
     }
 }
@@ -174,5 +192,20 @@ mod tests {
         let kind = Some(TypeId::of::<Image>());
         assert_eq!(types.kind_of(Path::new("a/b.PNG")), kind);
         assert_eq!(types.kind_of(Path::new("a/b.jpg")), None);
+    }
+
+    #[test]
+    fn a_shared_extension_goes_to_the_last_registered() {
+        let mut app = App::new();
+        app.asset_type::<Image>().extensions.push("dat");
+        app.asset_type::<Mesh>().extensions.push("dat");
+        // Filling in the first again doesn't move it.
+        app.asset_type::<Image>().required = true;
+
+        let types = app.world().resource::<AssetTypes>();
+        assert_eq!(
+            types.kind_of(Path::new("a.dat")),
+            Some(TypeId::of::<Mesh>())
+        );
     }
 }
