@@ -22,9 +22,12 @@ use fynix::prelude::*;
 use moxie_asset::{AssetChoices, AssetRef};
 
 use crate::context_menu::at_point;
+use bevy::feathers::cursor::EntityCursor;
+use bevy::window::SystemCursorIcon;
+
 use crate::elements::{
     Frame, FrameCursor, GhostButton, Icon, Label, LabelCursor,
-    MenuSurface, Overlay, ScrollArea, TextField,
+    MenuSurface, Overlay, ScrollArea, TextField, TintButton,
 };
 use crate::icons;
 use crate::inspector::{ClonableSource, when_changed};
@@ -340,6 +343,7 @@ fn header<T: Asset>(
 ) {
     let text = ui.theme.color.text;
     let text_dim = ui.theme.color.text_dim;
+    let critical = ui.theme.color.critical;
     let title = title.to_string();
     let create = ui.world.get_resource::<AssetCreators>().and_then(
         |creators| creators.0.get(&TypeId::of::<T>()).copied(),
@@ -388,7 +392,13 @@ fn header<T: Asset>(
             );
         }
         ui.elem(elem!(
-            !GhostButton,
+            !TintButton {
+                tint: Some(critical)
+            },
+            width = px(14),
+            height = px(14),
+            padding = UiRect::ZERO,
+            radius = px(2),
             icon = elem!(
                 Icon,
                 image = icons::CLOSE,
@@ -547,6 +557,7 @@ fn grid_cell<T: Asset>(
         hover_background = Some(hover)
     ));
     frame
+        .insert(EntityCursor::System(SystemCursorIcon::Pointer))
         .pointer_tags()
         .bind(
             |frame| frame.background(),
