@@ -140,6 +140,22 @@ fn double_click_picks_and_closes() {
 }
 
 #[test]
+fn a_project_saves_only_marked_components() {
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+    // Reflected, but the editor's own business.
+    editor
+        .world()
+        .entity_mut(cube)
+        .insert(bevy::picking::Pickable::default());
+
+    let text = project::serialize(editor.world()).expect("it saves");
+    assert!(text.contains("Transform"), "{text}");
+    assert!(text.contains("Mesh3d"), "{text}");
+    assert!(!text.contains("Pickable"), "{text}");
+}
+
+#[test]
 fn project_keeps_internal_materials() {
     let mut editor = Editor::new();
     let cube = add_cube(&mut editor);

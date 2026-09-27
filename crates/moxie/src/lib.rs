@@ -60,6 +60,7 @@ impl Plugin for MoxiePlugin {
             SettingsPlugin::new("org.voxell.motiongfx.editor"),
             MoxieAssetPlugin,
             presets::plugin,
+            project::plugin,
             ui::UiPlugin,
             thumbnails::plugin,
             catalog::plugin,
