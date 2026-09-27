@@ -2,7 +2,7 @@
 //!
 //! One row, showing whatever asset is currently assigned. Clicking it
 //! opens the [asset picker](crate::asset_picker), and a file dragged
-//! from the assets panel whose registered [`moxie_asset::AssetKinds`]
+//! from the assets panel whose registered [`moxie_asset::AssetTypes`]
 //! kind matches `T` can be dropped on it.
 
 use std::any::TypeId;

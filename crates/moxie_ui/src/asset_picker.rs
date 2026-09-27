@@ -7,9 +7,9 @@
 //! Escape puts back what the field held before it opened.
 
 use core::any::TypeId;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use bevy::asset::{Asset, UntypedAssetId, UntypedHandle};
+use bevy::asset::Asset;
 use bevy::input_focus::InputFocus;
 use bevy::picking::events::{Click, Pointer, Press};
 use bevy::picking::pointer::PointerButton;
@@ -19,7 +19,7 @@ use bevy::ui_widgets::Activate;
 use bevy_fynix::WorldEntityMut;
 use bevy_fynix::tag::TagExt as _;
 use fynix::prelude::*;
-use moxie_asset::{AssetChoices, AssetRef};
+use moxie_asset::{AssetChoices, AssetRef, AssetType, AssetTypes};
 
 use crate::context_menu::at_point;
 use bevy::feathers::cursor::EntityCursor;
@@ -43,87 +43,17 @@ const HEIGHT: f32 = 440.0;
 const THUMBNAIL: f32 = 64.0;
 
 pub(crate) fn plugin(app: &mut App) {
-    app.init_resource::<AssetThumbnails>()
-        .init_resource::<AssetCreators>()
+    app.init_resource::<Thumbnails>()
         .add_systems(Update, picker_keys);
 }
 
-/// Renders a preview of an asset into an image, or `None` when it
-/// can't.
-pub type RenderThumbnail =
-    fn(&mut World, &AssetRef) -> Option<Handle<Image>>;
-
-/// Makes a new asset, seeded from `seed` when there is one, and hands
-/// back a handle to it.
-pub type CreateAsset = fn(
-    &mut World,
-    seed: Option<UntypedAssetId>,
-) -> Option<UntypedHandle>;
-
-/// Thumbnail renderers by asset type, and every thumbnail rendered so
-/// far.
+/// Every thumbnail rendered so far.
 #[derive(Resource, Default)]
-pub struct AssetThumbnails {
-    renderers: HashMap<TypeId, RenderThumbnail>,
-    rendered: HashMap<(TypeId, AssetRef), Handle<Image>>,
-}
+struct Thumbnails(HashMap<(TypeId, AssetRef), Handle<Image>>);
 
-/// What makes a new asset of each type, for a picker's "New" button.
-#[derive(Resource, Default)]
-pub struct AssetCreators(HashMap<TypeId, CreateAsset>);
-
-/// Asset types a field must always hold one of, so their picker offers
-/// no "None".
-#[derive(Resource, Default)]
-pub struct RequiredAssets(HashSet<TypeId>);
-
-/// Registering what the asset picker shows and can make, per asset
-/// type.
-pub trait AssetPickerAppExt {
-    fn register_asset_thumbnail<T: Asset>(
-        &mut self,
-        render: RenderThumbnail,
-    ) -> &mut Self;
-
-    fn register_asset_creator<T: Asset>(
-        &mut self,
-        create: CreateAsset,
-    ) -> &mut Self;
-
-    /// Leaves "None" out of `T`'s picker.
-    fn require_asset<T: Asset>(&mut self) -> &mut Self;
-}
-
-impl AssetPickerAppExt for App {
-    fn register_asset_thumbnail<T: Asset>(
-        &mut self,
-        render: RenderThumbnail,
-    ) -> &mut Self {
-        self.world_mut()
-            .get_resource_or_insert_with(AssetThumbnails::default)
-            .renderers
-            .insert(TypeId::of::<T>(), render);
-        self
-    }
-
-    fn register_asset_creator<T: Asset>(
-        &mut self,
-        create: CreateAsset,
-    ) -> &mut Self {
-        self.world_mut()
-            .get_resource_or_insert_with(AssetCreators::default)
-            .0
-            .insert(TypeId::of::<T>(), create);
-        self
-    }
-
-    fn require_asset<T: Asset>(&mut self) -> &mut Self {
-        self.world_mut()
-            .get_resource_or_insert_with(RequiredAssets::default)
-            .0
-            .insert(TypeId::of::<T>());
-        self
-    }
+/// What the app registered about `kind`.
+fn asset_type(world: &World, kind: TypeId) -> Option<&AssetType> {
+    world.get_resource::<AssetTypes>()?.get(kind)
 }
 
 /// The thumbnail for the `kind` asset `asset`, rendered on first ask
@@ -134,16 +64,15 @@ fn thumbnail(
     asset: &AssetRef,
 ) -> Option<Handle<Image>> {
     let key = (kind, asset.clone());
-    let thumbnails = world.get_resource::<AssetThumbnails>()?;
-    if let Some(image) = thumbnails.rendered.get(&key) {
+    if let Some(image) = world.resource::<Thumbnails>().0.get(&key) {
         return Some(image.clone());
     }
-    let render = *thumbnails.renderers.get(&kind)?;
+    let render = asset_type(world, kind)?.thumbnail?;
 
     let image = render(world, asset)?;
     world
-        .resource_mut::<AssetThumbnails>()
-        .rendered
+        .resource_mut::<Thumbnails>()
+        .0
         .insert(key, image.clone());
     Some(image)
 }
@@ -151,13 +80,10 @@ fn thumbnail(
 /// Drops every internal asset's thumbnail, which may have been edited
 /// since it was rendered.
 fn forget_internal_thumbnails(world: &mut World) {
-    if let Some(mut thumbnails) =
-        world.get_resource_mut::<AssetThumbnails>()
-    {
-        thumbnails.rendered.retain(|(_, asset), _| {
-            !matches!(asset, AssetRef::Uuid(_))
-        });
-    }
+    world
+        .resource_mut::<Thumbnails>()
+        .0
+        .retain(|(_, asset), _| !matches!(asset, AssetRef::Uuid(_)));
 }
 
 /// The open picker's own root. There is at most one.
@@ -189,17 +115,16 @@ struct Cell {
     thumbnail: Option<Handle<Image>>,
 }
 
-/// "None", unless `T` is [required](AssetPickerAppExt::require_asset),
-/// then every [`AssetChoices`] entry for `T`.
+/// "None", unless `T` is [required](AssetType::required), then every
+/// [`AssetChoices`] entry for `T`.
 fn cells<T: Asset>(world: &mut World) -> Vec<Cell> {
     let kind = TypeId::of::<T>();
     let choices = world
         .get_resource::<AssetChoices>()
         .map(|choices| choices.of::<T>().cloned().collect::<Vec<_>>())
         .unwrap_or_default();
-    let required = world
-        .get_resource::<RequiredAssets>()
-        .is_some_and(|required| required.0.contains(&kind));
+    let required =
+        asset_type(world, kind).is_some_and(|info| info.required);
 
     let mut cells = Vec::new();
     if !required {
@@ -368,9 +293,8 @@ fn header<T: Asset>(
     let text_dim = ui.theme.color.text_dim;
     let critical = ui.theme.color.critical;
     let title = title.to_string();
-    let create = ui.world.get_resource::<AssetCreators>().and_then(
-        |creators| creators.0.get(&TypeId::of::<T>()).copied(),
-    );
+    let create = asset_type(ui.world, TypeId::of::<T>())
+        .and_then(|info| info.create);
     let source = source.clone();
 
     ui.elem(elem!(

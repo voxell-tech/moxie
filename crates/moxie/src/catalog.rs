@@ -12,7 +12,7 @@ use bevy::asset::AssetPath;
 use bevy::gltf::{Gltf, GltfAssetLabel, GltfMesh};
 use bevy::prelude::*;
 use moxie_asset::{
-    ABSOLUTE_SOURCE, AssetChoice, AssetChoices, AssetKinds, AssetRef,
+    ABSOLUTE_SOURCE, AssetChoice, AssetChoices, AssetRef, AssetTypes,
     InternalAssets,
 };
 use moxie_ui::asset_picker::RefreshAssetChoices;
@@ -92,7 +92,7 @@ fn scan(world: &mut World) {
     paths.sort();
     paths.dedup();
 
-    let kinds = world.resource::<AssetKinds>();
+    let kinds = world.resource::<AssetTypes>();
     let files = paths
         .iter()
         .filter_map(|path| Some((kinds.kind_of(path)?, path.clone())))

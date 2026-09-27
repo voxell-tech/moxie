@@ -37,7 +37,7 @@ use bevy::prelude::*;
 
 use asset::AssetDragging;
 use inspector::InspectPlugin;
-use moxie_asset::{AssetChoices, AssetKinds};
+use moxie_asset::{AssetChoices, AssetTypes};
 use reactive::FynixPlugin;
 use widgets::dock::DockPlugin;
 use widgets::tooltip::TooltipPlugin;
@@ -65,7 +65,7 @@ impl Plugin for MoxieUiPlugin {
         // Seed the feathers palette (its default theme is empty).
         .insert_resource(UiTheme(create_dark_theme()))
         .add_systems(Update, elements::fit_action_icons)
-        .init_resource::<AssetKinds>()
+        .init_resource::<AssetTypes>()
         .init_resource::<AssetChoices>()
         .init_resource::<AssetDragging>();
     }

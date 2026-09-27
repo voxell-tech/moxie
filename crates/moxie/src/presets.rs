@@ -4,8 +4,7 @@
 
 use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use moxie_asset::{AssetKindAppExt as _, AssetRef};
-use moxie_ui::asset_picker::AssetPickerAppExt as _;
+use moxie_asset::{AssetRef, AssetTypeAppExt as _};
 
 const GROUP: &str = "Built-in";
 
@@ -47,14 +46,12 @@ pub(crate) fn plugin(app: &mut App) {
 
     // A mesh with nothing to draw, or drawn with nothing, is no use in
     // the scene.
-    app.require_asset::<Mesh>()
-        .require_asset::<StandardMaterial>()
-        .register_asset_choices::<Mesh>(GROUP, meshes)
-        .register_asset_choices::<StandardMaterial>(
-            GROUP,
-            [("Default".to_string(), AssetRef::Uuid(default))],
-        )
-        .add_systems(Startup, insert_default_material);
+    app.asset_type::<Mesh>().required().choices(GROUP, meshes);
+    app.asset_type::<StandardMaterial>().required().choices(
+        GROUP,
+        [("Default".to_string(), AssetRef::Uuid(default))],
+    );
+    app.add_systems(Startup, insert_default_material);
 }
 
 fn insert_default_material(

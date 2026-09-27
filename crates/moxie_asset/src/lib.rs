@@ -13,14 +13,15 @@ pub use internal::{
 };
 pub use reflect::type_data;
 pub use registry::{
-    AssetChoice, AssetChoices, AssetKindAppExt, AssetKinds, AssetRef,
+    AssetChoice, AssetChoices, AssetRef, AssetType, AssetTypeAppExt,
+    AssetTypeBuilder, AssetTypes, CreateAsset, RenderThumbnail,
 };
 
 pub struct MoxieAssetPlugin;
 
 impl Plugin for MoxieAssetPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AssetKinds>()
+        app.init_resource::<AssetTypes>()
             .init_resource::<AssetChoices>()
             .init_resource::<InternalAssets>();
     }

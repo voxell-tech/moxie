@@ -16,8 +16,7 @@ use bevy::camera::primitives::MeshAabb as _;
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
-use moxie_asset::AssetRef;
-use moxie_ui::asset_picker::AssetPickerAppExt as _;
+use moxie_asset::{AssetRef, AssetTypeAppExt as _};
 
 use crate::presets;
 
@@ -38,9 +37,10 @@ const SETTLE_FRAMES: u8 = 3;
 const MATERIAL_SUBJECT: &str = "meshes/sphere.glb#Mesh0/Primitive0";
 
 pub(crate) fn plugin(app: &mut App) {
+    app.asset_type::<Mesh>().thumbnail(render_mesh);
+    app.asset_type::<StandardMaterial>()
+        .thumbnail(render_material);
     app.init_resource::<Studio>()
-        .register_asset_thumbnail::<Mesh>(render_mesh)
-        .register_asset_thumbnail::<StandardMaterial>(render_material)
         .add_systems(Update, (start_rigs, develop).chain());
 }
 
