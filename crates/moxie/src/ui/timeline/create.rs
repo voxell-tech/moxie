@@ -5,8 +5,7 @@
 //! generic field drag ([`DraggedField`]). This module is the timeline
 //! half: the landing preview while a field is held over the track, and
 //! on release splicing a fresh [`SceneNode::Action`] into the tree.
-//! Drop resolution (merge / chain / plain insert) and the drop hint
-//! are shared with [`reorder`].
+//! Where it lands, and the hint marking it, are [`drop`]'s.
 
 use core::time::Duration;
 use std::collections::BTreeSet;
@@ -18,7 +17,7 @@ use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
 use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
 use bevy_motiongfx::scene::id::SceneUid;
 use bevy_motiongfx::scene::value_pool::insert_scene_value;
-use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
+use motiongfx_scene::block::{ActionCmd, Node as SceneNode};
 use motiongfx_scene::refs::FieldRef;
 use motiongfx_scene::scene::{FieldSeed, Scene, Subject};
 use moxie_ui::cursor::{Cursor, PointerEventExt as _};
@@ -27,8 +26,8 @@ use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::{BevyFynix, FynixSet};
 
 use super::block_layout;
+use super::drop;
 use super::hint::HintNode;
-use super::reorder::{self, Target};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
 use crate::{EditorScene, SelectedAction, TimelineView, subject};
 
@@ -36,17 +35,13 @@ use crate::{EditorScene, SelectedAction, TimelineView, subject};
 /// make it drag-configurable.
 const DEFAULT_DURATION: Duration = Duration::from_secs(1);
 
-/// Sentinel "no such node" path for [`reorder::resolve`], which filters
-/// against the node being moved - a fresh node is under nothing.
-const NO_NODE: &[usize] = &[usize::MAX];
-
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(Update, preview.after(FynixSet))
         .add_observer(on_drop);
 }
 
 /// Each frame a field is held: resolve where a release would land and
-/// draw the same hints `reorder` uses.
+/// draw its hint.
 fn preview(
     kernel: Res<BevyFynix>,
     pointer: Cursor,
@@ -102,9 +97,9 @@ fn preview(
         folded.paths(),
         kernel.theme().space,
     );
-    let target = reorder::resolve(content, &layout, root, NO_NODE);
+    let target = drop::resolve(content, &layout, root, None);
 
-    reorder::announce_hint(
+    drop::announce_hint(
         &mut commands,
         &hint,
         kernel.theme(),
@@ -186,7 +181,7 @@ fn create(
             &world.resource::<EditorScene>().scene().0.animation;
         let space = world.resource::<BevyFynix>().theme().space;
         let layout = block_layout::layout(root, view, folded, space);
-        reorder::resolve(content, &layout, root, NO_NODE)
+        drop::resolve(content, &layout, root, None)
     };
 
     let landed = {
@@ -227,7 +222,14 @@ fn create(
             interp: Some(AnimInterp::Linear),
             name: None,
         });
-        splice(animation, target, node)
+        match target {
+            Some(target) => drop::place(animation, &target, node),
+            // Loose past every block: a top-level child.
+            None => {
+                animation.children.push(node);
+                Some(vec![animation.children.len() - 1])
+            }
+        }
     };
 
     if let Some(path) = landed
@@ -267,59 +269,6 @@ fn seed_field(
         }),
     }
     Some(())
-}
-
-/// Puts `node` where `target` says, returning the path it landed at.
-fn splice(
-    root: &mut Block<Backend>,
-    target: Option<Target>,
-    node: SceneNode<Backend>,
-) -> Option<Vec<usize>> {
-    match target {
-        // Loose past every block: a top-level child.
-        None => {
-            root.children.push(node);
-            Some(vec![root.children.len() - 1])
-        }
-        Some(Target::Insert { parent, index }) => {
-            let block = reorder::block_at_mut(root, &parent)?;
-            let at = index.min(block.children.len());
-            block.children.insert(at, node);
-            let mut path = parent;
-            path.push(at);
-            Some(path)
-        }
-        Some(Target::Merge {
-            path,
-            combinator,
-            before,
-        }) => {
-            let (&index, parent) = path.split_last()?;
-            let block = reorder::block_at_mut(root, parent)?;
-            if index >= block.children.len() {
-                return None;
-            }
-            let host = block.children.remove(index);
-            let children = if before {
-                vec![node, host]
-            } else {
-                vec![host, node]
-            };
-            block.children.insert(
-                index,
-                SceneNode::block(Block {
-                    combinator,
-                    children,
-                    name: None,
-                }),
-            );
-
-            let mut landed = parent.to_vec();
-            landed.push(index);
-            landed.push(if before { 0 } else { 1 });
-            Some(landed)
-        }
-    }
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@
 
 mod block_layout;
 mod create;
+mod drop;
 mod hint;
 mod pattern;
 mod prune;
