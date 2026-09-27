@@ -11,6 +11,7 @@ use bevy::asset::UnapprovedPathMode;
 use bevy::camera::NormalizedRenderTarget;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::log::LogPlugin;
 use bevy::picking::backend::HitData;
 use bevy::picking::events::{Click, Pointer};
 use bevy::picking::pointer::{Location, PointerButton, PointerId};
@@ -60,7 +61,10 @@ impl Editor {
                     ),
                     ..default()
                 })
-                .disable::<WinitPlugin>(),
+                .disable::<WinitPlugin>()
+                // Tests run side by side, and only one of them could own
+                // the global logger.
+                .disable::<LogPlugin>(),
             // Rendering with no GPU never adds this, but the hooks on
             // anything drawable still reach for what it keeps.
             SyncWorldPlugin,
@@ -293,6 +297,29 @@ mod tests {
         );
         editor.tap(KeyCode::Escape, Key::Escape);
         assert_eq!(material_of(&mut editor, cube), Handle::from(id));
+    }
+
+    #[test]
+    fn a_mesh_is_never_none() {
+        let mut editor = Editor::new();
+        let cube = add_cube(&mut editor);
+        // So the mesh field is the one thing showing "Cube".
+        editor.world().entity_mut(cube).insert(Name::new("Box"));
+        editor.step(SETTLE);
+
+        editor.press("Cube");
+        assert!(
+            editor.texts("None").is_empty(),
+            "no None for a mesh"
+        );
+        editor.tap(KeyCode::Escape, Key::Escape);
+
+        editor.press("Default");
+        assert_eq!(
+            editor.texts("None").len(),
+            1,
+            "None for a material"
+        );
     }
 
     #[test]

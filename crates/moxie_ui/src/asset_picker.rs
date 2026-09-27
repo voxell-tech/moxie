@@ -7,7 +7,7 @@
 //! Escape puts back what the field held before it opened.
 
 use core::any::TypeId;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy::asset::{Asset, UntypedAssetId, UntypedHandle};
 use bevy::input_focus::InputFocus;
@@ -72,6 +72,11 @@ pub struct AssetThumbnails {
 #[derive(Resource, Default)]
 pub struct AssetCreators(HashMap<TypeId, CreateAsset>);
 
+/// Asset types a field must always hold one of, so their picker offers
+/// no "None".
+#[derive(Resource, Default)]
+pub struct RequiredAssets(HashSet<TypeId>);
+
 /// Registering what the asset picker shows and can make, per asset
 /// type.
 pub trait AssetPickerAppExt {
@@ -84,6 +89,9 @@ pub trait AssetPickerAppExt {
         &mut self,
         create: CreateAsset,
     ) -> &mut Self;
+
+    /// Leaves "None" out of `T`'s picker.
+    fn require_asset<T: Asset>(&mut self) -> &mut Self;
 }
 
 impl AssetPickerAppExt for App {
@@ -106,6 +114,14 @@ impl AssetPickerAppExt for App {
             .get_resource_or_insert_with(AssetCreators::default)
             .0
             .insert(TypeId::of::<T>(), create);
+        self
+    }
+
+    fn require_asset<T: Asset>(&mut self) -> &mut Self {
+        self.world_mut()
+            .get_resource_or_insert_with(RequiredAssets::default)
+            .0
+            .insert(TypeId::of::<T>());
         self
     }
 }
@@ -173,20 +189,27 @@ struct Cell {
     thumbnail: Option<Handle<Image>>,
 }
 
-/// "None", then every [`AssetChoices`] entry for `T`.
+/// "None", unless `T` is [required](AssetPickerAppExt::require_asset),
+/// then every [`AssetChoices`] entry for `T`.
 fn cells<T: Asset>(world: &mut World) -> Vec<Cell> {
     let kind = TypeId::of::<T>();
     let choices = world
         .get_resource::<AssetChoices>()
         .map(|choices| choices.of::<T>().cloned().collect::<Vec<_>>())
         .unwrap_or_default();
+    let required = world
+        .get_resource::<RequiredAssets>()
+        .is_some_and(|required| required.0.contains(&kind));
 
-    let mut cells = vec![Cell {
-        name: "None".to_string(),
-        asset: None,
-        group: String::new(),
-        thumbnail: None,
-    }];
+    let mut cells = Vec::new();
+    if !required {
+        cells.push(Cell {
+            name: "None".to_string(),
+            asset: None,
+            group: String::new(),
+            thumbnail: None,
+        });
+    }
     for choice in choices {
         let thumbnail = thumbnail(world, kind, &choice.asset);
         cells.push(Cell {
