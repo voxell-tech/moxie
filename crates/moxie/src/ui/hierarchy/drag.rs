@@ -22,6 +22,8 @@ use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::BevyFynix;
 use moxie_ui::reactive::FynixHost;
 
+use crate::subject::Caption;
+
 /// How much of a row's height, at each end, aims beside it rather than
 /// into it. The middle half is the drop-inside band.
 const EDGE: f32 = 0.25;
@@ -142,10 +144,13 @@ pub(super) fn rows<'r, 'u, 'a>(
                     return;
                 }
 
-                let name = super::placeholder_name(
-                    names.get(subject).ok(),
-                    uids.get(subject).ok(),
-                );
+                let Ok(&uid) = uids.get(subject) else {
+                    return;
+                };
+                let name =
+                    Caption::entity(names.get(subject).ok(), uid)
+                        .text()
+                        .to_string();
                 let at = start.logical(&scale);
 
                 dragging.subject = Some(subject);

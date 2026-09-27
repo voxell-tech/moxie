@@ -265,10 +265,10 @@ concept, but only for real filesystem directories: `FolderRow` /
 `BookmarkRow` both lean on `moxie_ui::fold::Foldable` and a live
 `fs::read_dir` (`build_children`) to expand a directory into its
 children, tracked open/closed by `AssetFoldState`. What decides
-whether a *file* is even recognized is `moxie_asset::AssetKinds`, a
-flat `extension -> TypeId` map with exactly one registration today
-(`.mat` -> `StandardMaterial`, in `inspector.rs`); nothing maps `.glb`/
-`.gltf`, so such a file currently renders inert and undraggable.
+whether a *file* is even recognized is the extensions registered in
+`moxie_asset::AssetTypes` (`app.asset_type::<T>().extensions(..)`),
+and none are registered today; nothing maps `.glb`/`.gltf`, so such a
+file currently renders inert and undraggable.
 
 A `.glb` isn't a single asset the way a `.mat` is - it's a small
 archive (meshes, materials, lights, cameras, an implicit scene graph).
@@ -289,12 +289,12 @@ distinguishing name or an explicit path (`bevy::scene::SceneRoot`)
 wherever both are in scope.
 
 Each child item (a mesh, a material, a light) still wants its own
-`AssetKinds` entry so it can be dragged into a `Handle<T>` field the
-same way a `.mat` can be today - a gltf-derived material handle isn't
-structurally different from a hand-authored one once loaded.
+`AssetTypes` registration so it can be dragged into a `Handle<T>`
+field - a gltf-derived material handle isn't structurally different
+from a hand-authored one once loaded.
 
 - [ ] Register `.glb`/`.gltf` extensions against `bevy_gltf::Gltf` (or
-      per-sub-asset types) in `AssetKinds`, so the file stops being
+      per-sub-asset types) in `AssetTypes`, so the file stops being
       inert in the browser.
 - [ ] A "virtual folder" row variant that expands via a gltf's parsed
       node/mesh/material list instead of `fs::read_dir`, reusing

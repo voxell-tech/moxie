@@ -21,13 +21,15 @@ use bevy::window::SystemCursorIcon;
 use bevy_fynix::WorldEntityMut;
 use fynix::composer::Composer;
 use fynix::prelude::*;
-use moxie_asset::AssetKinds;
+use moxie_asset::AssetTypes;
 use moxie_ui::asset::draggable;
 use moxie_ui::elements::{
     Button, Frame, Icon, Label, Panel, ScrollArea, TintButton,
 };
 use moxie_ui::fold::{CHEVRON_SHUT, Foldable, FoldsOn};
-use moxie_ui::reactive::{BevyUi, FynixHost, resource_changed};
+use moxie_ui::reactive::{
+    BevyUi, FynixHost, either, resource_changed,
+};
 
 use crate::{ProjectBookmarks, ProjectPath};
 
@@ -134,24 +136,14 @@ impl Composer<FynixHost> for Listing {
             ),
             scroll_x = false
         ))
-        .watch(bookmarks_or_project_changed(), build_bookmarks)
+        .watch(
+            either(
+                resource_changed::<ProjectBookmarks>(),
+                resource_changed::<ProjectPath>(),
+            ),
+            build_bookmarks,
+        )
         .handle()
-    }
-}
-
-/// Fires on either resource, since [`build_bookmarks`] draws from
-/// both.
-fn bookmarks_or_project_changed()
--> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
-+ Send
-+ Sync
-+ 'static {
-    let mut bookmarks = resource_changed::<ProjectBookmarks>();
-    let mut project = resource_changed::<ProjectPath>();
-    move |WorldNodeRef { world, node }| {
-        let a = bookmarks(WorldNodeRef::new(world, node));
-        let b = project(WorldNodeRef::new(world, node));
-        a || b
     }
 }
 
@@ -438,14 +430,14 @@ fn prune_fold_state(
     }
 }
 
-/// One file. A recognized asset type (see `AssetKinds`) can be
+/// One file. A recognized asset type (see `AssetTypes`) can be
 /// dragged onto an inspector's `Handle<T>` field, in the theme's
 /// accent with a grab cursor to say so. Anything else shows dimmer,
 /// to read as inert.
 fn file_row(ui: &mut BevyUi, path: &Path) {
     let name = display_name(path);
     let label = name.clone();
-    let kind = ui.world.resource::<AssetKinds>().kind_of(path);
+    let kind = ui.world.resource::<AssetTypes>().kind_of(path);
     let color = if kind.is_some() {
         ui.theme.palette.purple
     } else {

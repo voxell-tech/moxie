@@ -5,6 +5,7 @@ use bevy::asset::{Asset, ReflectAsset, UntypedAssetId};
 use bevy::prelude::*;
 
 use crate::project::{LoadedAsset, SavedAsset};
+use crate::type_data;
 
 /// Assets the project owns rather than references: each kept in its
 /// `Assets` under a UUID, never loaded from a file, and saved inside
@@ -89,8 +90,9 @@ impl InternalAssets {
         self.entries
             .iter()
             .filter_map(|asset| {
-                let value = reflect_asset(world, asset.kind)?
-                    .get(world, asset.untyped())?;
+                let value =
+                    type_data::<ReflectAsset>(world, asset.kind)?
+                        .get(world, asset.untyped())?;
                 Some(SavedAsset {
                     id: asset.id,
                     name: &asset.name,
@@ -120,7 +122,9 @@ pub fn replace_internal_assets(
         &mut world.resource_mut::<InternalAssets>().entries,
     );
     for asset in old {
-        if let Some(reflect) = reflect_asset(world, asset.kind) {
+        if let Some(reflect) =
+            type_data::<ReflectAsset>(world, asset.kind)
+        {
             reflect.remove(world, asset.untyped());
         }
     }
@@ -134,7 +138,8 @@ pub fn replace_internal_assets(
             warn!("internal asset {} has no known type", asset.name);
             continue;
         };
-        let Some(reflect) = reflect_asset(world, kind) else {
+        let Some(reflect) = type_data::<ReflectAsset>(world, kind)
+        else {
             warn!(
                 "internal asset {} is not a registered asset",
                 asset.name
@@ -157,14 +162,4 @@ pub fn replace_internal_assets(
         }
         world.resource_mut::<InternalAssets>().adopt(entry);
     }
-}
-
-/// `kind`'s [`ReflectAsset`], cloned out so the registry guard is never
-/// held while the caller runs.
-fn reflect_asset(
-    world: &World,
-    kind: TypeId,
-) -> Option<ReflectAsset> {
-    let registry = world.resource::<AppTypeRegistry>().read();
-    registry.get_type_data::<ReflectAsset>(kind).cloned()
 }

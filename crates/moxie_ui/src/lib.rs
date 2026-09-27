@@ -33,12 +33,14 @@ use bevy_motiongfx::interpolation::Bevy;
 use bevy::feathers::FeathersPlugins;
 use bevy::feathers::dark_theme::create_dark_theme;
 use bevy::feathers::theme::UiTheme;
+use bevy::feathers::tokens;
 use bevy::prelude::*;
 
 use asset::AssetDragging;
 use inspector::InspectPlugin;
-use moxie_asset::{AssetChoices, AssetKinds};
+use moxie_asset::{AssetTypes, FoundAssets};
 use reactive::FynixPlugin;
+use theme::EditorTheme;
 use widgets::dock::DockPlugin;
 use widgets::tooltip::TooltipPlugin;
 
@@ -63,10 +65,20 @@ impl Plugin for MoxieUiPlugin {
             asset_picker::plugin,
         ))
         // Seed the feathers palette (its default theme is empty).
-        .insert_resource(UiTheme(create_dark_theme()))
+        .insert_resource(ui_theme())
         .add_systems(Update, elements::fit_action_icons)
-        .init_resource::<AssetKinds>()
-        .init_resource::<AssetChoices>()
+        .init_resource::<AssetTypes>()
+        .init_resource::<FoundAssets>()
         .init_resource::<AssetDragging>();
     }
+}
+
+/// Feathers' dark theme, with the editor's own caret.
+fn ui_theme() -> UiTheme {
+    let mut theme = create_dark_theme();
+    theme.color.insert(
+        tokens::TEXT_INPUT_CURSOR,
+        EditorTheme::default().palette.base[5],
+    );
+    UiTheme(theme)
 }

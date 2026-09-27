@@ -5,11 +5,10 @@ use std::any::TypeId;
 
 use bevy::asset::{UntypedAssetId, UntypedHandle};
 use bevy::prelude::*;
-use moxie_asset::InternalAssets;
-use moxie_ui::asset_picker::AssetPickerAppExt as _;
+use moxie_asset::{AssetTypeAppExt as _, InternalAssets};
 
 pub(crate) fn plugin(app: &mut App) {
-    app.register_asset_creator::<StandardMaterial>(new_material);
+    app.asset_type::<StandardMaterial>().create = Some(new_material);
 }
 
 /// A new internal material, a copy of `seed`'s when there is one.

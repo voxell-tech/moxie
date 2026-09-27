@@ -2,7 +2,9 @@
 
 mod internal;
 pub mod project;
+mod reflect;
 mod registry;
+mod relative;
 
 use bevy::asset::io::AssetSourceBuilder;
 use bevy::prelude::*;
@@ -10,16 +12,19 @@ use bevy::prelude::*;
 pub use internal::{
     InternalAsset, InternalAssets, replace_internal_assets,
 };
+pub use reflect::type_data;
 pub use registry::{
-    AssetChoice, AssetChoices, AssetKindAppExt, AssetKinds, AssetRef,
+    AssetChoice, AssetRef, AssetType, AssetTypeAppExt, AssetTypes,
+    CreateAsset, FoundAssets, RenderThumbnail, asset_choices,
 };
+pub use relative::AnyPath;
 
 pub struct MoxieAssetPlugin;
 
 impl Plugin for MoxieAssetPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AssetKinds>()
-            .init_resource::<AssetChoices>()
+        app.init_resource::<AssetTypes>()
+            .init_resource::<FoundAssets>()
             .init_resource::<InternalAssets>();
     }
 }

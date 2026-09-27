@@ -3,21 +3,92 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use bevy::asset::uuid::Uuid;
-use bevy::asset::{Asset, AssetServer};
+use bevy::asset::{
+    Asset, AssetServer, UntypedAssetId, UntypedHandle,
+};
 use bevy::prelude::*;
 
-/// Which file extension loads as which [`Asset`], by that asset's
-/// own [`TypeId`].
+/// Renders a preview of an asset into an image, or `None` when it
+/// can't.
+pub type RenderThumbnail =
+    fn(&mut World, &AssetRef) -> Option<Handle<Image>>;
+
+/// Makes a new asset, seeded from `seed` when there is one, and hands
+/// back a handle to it.
+pub type CreateAsset = fn(
+    &mut World,
+    seed: Option<UntypedAssetId>,
+) -> Option<UntypedHandle>;
+
+/// What the editor knows about each asset type, by the asset's own
+/// [`TypeId`], in the order they were first registered. Filled in
+/// through [`AssetTypeAppExt::asset_type`].
 #[derive(Resource, Default)]
-pub struct AssetKinds {
-    by_extension: HashMap<String, TypeId>,
+pub struct AssetTypes(Vec<(TypeId, AssetType)>);
+
+/// What the editor knows about one asset type.
+#[derive(Clone, Default)]
+pub struct AssetType {
+    /// File extensions that load as it.
+    pub extensions: Vec<&'static str>,
+    /// Built-in assets offered wherever one is picked.
+    pub choices: Vec<AssetChoice>,
+    /// Whether a field must always hold one, so its picker offers no
+    /// "None".
+    pub required: bool,
+    pub thumbnail: Option<RenderThumbnail>,
+    /// What the picker's "New" makes one with.
+    pub create: Option<CreateAsset>,
 }
 
-impl AssetKinds {
-    /// The registered kind `path`'s extension loads as, if any.
+impl AssetTypes {
+    pub fn get(&self, kind: TypeId) -> Option<&AssetType> {
+        self.0
+            .iter()
+            .find(|(known, _)| *known == kind)
+            .map(|(_, info)| info)
+    }
+
+    /// The type `path`'s extension loads as, if any. When two claim it,
+    /// the one registered last.
     pub fn kind_of(&self, path: &Path) -> Option<TypeId> {
-        let extension = path.extension()?.to_str()?.to_lowercase();
-        self.by_extension.get(&extension).copied()
+        let extension = path.extension()?.to_str()?;
+        self.0
+            .iter()
+            .rev()
+            .find(|(_, info)| {
+                info.extensions.iter().any(|known| {
+                    known.eq_ignore_ascii_case(extension)
+                })
+            })
+            .map(|(kind, _)| *kind)
+    }
+}
+
+pub trait AssetTypeAppExt {
+    /// What the editor knows about `T`, to fill in.
+    fn asset_type<T: Asset>(&mut self) -> Mut<'_, AssetType>;
+}
+
+impl AssetTypeAppExt for App {
+    fn asset_type<T: Asset>(&mut self) -> Mut<'_, AssetType> {
+        self.world_mut()
+            .get_resource_or_insert_with(AssetTypes::default)
+            .map_unchanged(|types| {
+                let kind = TypeId::of::<T>();
+                let index = match types
+                    .0
+                    .iter()
+                    .position(|(known, _)| *known == kind)
+                {
+                    Some(index) => index,
+                    None => {
+                        types.0.push((kind, AssetType::default()));
+                        types.0.len() - 1
+                    }
+                };
+                &mut types.0[index].1
+            })
     }
 }
 
@@ -60,14 +131,6 @@ impl AssetRef {
     }
 }
 
-/// Named assets offered for picking, by the asset's own [`TypeId`]:
-/// the ones registered up front, and the ones found in the project.
-#[derive(Resource, Default)]
-pub struct AssetChoices {
-    registered: HashMap<TypeId, Vec<AssetChoice>>,
-    found: HashMap<TypeId, Vec<AssetChoice>>,
-}
-
 /// One pickable asset.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AssetChoice {
@@ -77,82 +140,72 @@ pub struct AssetChoice {
     pub group: String,
 }
 
-impl AssetChoices {
-    /// Every choice for `T`, found ones first.
-    pub fn of<T: Asset>(&self) -> impl Iterator<Item = &AssetChoice> {
-        let kind = TypeId::of::<T>();
-        [&self.found, &self.registered]
-            .into_iter()
-            .filter_map(move |choices| choices.get(&kind))
-            .flatten()
-    }
+/// Assets found in and around the project, by the asset's own
+/// [`TypeId`]: the choices that change while the editor runs.
+#[derive(Resource, Default)]
+pub struct FoundAssets(pub HashMap<TypeId, Vec<AssetChoice>>);
 
-    /// Whether the found choices are already `found`.
-    pub fn found_is(
-        &self,
-        found: &HashMap<TypeId, Vec<AssetChoice>>,
-    ) -> bool {
-        self.found == *found
-    }
-
-    /// Replaces every found choice.
-    pub fn set_found(
-        &mut self,
-        found: HashMap<TypeId, Vec<AssetChoice>>,
-    ) {
-        self.found = found;
-    }
+/// Every choice for a `T`: the found ones, then the built-in ones.
+pub fn asset_choices<T: Asset>(
+    world: &World,
+) -> impl Iterator<Item = &AssetChoice> {
+    let kind = TypeId::of::<T>();
+    let found = world
+        .get_resource::<FoundAssets>()
+        .and_then(|found| found.0.get(&kind));
+    let built_in = world
+        .get_resource::<AssetTypes>()
+        .and_then(|types| types.get(kind))
+        .map(|info| &info.choices);
+    found.into_iter().chain(built_in).flatten()
 }
 
-/// Registering what a file extension loads as, and what is offered
-/// wherever an asset is picked.
-pub trait AssetKindAppExt {
-    /// Marks every extension in `extensions` as loading a `T`.
-    fn register_asset_kind<T: Asset>(
-        &mut self,
-        extensions: &[&str],
-    ) -> &mut Self;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    /// Offers every `(name, asset)` in `choices` wherever a `T` is
-    /// picked, listed under `group`.
-    fn register_asset_choices<T: Asset>(
-        &mut self,
-        group: &str,
-        choices: impl IntoIterator<Item = (String, AssetRef)>,
-    ) -> &mut Self;
-}
+    #[test]
+    fn found_choices_come_before_built_in_ones() {
+        let mut app = App::new();
+        let choice = |name: &str| AssetChoice {
+            name: name.to_string(),
+            asset: AssetRef::Uuid(Uuid::nil()),
+            group: String::new(),
+        };
+        app.asset_type::<Image>().choices.push(choice("Blank"));
+        app.world_mut().insert_resource(FoundAssets(HashMap::from(
+            [(TypeId::of::<Image>(), vec![choice("Found")])],
+        )));
 
-impl AssetKindAppExt for App {
-    fn register_asset_kind<T: Asset>(
-        &mut self,
-        extensions: &[&str],
-    ) -> &mut Self {
-        let mut kinds = self
-            .world_mut()
-            .get_resource_or_insert_with(AssetKinds::default);
-        for extension in extensions {
-            kinds
-                .by_extension
-                .insert(extension.to_lowercase(), TypeId::of::<T>());
-        }
-        self
+        let names = asset_choices::<Image>(app.world())
+            .map(|choice| choice.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Found", "Blank"]);
     }
 
-    fn register_asset_choices<T: Asset>(
-        &mut self,
-        group: &str,
-        choices: impl IntoIterator<Item = (String, AssetRef)>,
-    ) -> &mut Self {
-        let mut all = self
-            .world_mut()
-            .get_resource_or_insert_with(AssetChoices::default);
-        all.registered.entry(TypeId::of::<T>()).or_default().extend(
-            choices.into_iter().map(|(name, asset)| AssetChoice {
-                name,
-                asset,
-                group: group.to_string(),
-            }),
+    #[test]
+    fn an_extension_matches_in_any_case() {
+        let mut app = App::new();
+        app.asset_type::<Image>().extensions.push("png");
+
+        let types = app.world().resource::<AssetTypes>();
+        let kind = Some(TypeId::of::<Image>());
+        assert_eq!(types.kind_of(Path::new("a/b.PNG")), kind);
+        assert_eq!(types.kind_of(Path::new("a/b.jpg")), None);
+    }
+
+    #[test]
+    fn a_shared_extension_goes_to_the_last_registered() {
+        let mut app = App::new();
+        app.asset_type::<Image>().extensions.push("dat");
+        app.asset_type::<Mesh>().extensions.push("dat");
+        // Filling in the first again doesn't move it.
+        app.asset_type::<Image>().required = true;
+
+        let types = app.world().resource::<AssetTypes>();
+        assert_eq!(
+            types.kind_of(Path::new("a.dat")),
+            Some(TypeId::of::<Mesh>())
         );
-        self
     }
 }

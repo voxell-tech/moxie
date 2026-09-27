@@ -1,8 +1,11 @@
+use std::path::Path;
+
 use bevy::asset::uuid::Uuid;
 use bevy::input::keyboard::Key;
+use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_motiongfx::scene::id::EntityUid;
-use moxie_asset::InternalAssets;
+use moxie_asset::{ABSOLUTE_SOURCE, AssetRef, InternalAssets};
 
 use super::harness::{Editor, SETTLE};
 use crate::{SelectedEntity, presets, project};
@@ -39,6 +42,13 @@ fn only_internal(editor: &mut Editor) -> (Uuid, String) {
         panic!("{} internal assets, not one", all.len());
     };
     (asset.id, asset.name.clone())
+}
+
+#[test]
+fn files_load_from_anywhere_on_disk() {
+    let mut editor = Editor::new();
+    let assets = editor.world().resource::<AssetServer>();
+    assert!(assets.get_source(ABSOLUTE_SOURCE).is_ok());
 }
 
 #[test]
@@ -133,6 +143,172 @@ fn double_click_picks_and_closes() {
 }
 
 #[test]
+fn a_project_saves_only_marked_components() {
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+    // Reflected, but the editor's own business.
+    editor
+        .world()
+        .entity_mut(cube)
+        .insert(bevy::picking::Pickable::default());
+
+    let text =
+        project::serialize(editor.world(), Path::new("/project"))
+            .expect("it saves");
+    assert!(text.contains("Transform"), "{text}");
+    assert!(text.contains("Mesh3d"), "{text}");
+    assert!(!text.contains("Pickable"), "{text}");
+}
+
+#[test]
+fn a_field_built_later_has_the_editor_caret() {
+    let mut editor = Editor::new();
+    // The inspector builds its fields once something is selected.
+    add_cube(&mut editor);
+
+    let base5 =
+        moxie_ui::theme::EditorTheme::default().palette.base[5];
+    let world = editor.world();
+    let carets = world
+        .query::<&bevy::text::TextCursorStyle>()
+        .iter(world)
+        .map(|caret| caret.color)
+        .collect::<Vec<_>>();
+    assert!(!carets.is_empty());
+    assert!(carets.iter().all(|&color| color == base5), "{carets:?}");
+}
+
+#[test]
+fn dragging_a_number_field_scrubs_its_value() {
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+    let (x, _) = translation_x(&mut editor);
+
+    editor.drag(x, 50.0);
+
+    let translation = editor
+        .world()
+        .get::<Transform>(cube)
+        .expect("placed")
+        .translation;
+    assert_eq!(translation, Vec3::new(0.5, 0.0, 0.0));
+}
+
+#[test]
+fn a_clicked_number_field_is_typed_into_until_enter() {
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+    let (x, text) = translation_x(&mut editor);
+    let pickable = |editor: &mut Editor| {
+        editor
+            .world()
+            .get::<bevy::picking::Pickable>(text)
+            .is_some_and(|pickable| pickable.is_hoverable)
+    };
+    assert!(!pickable(&mut editor), "dragged, not typed into");
+
+    editor.click_entity(x, 1);
+    let focus = editor.world().resource::<InputFocus>().get();
+    assert_eq!(focus, Some(text));
+    assert!(pickable(&mut editor), "the text takes the pointer");
+
+    // The pointer lands on the text now, which selects with a drag.
+    editor.drag(text, 50.0);
+    let moved =
+        editor.world().get::<Transform>(cube).expect("placed");
+    assert_eq!(moved.translation, Vec3::ZERO);
+
+    editor.tap(KeyCode::Enter, Key::Enter);
+    let focus = editor.world().resource::<InputFocus>().get();
+    assert_eq!(focus, None);
+    assert!(!pickable(&mut editor), "back to dragging");
+}
+
+/// The number field for the translation's x, and the text inside it.
+fn translation_x(editor: &mut Editor) -> (Entity, Entity) {
+    let mut row = editor.text("translation");
+    let world = editor.world();
+    let text = loop {
+        row = world.get::<ChildOf>(row).expect("in a row").parent();
+        if let Some(text) = first_number_input(world, row) {
+            break text;
+        }
+    };
+    let field =
+        world.get::<ChildOf>(text).expect("in a field").parent();
+    (field, text)
+}
+
+/// The text of the first number field under `root`, depth first.
+fn first_number_input(world: &World, root: Entity) -> Option<Entity> {
+    use bevy::feathers::controls::FeathersNumberInput;
+
+    let children = world.get::<Children>(root)?;
+    children.iter().find_map(|child| {
+        let in_number =
+            world.get::<FeathersNumberInput>(root).is_some();
+        if in_number
+            && world.get::<bevy::text::EditableText>(child).is_some()
+        {
+            return Some(child);
+        }
+        first_number_input(world, child)
+    })
+}
+
+#[test]
+fn the_sample_project_opens() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../projects/hello_world/hello_world.mox");
+    let text = std::fs::read_to_string(&path).expect("it is there");
+
+    let mut editor = Editor::new();
+    project::open(editor.world(), &text, path);
+    editor.step(SETTLE);
+
+    let world = editor.world();
+    let subjects = world.query::<&EntityUid>().iter(world).count();
+    assert!(subjects > 0, "its subjects came back");
+}
+
+#[test]
+fn a_moved_project_finds_the_files_beside_it() {
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+    // Needn't exist: a handle keeps its path whether or not it loads.
+    let robot = AssetRef::Path(
+        "abs:///projects/intro/robot.glb#Mesh0/Primitive0"
+            .to_string(),
+    )
+    .handle::<Mesh>(editor.world().resource::<AssetServer>());
+    editor.world().entity_mut(cube).insert(Mesh3d(robot));
+
+    let text = project::serialize(
+        editor.world(),
+        Path::new("/projects/intro"),
+    )
+    .expect("it saves");
+    project::open(
+        editor.world(),
+        &text,
+        "/moved/intro/intro.mox".into(),
+    );
+    editor.step(SETTLE);
+
+    let world = editor.world();
+    let mesh = world
+        .query_filtered::<&Mesh3d, With<EntityUid>>()
+        .single(world)
+        .expect("the cube came back")
+        .0
+        .clone();
+    assert_eq!(
+        mesh.path().map(ToString::to_string).as_deref(),
+        Some("abs:///moved/intro/robot.glb#Mesh0/Primitive0")
+    );
+}
+
+#[test]
 fn project_keeps_internal_materials() {
     let mut editor = Editor::new();
     let cube = add_cube(&mut editor);
@@ -153,7 +329,9 @@ fn project_keeps_internal_materials() {
         .expect("the material is kept")
         .base_color = red;
 
-    let text = project::serialize(editor.world()).expect("it saves");
+    let text =
+        project::serialize(editor.world(), Path::new("/project"))
+            .expect("it saves");
     project::new_scene(editor.world());
     editor.step(SETTLE);
     assert!(
@@ -164,7 +342,7 @@ fn project_keeps_internal_materials() {
             .next()
             .is_none()
     );
-    project::open(editor.world(), &text, "test.mox".into());
+    project::open(editor.world(), &text, "/project/test.mox".into());
     editor.step(SETTLE);
 
     assert_eq!(only_internal(&mut editor), (id, "Brick".to_string()));

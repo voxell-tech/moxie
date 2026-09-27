@@ -107,16 +107,12 @@ impl Field {
         &self.path
     }
 
-    /// The type data for this field's root, cloned out so the registry
-    /// guard is never held while the caller runs. Nesting two read
-    /// guards on one thread can deadlock the moment a writer queues
-    /// between them, and callers here reach for the registry again.
+    /// The type data for this field's root.
     fn type_data<D: bevy::reflect::TypeData + Clone>(
         &self,
         world: &World,
     ) -> Option<D> {
-        let registry = world.resource::<AppTypeRegistry>().read();
-        registry.get_type_data::<D>(self.root).cloned()
+        moxie_asset::type_data::<D>(world, self.root)
     }
 
     /// Runs `read` against the whole root, or returns `None` when it is

@@ -5,20 +5,21 @@
 //! generic field drag ([`DraggedField`]). This module is the timeline
 //! half: the landing preview while a field is held over the track, and
 //! on release splicing a fresh [`SceneNode::Action`] into the tree.
-//! Drop resolution (merge / chain / plain insert) and the drop hint
-//! are shared with [`reorder`].
+//! Where it lands, and the hint marking it, are [`landing`]'s.
 
 use core::time::Duration;
 use std::collections::BTreeSet;
 
+use bevy::asset::uuid::Uuid;
 use bevy::picking::events::{DragDrop, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
 use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
-use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
-use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
+use bevy_motiongfx::scene::id::SceneUid;
+use bevy_motiongfx::scene::value_pool::insert_scene_value;
+use motiongfx_scene::block::{ActionCmd, Node as SceneNode};
 use motiongfx_scene::refs::FieldRef;
-use motiongfx_scene::scene::{FieldSeed, Subject};
+use motiongfx_scene::scene::{FieldSeed, Scene, Subject};
 use moxie_ui::cursor::{Cursor, PointerEventExt as _};
 use moxie_ui::inspector::{DraggedField, Field};
 use moxie_ui::layout::logical_rect;
@@ -26,18 +27,13 @@ use moxie_ui::reactive::{BevyFynix, FynixSet};
 
 use super::block_layout;
 use super::hint::HintNode;
-use super::reorder::{self, Target};
+use super::landing;
 use super::{BlockFoldState, RebuildTick, TrackViewport};
-use crate::ui::inspector::field_ref_of;
-use crate::{EditorScene, SelectedAction, TimelineView};
+use crate::{EditorScene, SelectedAction, TimelineView, subject};
 
 /// A dropped field's action runs this long until there is a reason to
 /// make it drag-configurable.
 const DEFAULT_DURATION: Duration = Duration::from_secs(1);
-
-/// Sentinel "no such node" path for [`reorder::resolve`], which filters
-/// against the node being moved - a fresh node is under nothing.
-const NO_NODE: &[usize] = &[usize::MAX];
 
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(Update, preview.after(FynixSet))
@@ -45,7 +41,7 @@ pub(super) fn plugin(app: &mut App) {
 }
 
 /// Each frame a field is held: resolve where a release would land and
-/// draw the same hints `reorder` uses.
+/// draw its hint.
 fn preview(
     kernel: Res<BevyFynix>,
     pointer: Cursor,
@@ -101,9 +97,9 @@ fn preview(
         folded.paths(),
         kernel.theme().space,
     );
-    let target = reorder::resolve(content, &layout, root, NO_NODE);
+    let target = landing::resolve(content, &layout, root, None);
 
-    reorder::announce_hint(
+    landing::announce_hint(
         &mut commands,
         &hint,
         kernel.theme(),
@@ -168,13 +164,11 @@ fn create(
 ) {
     use moxie_ui::inspector::Source;
 
-    let Some(&uid) = field
-        .entity()
-        .and_then(|entity| world.get::<EntityUid>(entity))
+    let Some(subject::Target {
+        subject,
+        field: field_ref,
+    }) = subject::Target::of(world, field)
     else {
-        return;
-    };
-    let Some(field_ref) = field_ref_of(world, field) else {
         return;
     };
     let Some(value) = field.get(world) else {
@@ -187,71 +181,39 @@ fn create(
             &world.resource::<EditorScene>().scene().0.animation;
         let space = world.resource::<BevyFynix>().theme().space;
         let layout = block_layout::layout(root, view, folded, space);
-        reorder::resolve(content, &layout, root, NO_NODE)
+        landing::resolve(content, &layout, root, None)
     };
 
     let landed = {
+        let registry = type_registry.read();
         let mut editor = world.resource_mut::<EditorScene>();
-        let scene = editor.edit();
+        let Scene {
+            stage,
+            animation,
+            values,
+            ..
+        } = &mut editor.edit().0;
+        let mut pool =
+            || insert_scene_value(values, &registry, &*value);
 
-        let Some(id) =
-            bevy_motiongfx::scene::value_pool::insert_scene_value(
-                &mut scene.values,
-                &type_registry.read(),
-                &*value,
-            )
-        else {
+        let Some(id) = pool() else {
             return;
         };
-
-        // Only the first action on a field needs its own seed; later
-        // actions reuse it instead of orphaning a pool entry.
-        let existing_seed = scene
-            .0
-            .stage
-            .subjects
-            .iter()
-            .find(|s| s.id == SceneUid::Entity(uid))
-            .and_then(|s| {
-                s.fields
-                    .iter()
-                    .find(|seed| seed.field == field_ref)
-                    .map(|seed| seed.value)
-            });
-
-        let seed_id = match existing_seed {
-            Some(seed_id) => seed_id,
-            None => {
-                // Separate from `id`: the action panel edits an
-                // action's value in place, so sharing one would let
-                // editing it overwrite the stage too.
-                let Some(seed_id) =
-                    bevy_motiongfx::scene::value_pool::insert_scene_value(
-                        &mut scene.values,
-                        &type_registry.read(),
-                        &*value,
-                    )
-                else {
-                    return;
-                };
-                seed_id
-            }
-        };
-
         // The field's live value, at the moment nothing has animated
         // it yet - the only point this is also its correct staged
         // starting value. `stage` is a no-op without an entry here,
         // and baking silently falls back to whatever the world
-        // already holds.
-        seed_field(
-            &mut scene.0.stage.subjects,
-            SceneUid::Entity(uid),
-            field_ref.clone(),
-            seed_id,
-        );
+        // already holds. Pooled apart from `id`: the action panel
+        // edits an action's value in place, and that must not move
+        // the stage too.
+        if seed_field(&mut stage.subjects, subject, &field_ref, pool)
+            .is_none()
+        {
+            return;
+        }
 
         let node = SceneNode::action(ActionCmd {
-            subject: SceneUid::Entity(uid),
+            subject,
             field: field_ref,
             op: AnimOp::To,
             value: id,
@@ -260,7 +222,14 @@ fn create(
             interp: Some(AnimInterp::Linear),
             name: None,
         });
-        splice(&mut scene.0.animation, target, node)
+        match target {
+            Some(target) => landing::place(animation, &target, node),
+            // Loose past every block: a top-level child.
+            None => {
+                animation.children.push(node);
+                Some(vec![animation.children.len() - 1])
+            }
+        }
     };
 
     if let Some(path) = landed
@@ -272,78 +241,73 @@ fn create(
     RebuildTick::bump_in(world);
 }
 
-/// Stages `field` on `subject` at `value`, unless it already is -
-/// only the first action ever created for a field needs one; every
-/// later one's start comes from replaying what came before it.
+/// Stages `field` on `subject` at what `pool` pools, unless it already
+/// is: only the first action ever created for a field needs one, and
+/// every later one's start comes from replaying what came before it.
+/// `None` when `pool` fails.
 fn seed_field(
     subjects: &mut Vec<Subject<Backend>>,
     subject: SceneUid,
-    field: FieldRef,
-    value: bevy::asset::uuid::Uuid,
-) {
+    field: &FieldRef,
+    pool: impl FnOnce() -> Option<Uuid>,
+) -> Option<()> {
     let entry = subjects.iter_mut().find(|s| s.id == subject);
+    if entry.as_ref().is_some_and(|s| {
+        s.fields.iter().any(|seed| seed.field == *field)
+    }) {
+        return Some(());
+    }
+    let seed = FieldSeed {
+        field: field.clone(),
+        value: pool()?,
+    };
     match entry {
-        Some(entry) => {
-            if !entry.fields.iter().any(|seed| seed.field == field) {
-                entry.fields.push(FieldSeed { field, value });
-            }
-        }
+        Some(entry) => entry.fields.push(seed),
         None => subjects.push(Subject {
             id: subject,
-            fields: vec![FieldSeed { field, value }],
+            fields: vec![seed],
         }),
     }
+    Some(())
 }
 
-/// Puts `node` where `target` says, returning the path it landed at.
-fn splice(
-    root: &mut Block<Backend>,
-    target: Option<Target>,
-    node: SceneNode<Backend>,
-) -> Option<Vec<usize>> {
-    match target {
-        // Loose past every block: a top-level child.
-        None => {
-            root.children.push(node);
-            Some(vec![root.children.len() - 1])
-        }
-        Some(Target::Insert { parent, index }) => {
-            let block = reorder::block_at_mut(root, &parent)?;
-            let at = index.min(block.children.len());
-            block.children.insert(at, node);
-            let mut path = parent;
-            path.push(at);
-            Some(path)
-        }
-        Some(Target::Merge {
-            path,
-            combinator,
-            before,
-        }) => {
-            let (&index, parent) = path.split_last()?;
-            let block = reorder::block_at_mut(root, parent)?;
-            if index >= block.children.len() {
-                return None;
-            }
-            let host = block.children.remove(index);
-            let children = if before {
-                vec![node, host]
-            } else {
-                vec![host, node]
-            };
-            block.children.insert(
-                index,
-                SceneNode::block(Block {
-                    combinator,
-                    children,
-                    name: None,
-                }),
-            );
+#[cfg(test)]
+mod tests {
+    use bevy_motiongfx::scene::id::EntityUid;
 
-            let mut landed = parent.to_vec();
-            landed.push(index);
-            landed.push(if before { 0 } else { 1 });
-            Some(landed)
-        }
+    use super::*;
+
+    #[test]
+    fn a_field_is_seeded_once() {
+        let subject = SceneUid::Entity(EntityUid::new());
+        let field = FieldRef::new("T", "::x");
+        let mut subjects = Vec::new();
+
+        let first = Uuid::new_v4();
+        seed_field(&mut subjects, subject, &field, || Some(first));
+        seed_field(&mut subjects, subject, &field, || {
+            panic!("a seeded field pools nothing")
+        });
+
+        let [entry] = subjects.as_slice() else {
+            panic!("{} subjects, not one", subjects.len());
+        };
+        let [seed] = entry.fields.as_slice() else {
+            panic!("{} seeds, not one", entry.fields.len());
+        };
+        assert_eq!(seed.value, first);
+    }
+
+    #[test]
+    fn a_failed_pool_stages_nothing() {
+        let subject = SceneUid::Entity(EntityUid::new());
+        let field = FieldRef::new("T", "::x");
+        let mut subjects = Vec::new();
+
+        assert!(
+            seed_field(&mut subjects, subject, &field, || None)
+                .is_none()
+        );
+        assert!(subjects.is_empty());
     }
 }

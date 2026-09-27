@@ -4,10 +4,7 @@
 
 use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use moxie_asset::{AssetKindAppExt as _, AssetRef};
-use moxie_ui::asset_picker::AssetPickerAppExt as _;
-
-const GROUP: &str = "Built-in";
+use moxie_asset::{AssetChoice, AssetRef, AssetTypeAppExt as _};
 
 pub const MESHES: &[(&str, &str)] = &[
     ("Cube", "meshes/cube.glb#Mesh0/Primitive0"),
@@ -38,23 +35,29 @@ pub const DEFAULT_MATERIAL: Handle<StandardMaterial> =
     uuid_handle!("6f0c2e84-3b1d-4a5e-9c67-2d8f1a4b7e10");
 
 pub(crate) fn plugin(app: &mut App) {
-    let meshes = MESHES.iter().map(|(name, path)| {
-        (name.to_string(), AssetRef::Path(path.to_string()))
-    });
+    let built_in = |name: &str, asset| AssetChoice {
+        name: name.to_string(),
+        asset,
+        group: "Built-in".to_string(),
+    };
     let Handle::Uuid(default, _) = DEFAULT_MATERIAL else {
         unreachable!("uuid_handle! makes a Handle::Uuid");
     };
 
     // A mesh with nothing to draw, or drawn with nothing, is no use in
     // the scene.
-    app.require_asset::<Mesh>()
-        .require_asset::<StandardMaterial>()
-        .register_asset_choices::<Mesh>(GROUP, meshes)
-        .register_asset_choices::<StandardMaterial>(
-            GROUP,
-            [("Default".to_string(), AssetRef::Uuid(default))],
-        )
-        .add_systems(Startup, insert_default_material);
+    let mut mesh = app.asset_type::<Mesh>();
+    mesh.required = true;
+    mesh.choices.extend(MESHES.iter().map(|(name, path)| {
+        built_in(name, AssetRef::Path(path.to_string()))
+    }));
+    let mut material = app.asset_type::<StandardMaterial>();
+    material.required = true;
+    material
+        .choices
+        .push(built_in("Default", AssetRef::Uuid(default)));
+
+    app.add_systems(Startup, insert_default_material);
 }
 
 fn insert_default_material(

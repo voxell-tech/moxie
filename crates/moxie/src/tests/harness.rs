@@ -7,13 +7,12 @@
 
 use core::time::Duration;
 
-use bevy::asset::UnapprovedPathMode;
 use bevy::camera::NormalizedRenderTarget;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::log::LogPlugin;
 use bevy::picking::backend::HitData;
-use bevy::picking::events::{Click, Pointer};
+use bevy::picking::events::{Click, Drag, DragEnd, Pointer};
 use bevy::picking::pointer::{Location, PointerButton, PointerId};
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
@@ -22,9 +21,8 @@ use bevy::render::sync_world::SyncWorldPlugin;
 use bevy::ui_widgets::{
     Activate, Button as ButtonBehavior, MenuItem,
 };
-use bevy::window::ExitCondition;
+use bevy::window::{ExitCondition, PrimaryWindow};
 use bevy::winit::WinitPlugin;
-use moxie_asset::register_absolute_source;
 
 use crate::MoxiePlugin;
 
@@ -40,13 +38,7 @@ impl Editor {
     pub(crate) fn new() -> Self {
         let mut app = App::new();
         app.add_plugins((
-            register_absolute_source,
-            DefaultPlugins
-                .set(AssetPlugin {
-                    file_path: "../../assets".into(),
-                    unapproved_path_mode: UnapprovedPathMode::Deny,
-                    ..default()
-                })
+            crate::default_plugins()
                 .set(WindowPlugin {
                     primary_window: None,
                     exit_condition: ExitCondition::DontExit,
@@ -72,6 +64,9 @@ impl Editor {
         ));
         app.finish();
         app.cleanup();
+        // Keys reach whatever has focus by way of the primary window,
+        // so there has to be one, drawn or not.
+        app.world_mut().spawn((Window::default(), PrimaryWindow));
 
         let mut editor = Self { app };
         editor.step(SETTLE);
@@ -160,6 +155,52 @@ impl Editor {
     /// click bubbles up from there, as a real one does.
     pub(crate) fn click(&mut self, text: &str, count: u8) {
         let entity = self.text(text);
+        self.click_entity(entity, count);
+    }
+
+    /// Clicks `entity` `count` times in a row.
+    pub(crate) fn click_entity(&mut self, entity: Entity, count: u8) {
+        self.pointer(
+            entity,
+            Click {
+                button: PointerButton::Primary,
+                hit: HitData::new(
+                    Entity::PLACEHOLDER,
+                    0.0,
+                    None,
+                    None,
+                ),
+                duration: Duration::ZERO,
+                count,
+            },
+        );
+        self.step(SETTLE);
+    }
+
+    /// Drags `entity` `dx` pixels to the right and lets go.
+    pub(crate) fn drag(&mut self, entity: Entity, dx: f32) {
+        let button = PointerButton::Primary;
+        let distance = Vec2::new(dx, 0.0);
+        self.pointer(
+            entity,
+            Drag {
+                button,
+                distance,
+                delta: distance,
+            },
+        );
+        self.step(1);
+        self.pointer(entity, DragEnd { button, distance });
+        self.step(SETTLE);
+    }
+
+    /// Sends `event` from the mouse to `entity`, bubbling up from
+    /// there as a real one does.
+    fn pointer<E: Clone + core::fmt::Debug + Reflect>(
+        &mut self,
+        entity: Entity,
+        event: E,
+    ) {
         let location = Location {
             target: NormalizedRenderTarget::None {
                 width: 1,
@@ -167,19 +208,12 @@ impl Editor {
             },
             position: Vec2::ZERO,
         };
-        let click = Click {
-            button: PointerButton::Primary,
-            hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            duration: Duration::ZERO,
-            count,
-        };
         self.world().trigger(Pointer::new(
             PointerId::Mouse,
             location,
-            click,
+            event,
             entity,
         ));
-        self.step(SETTLE);
     }
 
     /// Taps `key`: pressed for a frame, then let go.

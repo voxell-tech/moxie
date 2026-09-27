@@ -12,7 +12,7 @@ use bevy::asset::AssetPath;
 use bevy::gltf::{Gltf, GltfAssetLabel, GltfMesh};
 use bevy::prelude::*;
 use moxie_asset::{
-    ABSOLUTE_SOURCE, AssetChoice, AssetChoices, AssetKinds, AssetRef,
+    ABSOLUTE_SOURCE, AssetChoice, AssetRef, AssetTypes, FoundAssets,
     InternalAssets,
 };
 use moxie_ui::asset_picker::RefreshAssetChoices;
@@ -92,7 +92,7 @@ fn scan(world: &mut World) {
     paths.sort();
     paths.dedup();
 
-    let kinds = world.resource::<AssetKinds>();
+    let kinds = world.resource::<AssetTypes>();
     let files = paths
         .iter()
         .filter_map(|path| Some((kinds.kind_of(path)?, path.clone())))
@@ -169,7 +169,7 @@ fn stem(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Rewrites the found [`AssetChoices`] from the last scan, leaving it
+/// Rewrites the [`FoundAssets`] from the last scan, leaving it
 /// untouched when nothing changed so a picker doesn't rebuild for
 /// nothing.
 fn publish(world: &mut World) {
@@ -231,7 +231,7 @@ fn publish(world: &mut World) {
     }
     found.retain(|_, choices| !choices.is_empty());
 
-    if !world.resource::<AssetChoices>().found_is(&found) {
-        world.resource_mut::<AssetChoices>().set_found(found);
+    if world.resource::<FoundAssets>().0 != found {
+        world.resource_mut::<FoundAssets>().0 = found;
     }
 }

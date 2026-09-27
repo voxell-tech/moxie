@@ -1,7 +1,7 @@
 //! Dragging a file onto an asset field.
 //!
 //! What extension loads as which asset is a registration,
-//! [`moxie_asset::AssetKinds`]. The drag itself ([`AssetDragging`])
+//! [`moxie_asset::AssetTypes`]. The drag itself ([`AssetDragging`])
 //! carries a path and that same kind, so a drop target only has to
 //! compare one [`TypeId`] to know whether what landed on it is its
 //! own.

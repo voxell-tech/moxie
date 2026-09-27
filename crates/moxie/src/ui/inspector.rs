@@ -4,100 +4,19 @@
 use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
 use bevy::reflect::PartialReflect;
-use bevy_motiongfx::scene::backend::Backend;
-use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
 use fynix::composer::Composer;
 use fynix::prelude::*;
-use motiongfx_scene::block::{Block, Node};
-use motiongfx_scene::refs::{FieldRef, TypeName};
 use moxie_asset::InternalAssets;
 use moxie_ui::elements::{
     EntityInspector, Frame, Label, ScrollArea, asset_card,
 };
-use moxie_ui::inspector::{Field, Source, reflect_changed};
+use moxie_ui::inspector::{Source, reflect_changed};
 use moxie_ui::reactive::{
-    BevyUi, FynixHost, component_changed_on, resource_changed,
-    structure_changed,
+    BevyUi, FynixHost, component_changed_on, either,
+    resource_changed, structure_changed,
 };
 
 use crate::SelectedEntity;
-use crate::scene::EditorScene;
-
-/// Whether `field` can be animated: it belongs to a scene subject and
-/// its [`FieldRef`] is registered in the scene registry. This is what
-/// makes an inspector row's label a drag source
-/// ([`moxie_ui::inspector::FieldAnimatable`]).
-pub(crate) fn is_animatable(world: &World, field: &Field) -> bool {
-    let subject = field
-        .entity()
-        .and_then(|entity| world.get::<EntityUid>(entity));
-    if subject.is_none() {
-        return false;
-    }
-    let Some(field_ref) = field_ref_of(world, field) else {
-        return false;
-    };
-    world.get_resource::<EditorScene>().is_some_and(|scene| {
-        scene.registry().is_field_registered(&field_ref)
-    })
-}
-
-/// Whether `field` already drives a [`Node::Action`] somewhere in the
-/// scene - what turns its label's diamond blue instead of neutral
-/// ([`moxie_ui::inspector::FieldHasAction`]).
-pub(crate) fn has_action(world: &World, field: &Field) -> bool {
-    let Some(&uid) = field
-        .entity()
-        .and_then(|entity| world.get::<EntityUid>(entity))
-    else {
-        return false;
-    };
-    let Some(field_ref) = field_ref_of(world, field) else {
-        return false;
-    };
-    world.get_resource::<EditorScene>().is_some_and(|scene| {
-        block_drives(
-            &scene.scene().0.animation,
-            SceneUid::Entity(uid),
-            &field_ref,
-        )
-    })
-}
-
-/// Whether `block`, or a block nested under it, holds an action for
-/// `subject`/`field`.
-fn block_drives(
-    block: &Block<Backend>,
-    subject: SceneUid,
-    field: &FieldRef,
-) -> bool {
-    block.children.iter().any(|child| match child {
-        Node::Block { block, .. } => {
-            block_drives(block, subject, field)
-        }
-        Node::Action { action, .. } => {
-            action.subject == subject && action.field == *field
-        }
-        Node::Draft { .. } => false,
-    })
-}
-
-/// The scene [`FieldRef`] an inspector [`Field`] names - its component's
-/// type path plus the reflect path rewritten to the registry's
-/// `::`-separated form. `None` for the component root.
-pub(crate) fn field_ref_of(
-    world: &World,
-    field: &Field,
-) -> Option<FieldRef> {
-    if field.path().is_empty() {
-        return None;
-    }
-    let registry = world.resource::<AppTypeRegistry>().read();
-    let type_path =
-        registry.get(field.root_type())?.type_info().type_path();
-    let path = format!("::{}", field.path().replace('.', "::"));
-    Some(FieldRef::new(TypeName::new(type_path), path))
-}
 
 /// The inspector panel, as kernel nodes.
 pub(super) struct InspectorPanel;
@@ -210,16 +129,12 @@ fn material_changed(
 + Send
 + Sync
 + 'static {
-    let mut material = component_changed_on::<
-        MeshMaterial3d<StandardMaterial>,
-    >(entity);
-    let mut internal =
+    either(
+        component_changed_on::<MeshMaterial3d<StandardMaterial>>(
+            entity,
+        ),
         structure_changed::<InternalAssets, _>(|internal| {
             internal.iter().map(|asset| asset.id).collect::<Vec<_>>()
-        });
-    move |WorldNodeRef { world, node }| {
-        let material = material(WorldNodeRef::new(world, node));
-        let internal = internal(WorldNodeRef::new(world, node));
-        material || internal
-    }
+        }),
+    )
 }
