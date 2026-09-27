@@ -6,14 +6,14 @@
 )]
 
 mod catalog;
-#[cfg(test)]
-mod harness;
 mod icons;
 mod materials;
 mod playback;
 mod presets;
 mod project;
 mod scene;
+#[cfg(test)]
+mod tests;
 mod thumbnails;
 mod ui;
 mod view;

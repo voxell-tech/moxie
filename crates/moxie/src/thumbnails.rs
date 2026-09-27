@@ -305,7 +305,7 @@ mod tests {
     use bevy::asset::uuid::Uuid;
 
     use super::*;
-    use crate::harness::Editor;
+    use crate::tests::harness::Editor;
 
     fn rigs(editor: &mut Editor) -> usize {
         let world = editor.world();
