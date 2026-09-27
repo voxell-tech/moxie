@@ -999,7 +999,6 @@
       },
     ),
   ),
-  bookmarks: [
-    "/Users/nixon/develop/projects/rust/motiongfx/editor/assets",
-  ],
+  bookmarks: [],
+  assets: [],
 )

@@ -1,8 +1,10 @@
+use std::path::Path;
+
 use bevy::asset::uuid::Uuid;
 use bevy::input::keyboard::Key;
 use bevy::prelude::*;
 use bevy_motiongfx::scene::id::EntityUid;
-use moxie_asset::{ABSOLUTE_SOURCE, InternalAssets};
+use moxie_asset::{ABSOLUTE_SOURCE, AssetRef, InternalAssets};
 
 use super::harness::{Editor, SETTLE};
 use crate::{SelectedEntity, presets, project};
@@ -149,10 +151,64 @@ fn a_project_saves_only_marked_components() {
         .entity_mut(cube)
         .insert(bevy::picking::Pickable::default());
 
-    let text = project::serialize(editor.world()).expect("it saves");
+    let text =
+        project::serialize(editor.world(), Path::new("/project"))
+            .expect("it saves");
     assert!(text.contains("Transform"), "{text}");
     assert!(text.contains("Mesh3d"), "{text}");
     assert!(!text.contains("Pickable"), "{text}");
+}
+
+#[test]
+fn the_sample_project_opens() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../projects/hello_world/hello_world.mox");
+    let text = std::fs::read_to_string(&path).expect("it is there");
+
+    let mut editor = Editor::new();
+    project::open(editor.world(), &text, path);
+    editor.step(SETTLE);
+
+    let world = editor.world();
+    let subjects = world.query::<&EntityUid>().iter(world).count();
+    assert!(subjects > 0, "its subjects came back");
+}
+
+#[test]
+fn a_moved_project_finds_the_files_beside_it() {
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+    // Needn't exist: a handle keeps its path whether or not it loads.
+    let robot = AssetRef::Path(
+        "abs:///projects/intro/robot.glb#Mesh0/Primitive0"
+            .to_string(),
+    )
+    .handle::<Mesh>(editor.world().resource::<AssetServer>());
+    editor.world().entity_mut(cube).insert(Mesh3d(robot));
+
+    let text = project::serialize(
+        editor.world(),
+        Path::new("/projects/intro"),
+    )
+    .expect("it saves");
+    project::open(
+        editor.world(),
+        &text,
+        "/moved/intro/intro.mox".into(),
+    );
+    editor.step(SETTLE);
+
+    let world = editor.world();
+    let mesh = world
+        .query_filtered::<&Mesh3d, With<EntityUid>>()
+        .single(world)
+        .expect("the cube came back")
+        .0
+        .clone();
+    assert_eq!(
+        mesh.path().map(ToString::to_string).as_deref(),
+        Some("abs:///moved/intro/robot.glb#Mesh0/Primitive0")
+    );
 }
 
 #[test]
@@ -176,7 +232,9 @@ fn project_keeps_internal_materials() {
         .expect("the material is kept")
         .base_color = red;
 
-    let text = project::serialize(editor.world()).expect("it saves");
+    let text =
+        project::serialize(editor.world(), Path::new("/project"))
+            .expect("it saves");
     project::new_scene(editor.world());
     editor.step(SETTLE);
     assert!(
@@ -187,7 +245,7 @@ fn project_keeps_internal_materials() {
             .next()
             .is_none()
     );
-    project::open(editor.world(), &text, "test.mox".into());
+    project::open(editor.world(), &text, "/project/test.mox".into());
     editor.step(SETTLE);
 
     assert_eq!(only_internal(&mut editor), (id, "Brick".to_string()));

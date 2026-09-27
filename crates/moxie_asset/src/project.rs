@@ -3,30 +3,31 @@
 //! bookmarks, and the [internal assets](crate::InternalAssets) it owns.
 //!
 //! The animation's own type is the caller's, so this reads and writes
-//! any `S` serde can.
+//! any `S` serde can. Files and bookmarks under the project's folder
+//! are written relative to it, so the project can move.
 
 use core::marker::PhantomData;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use bevy::asset::uuid::Uuid;
-use bevy::asset::{
-    EphemeralHandleBehavior, HandleDeserializeProcessor,
-    HandleSerializeProcessor, LoadFromPath,
-};
+use bevy::asset::{HandleDeserializeProcessor, LoadFromPath};
 use bevy::reflect::serde::{
     TypedReflectDeserializer, TypedReflectSerializer,
 };
 use bevy::reflect::{PartialReflect, TypeRegistry};
-use bevy::world_serialization::DynamicWorld;
 use bevy::world_serialization::serde::{
-    DynamicWorldSerializer, WorldDeserializer,
+    ENTITY_FIELD_COMPONENTS, ENTITY_STRUCT, WORLD_ENTITIES,
+    WORLD_RESOURCES, WORLD_STRUCT, WorldDeserializer,
 };
+use bevy::world_serialization::{DynamicEntity, DynamicWorld};
 use serde::de::{
     DeserializeOwned, DeserializeSeed, Error as _, MapAccess,
     SeqAccess, Visitor,
 };
-use serde::ser::{SerializeSeq, SerializeStruct};
+use serde::ser::{SerializeMap, SerializeSeq, SerializeStruct};
 use serde::{Deserializer, Serialize, Serializer};
+
+use crate::relative::{ProjectLoader, RelativeHandles};
 
 pub const EXTENSION: &str = "mox";
 
@@ -59,6 +60,8 @@ pub struct ProjectRef<'a, S> {
     pub scene: &'a S,
     pub bookmarks: &'a [PathBuf],
     pub assets: &'a [SavedAsset<'a>],
+    /// The folder the file is written to.
+    pub folder: &'a Path,
 }
 
 /// An internal asset on its way out.
@@ -86,18 +89,20 @@ pub fn write_project<S: Serialize>(
     )
 }
 
-/// A project from `.mox` text, loading the assets it names by path
-/// through `assets`.
+/// A project from `.mox` text read from `folder`, loading the assets
+/// it names by path through `assets`.
 pub fn read_project<S: DeserializeOwned>(
     text: &str,
     registry: &TypeRegistry,
     assets: &mut dyn LoadFromPath,
+    folder: &Path,
 ) -> Result<ProjectFile<S>, ron::de::SpannedError> {
     ron::Options::default().from_str_seed(
         text,
         ProjectSeed {
             registry,
-            assets,
+            assets: &mut ProjectLoader { assets, folder },
+            folder,
             scene: PhantomData,
         },
     )
@@ -125,20 +130,160 @@ impl<S: Serialize> Serialize for Document<'_, S> {
         serializer: Ser,
     ) -> Result<Ser::Ok, Ser::Error> {
         let Self { project, registry } = *self;
+        let handles = &RelativeHandles {
+            folder: project.folder,
+        };
+        let bookmarks = project
+            .bookmarks
+            .iter()
+            .map(|path| {
+                path.strip_prefix(project.folder).unwrap_or(path)
+            })
+            .collect::<Vec<_>>();
+
         let mut out = serializer.serialize_struct(PROJECT, 4)?;
         out.serialize_field(
             WORLD,
-            &DynamicWorldSerializer::new(project.world, registry),
+            &WorldOut {
+                world: project.world,
+                registry,
+                handles,
+            },
         )?;
         out.serialize_field(SCENE, project.scene)?;
-        out.serialize_field(BOOKMARKS, project.bookmarks)?;
+        out.serialize_field(BOOKMARKS, &bookmarks)?;
         out.serialize_field(
             ASSETS,
             &Assets {
                 assets: project.assets,
                 registry,
+                handles,
             },
         )?;
+        out.end()
+    }
+}
+
+/// A [`DynamicWorld`] laid out as bevy's own serializer writes it, for
+/// bevy's [`WorldDeserializer`] to read back, but with its handles
+/// written through `handles`.
+struct WorldOut<'a> {
+    world: &'a DynamicWorld,
+    registry: &'a TypeRegistry,
+    handles: &'a RelativeHandles<'a>,
+}
+
+impl Serialize for WorldOut<'_> {
+    fn serialize<Ser: Serializer>(
+        &self,
+        serializer: Ser,
+    ) -> Result<Ser::Ok, Ser::Error> {
+        let Self {
+            world,
+            registry,
+            handles,
+        } = *self;
+        let mut out = serializer.serialize_struct(WORLD_STRUCT, 2)?;
+        out.serialize_field(
+            WORLD_RESOURCES,
+            &Values {
+                values: &world.resources,
+                registry,
+                handles,
+            },
+        )?;
+        out.serialize_field(
+            WORLD_ENTITIES,
+            &Entities {
+                entities: &world.entities,
+                registry,
+                handles,
+            },
+        )?;
+        out.end()
+    }
+}
+
+struct Entities<'a> {
+    entities: &'a [DynamicEntity],
+    registry: &'a TypeRegistry,
+    handles: &'a RelativeHandles<'a>,
+}
+
+impl Serialize for Entities<'_> {
+    fn serialize<Ser: Serializer>(
+        &self,
+        serializer: Ser,
+    ) -> Result<Ser::Ok, Ser::Error> {
+        let mut out =
+            serializer.serialize_map(Some(self.entities.len()))?;
+        for entity in self.entities {
+            out.serialize_entry(
+                &entity.entity,
+                &Components(Values {
+                    values: &entity.components,
+                    registry: self.registry,
+                    handles: self.handles,
+                }),
+            )?;
+        }
+        out.end()
+    }
+}
+
+struct Components<'a>(Values<'a>);
+
+impl Serialize for Components<'_> {
+    fn serialize<Ser: Serializer>(
+        &self,
+        serializer: Ser,
+    ) -> Result<Ser::Ok, Ser::Error> {
+        let mut out =
+            serializer.serialize_struct(ENTITY_STRUCT, 1)?;
+        out.serialize_field(ENTITY_FIELD_COMPONENTS, &self.0)?;
+        out.end()
+    }
+}
+
+/// Values of distinct types, as a map from type path to value, sorted.
+struct Values<'a> {
+    values: &'a [Box<dyn PartialReflect>],
+    registry: &'a TypeRegistry,
+    handles: &'a RelativeHandles<'a>,
+}
+
+impl Serialize for Values<'_> {
+    fn serialize<Ser: Serializer>(
+        &self,
+        serializer: Ser,
+    ) -> Result<Ser::Ok, Ser::Error> {
+        let mut values = self
+            .values
+            .iter()
+            .map(|value| {
+                let info = value
+                    .get_represented_type_info()
+                    .ok_or_else(|| {
+                        serde::ser::Error::custom(
+                            "a value of no known type",
+                        )
+                    })?;
+                Ok((info.type_path(), value.as_partial_reflect()))
+            })
+            .collect::<Result<Vec<_>, Ser::Error>>()?;
+        values.sort_by_key(|(type_path, _)| *type_path);
+
+        let mut out = serializer.serialize_map(Some(values.len()))?;
+        for (type_path, value) in values {
+            out.serialize_entry(
+                type_path,
+                &TypedReflectSerializer::with_processor(
+                    value,
+                    self.registry,
+                    self.handles,
+                ),
+            )?;
+        }
         out.end()
     }
 }
@@ -146,6 +291,7 @@ impl<S: Serialize> Serialize for Document<'_, S> {
 struct Assets<'a> {
     assets: &'a [SavedAsset<'a>],
     registry: &'a TypeRegistry,
+    handles: &'a RelativeHandles<'a>,
 }
 
 impl Serialize for Assets<'_> {
@@ -159,6 +305,7 @@ impl Serialize for Assets<'_> {
             seq.serialize_element(&Asset {
                 asset,
                 registry: self.registry,
+                handles: self.handles,
             })?;
         }
         seq.end()
@@ -168,6 +315,7 @@ impl Serialize for Assets<'_> {
 struct Asset<'a> {
     asset: &'a SavedAsset<'a>,
     registry: &'a TypeRegistry,
+    handles: &'a RelativeHandles<'a>,
 }
 
 impl Serialize for Asset<'_> {
@@ -181,10 +329,6 @@ impl Serialize for Asset<'_> {
                 "an internal asset's type is not known",
             ));
         };
-        let processor = HandleSerializeProcessor {
-            ephemeral_handle_behavior: EphemeralHandleBehavior::Warn,
-        };
-
         let mut out = serializer.serialize_struct(ASSET, 4)?;
         // Before the value: reading it back needs the type first.
         out.serialize_field(TYPE, info.type_path())?;
@@ -195,7 +339,7 @@ impl Serialize for Asset<'_> {
             &TypedReflectSerializer::with_processor(
                 self.asset.value,
                 self.registry,
-                &processor,
+                self.handles,
             ),
         )?;
         out.end()
@@ -208,6 +352,8 @@ impl Serialize for Asset<'_> {
 struct ProjectSeed<'a, S> {
     registry: &'a TypeRegistry,
     assets: &'a mut dyn LoadFromPath,
+    /// What the relative bookmarks are relative to.
+    folder: &'a Path,
     scene: PhantomData<fn() -> S>,
 }
 
@@ -243,7 +389,10 @@ impl<'de, S: DeserializeOwned> Visitor<'de> for ProjectSeed<'_, S> {
         mut map: A,
     ) -> Result<Self::Value, A::Error> {
         let Self {
-            registry, assets, ..
+            registry,
+            assets,
+            folder,
+            ..
         } = self;
         let mut world = None;
         let mut scene = None;
@@ -261,7 +410,15 @@ impl<'de, S: DeserializeOwned> Visitor<'de> for ProjectSeed<'_, S> {
                     )?);
                 }
                 SCENE => scene = Some(map.next_value()?),
-                BOOKMARKS => bookmarks = Some(map.next_value()?),
+                BOOKMARKS => {
+                    bookmarks = Some(
+                        map.next_value::<Vec<PathBuf>>()?
+                            .into_iter()
+                            // An absolute one is left as it is.
+                            .map(|path| folder.join(path))
+                            .collect(),
+                    );
+                }
                 ASSETS => {
                     internal =
                         Some(map.next_value_seed(AssetsSeed {
@@ -280,9 +437,10 @@ impl<'de, S: DeserializeOwned> Visitor<'de> for ProjectSeed<'_, S> {
                 .ok_or_else(|| A::Error::missing_field(WORLD))?,
             scene: scene
                 .ok_or_else(|| A::Error::missing_field(SCENE))?,
-            // Absent in a project saved before either existed.
-            bookmarks: bookmarks.unwrap_or_default(),
-            assets: internal.unwrap_or_default(),
+            bookmarks: bookmarks
+                .ok_or_else(|| A::Error::missing_field(BOOKMARKS))?,
+            assets: internal
+                .ok_or_else(|| A::Error::missing_field(ASSETS))?,
         })
     }
 }
@@ -451,7 +609,11 @@ mod tests {
     fn round_trips() {
         let mut registry = TypeRegistry::default();
         registry.register::<Paint>();
-        let bookmarks = vec![PathBuf::from("/tmp/assets")];
+        let folder = Path::new("/projects/intro");
+        let bookmarks = vec![
+            PathBuf::from("/projects/intro/assets"),
+            PathBuf::from("/tmp/assets"),
+        ];
         let paint = Paint {
             red: 0.5,
             label: "warm".to_string(),
@@ -468,16 +630,28 @@ mod tests {
                     name: "Red",
                     value: &paint,
                 }],
+                folder,
             },
             &registry,
         )
         .unwrap();
-        let project =
-            read_project::<Vec<u32>>(&text, &registry, &mut NoAssets)
-                .unwrap();
+        assert!(!text.contains("/projects/intro"), "{text}");
+
+        // Moved, and read from where it went.
+        let moved = Path::new("/elsewhere/intro");
+        let project = read_project::<Vec<u32>>(
+            &text,
+            &registry,
+            &mut NoAssets,
+            moved,
+        )
+        .unwrap();
 
         assert_eq!(project.scene, vec![1, 2, 3]);
-        assert_eq!(project.bookmarks, bookmarks);
+        assert_eq!(
+            project.bookmarks,
+            [moved.join("assets"), PathBuf::from("/tmp/assets")]
+        );
         assert!(project.world.entities.is_empty());
         let [asset] = project.assets.as_slice() else {
             panic!(
@@ -489,20 +663,5 @@ mod tests {
         assert!(
             asset.value.reflect_partial_eq(&paint).unwrap_or(false)
         );
-    }
-
-    #[test]
-    fn missing_sections_default() {
-        let text = "(world: (resources: {}, entities: {}), scene: 7)";
-        let project = read_project::<u32>(
-            text,
-            &TypeRegistry::default(),
-            &mut NoAssets,
-        )
-        .unwrap();
-
-        assert_eq!(project.scene, 7);
-        assert!(project.bookmarks.is_empty());
-        assert!(project.assets.is_empty());
     }
 }

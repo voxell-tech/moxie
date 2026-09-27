@@ -4,6 +4,7 @@ mod internal;
 pub mod project;
 mod reflect;
 mod registry;
+mod relative;
 
 use bevy::asset::io::AssetSourceBuilder;
 use bevy::prelude::*;
@@ -16,6 +17,7 @@ pub use registry::{
     AssetChoice, AssetRef, AssetType, AssetTypeAppExt, AssetTypes,
     CreateAsset, FoundAssets, RenderThumbnail, asset_choices,
 };
+pub use relative::AnyPath;
 
 pub struct MoxieAssetPlugin;
 

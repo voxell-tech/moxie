@@ -19,7 +19,7 @@ use motiongfx_scene::scene::Scene;
 use moxie_asset::project::{
     EXTENSION, ProjectFile, ProjectRef, read_project, write_project,
 };
-use moxie_asset::{InternalAssets, replace_internal_assets};
+use moxie_asset::{AnyPath, InternalAssets, replace_internal_assets};
 
 use crate::{
     EditorScene, ProjectBookmarks, ProjectPath, SceneRoot,
@@ -40,7 +40,7 @@ pub(crate) fn save_scene(world: &mut World) {
         return;
     };
 
-    let Some(text) = serialize(world) else {
+    let Some(text) = serialize(world, folder_of(&path)) else {
         return;
     };
     if let Err(err) = std::fs::write(&path, text) {
@@ -98,7 +98,16 @@ pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
     world.insert_resource(ProjectPath(Some(path)));
 }
 
-pub(crate) fn serialize(world: &mut World) -> Option<String> {
+/// The folder a project file at `path` lives in.
+fn folder_of(path: &Path) -> &Path {
+    path.parent().unwrap_or(Path::new("/"))
+}
+
+/// The project, as a file written into `folder`.
+pub(crate) fn serialize(
+    world: &mut World,
+    folder: &Path,
+) -> Option<String> {
     // The root comes too, or the `ChildOf` on everything below it
     // would name an entity the file never held.
     let subjects: Vec<Entity> = world
@@ -126,6 +135,7 @@ pub(crate) fn serialize(world: &mut World) -> Option<String> {
         scene: &scene.scene().0,
         bookmarks: &bookmarks.0,
         assets: &assets,
+        folder,
     };
     match write_project(&project, &registry) {
         Ok(text) => Some(text),
@@ -142,9 +152,14 @@ fn deserialize(
     path: &Path,
 ) -> Option<ProjectFile<Scene<Backend>>> {
     let registry = world.resource::<AppTypeRegistry>().clone();
-    let mut assets = world.resource::<AssetServer>().clone();
+    let mut assets = AnyPath(world.resource::<AssetServer>());
 
-    match read_project(text, &registry.read(), &mut assets) {
+    match read_project(
+        text,
+        &registry.read(),
+        &mut assets,
+        folder_of(path),
+    ) {
         Ok(project) => Some(project),
         Err(err) => {
             error!("could not read {}: {err}", path.display());
