@@ -4,6 +4,8 @@
 use bevy::prelude::*;
 use moxie_asset::AssetKindAppExt as _;
 
+const GROUP: &str = "Built-in";
+
 pub const MESHES: &[(&str, &str)] = &[
     ("Cube", "meshes/cube.glb#Mesh0/Primitive0"),
     ("Plane", "meshes/plane.glb#Mesh0/Primitive0"),
@@ -32,6 +34,6 @@ pub const MATERIALS: &[(&str, &str)] =
     &[("Default", DEFAULT_MATERIAL)];
 
 pub(crate) fn plugin(app: &mut App) {
-    app.register_asset_choices::<Mesh>(MESHES)
-        .register_asset_choices::<StandardMaterial>(MATERIALS);
+    app.register_asset_choices::<Mesh>(GROUP, MESHES)
+        .register_asset_choices::<StandardMaterial>(GROUP, MATERIALS);
 }

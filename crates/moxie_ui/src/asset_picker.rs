@@ -28,7 +28,10 @@ use crate::elements::{
 };
 use crate::icons;
 use crate::inspector::{ClonableSource, when_changed};
-use crate::reactive::{BevyUi, component_changed_on, watch_root};
+use crate::reactive::{
+    BevyUi, FynixHost, component_changed_on, resource_changed,
+    watch_root,
+};
 use crate::theme::EditorTheme;
 
 const WIDTH: f32 = 372.0;
@@ -121,12 +124,54 @@ struct Cancel {
     entity: Entity,
 }
 
+/// Asks the app to bring [`AssetChoices`] up to date, before a picker
+/// lists them.
+#[derive(Event)]
+pub struct RefreshAssetChoices;
+
 /// One entry of the grid. A `None` path clears the field.
 #[derive(Clone)]
 struct Cell {
     name: String,
     path: Option<String>,
+    group: String,
     thumbnail: Option<Handle<Image>>,
+}
+
+/// "None", then every [`AssetChoices`] entry for `T`.
+fn cells<T: Asset>(world: &mut World) -> Vec<Cell> {
+    let kind = TypeId::of::<T>();
+    let choices = world
+        .get_resource::<AssetChoices>()
+        .map(|choices| choices.of::<T>().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    let mut cells = vec![Cell {
+        name: "None".to_string(),
+        path: None,
+        group: String::new(),
+        thumbnail: None,
+    }];
+    for choice in choices {
+        let thumbnail = thumbnail(world, kind, &choice.path);
+        cells.push(Cell {
+            name: choice.name,
+            path: Some(choice.path),
+            group: choice.group,
+            thumbnail,
+        });
+    }
+    cells
+}
+
+/// Loads the asset at `path`, which may lie outside the default asset
+/// source.
+pub fn load_choice<T: Asset>(world: &World, path: &str) -> Handle<T> {
+    world
+        .resource::<AssetServer>()
+        .load_builder()
+        .override_unapproved()
+        .load::<T>(path.to_string())
 }
 
 /// Opens the picker for the `T` that `source` holds, anchored at `at`
@@ -137,27 +182,9 @@ pub(crate) fn open_asset_picker<T: Asset + TypePath>(
     source: ClonableSource,
 ) {
     close_asset_picker(world);
+    world.trigger(RefreshAssetChoices);
 
-    let kind = TypeId::of::<T>();
     let original = read::<T>(world, &source);
-    let choices = world
-        .get_resource::<AssetChoices>()
-        .map(|choices| choices.of::<T>().to_vec())
-        .unwrap_or_default();
-
-    let mut cells = vec![Cell {
-        name: "None".to_string(),
-        path: None,
-        thumbnail: None,
-    }];
-    for choice in choices {
-        let thumbnail = thumbnail(world, kind, &choice.path);
-        cells.push(Cell {
-            name: choice.name,
-            path: Some(choice.path),
-            thumbnail,
-        });
-    }
     let title = format!("Select {}", T::short_type_path());
 
     let root = world
@@ -188,7 +215,7 @@ pub(crate) fn open_asset_picker<T: Asset + TypePath>(
     );
 
     watch_root::<EditorTheme>(world, root, move |ui: &mut BevyUi| {
-        window::<T>(ui, root, at, &title, &cells, &source);
+        window::<T>(ui, root, at, &title, &source);
     });
 }
 
@@ -246,7 +273,6 @@ fn window<T: Asset>(
     root: Entity,
     at: Vec2,
     title: &str,
-    cells: &[Cell],
     source: &ClonableSource,
 ) {
     let layer = ui.theme.layer.context_menu;
@@ -262,8 +288,7 @@ fn window<T: Asset>(
             },
         );
 
-    let (title, cells, source) =
-        (title.to_string(), cells.to_vec(), source.clone());
+    let (title, source) = (title.to_string(), source.clone());
     ui.elem(elem!(
         Frame,
         position = PositionType::Absolute,
@@ -281,8 +306,8 @@ fn window<T: Asset>(
         .with(move |ui| {
             header(ui, root, &title);
             search(ui, root);
-            grid::<T>(ui, root, &cells, &source);
-            footer::<T>(ui, &cells, &source);
+            grid::<T>(ui, root, &source);
+            footer::<T>(ui, &source);
         });
     });
 }
@@ -353,11 +378,11 @@ fn search(ui: &mut BevyUi, root: Entity) {
 fn grid<T: Asset>(
     ui: &mut BevyUi,
     root: Entity,
-    cells: &[Cell],
     source: &ClonableSource,
 ) {
     let gap = ui.theme.space.sm;
-    let (cells, source) = (cells.to_vec(), source.clone());
+    let text_dim = ui.theme.color.text_dim;
+    let source = source.clone();
 
     ui.elem(elem!(
         ScrollArea,
@@ -379,19 +404,56 @@ fn grid<T: Asset>(
             layout.align_content = AlignContent::FlexStart;
         }
 
-        grid.watch(component_changed_on::<Search>(root), move |ui| {
+        grid.watch(search_or_choices_changed(root), move |ui| {
             let query = ui
                 .world
                 .get::<Search>(root)
                 .map(|search| search.0.trim().to_lowercase())
                 .unwrap_or_default();
+            let mut group = "";
+            let cells = cells::<T>(ui.world);
             for (index, cell) in cells.iter().enumerate() {
-                if cell.name.to_lowercase().contains(&query) {
-                    grid_cell::<T>(ui, root, index, cell, &source);
+                if !cell.name.to_lowercase().contains(&query) {
+                    continue;
                 }
+                if cell.group != group {
+                    group = &cell.group;
+                    // Full width, so it starts a row of its own.
+                    ui.elem(elem!(
+                        Frame,
+                        width = percent(100),
+                        padding = UiRect::top(px(gap))
+                    ))
+                    .with(move |ui| {
+                        ui.elem(elem!(
+                            Label,
+                            text = cell.group.clone(),
+                            size = 11.0f32,
+                            color = text_dim
+                        ));
+                    });
+                }
+                grid_cell::<T>(ui, root, index, cell, &source);
             }
         });
     });
+}
+
+/// Fires on either, since the grid lists [`AssetChoices`] filtered by
+/// the [`Search`].
+fn search_or_choices_changed(
+    root: Entity,
+) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
++ Send
++ Sync
++ 'static {
+    let mut searched = component_changed_on::<Search>(root);
+    let mut listed = resource_changed::<AssetChoices>();
+    move |WorldNodeRef { world, node }| {
+        let searched = searched(WorldNodeRef::new(world, node));
+        let listed = listed(WorldNodeRef::new(world, node));
+        searched || listed
+    }
 }
 
 fn grid_cell<T: Asset>(
@@ -465,9 +527,7 @@ fn grid_cell<T: Asset>(
                     (assign.clone(), assigned.clone());
                 commands.queue(move |world: &mut World| {
                     let handle = match path {
-                        Some(path) => world
-                            .resource::<AssetServer>()
-                            .load::<T>(path),
+                        Some(path) => load_choice::<T>(world, &path),
                         None => Handle::default(),
                     };
                     source.set(world, &handle);
@@ -513,23 +573,23 @@ fn grid_cell<T: Asset>(
 }
 
 /// The pick, by name and path.
-fn footer<T: Asset>(
-    ui: &mut BevyUi,
-    cells: &[Cell],
-    source: &ClonableSource,
-) {
+fn footer<T: Asset>(ui: &mut BevyUi, source: &ClonableSource) {
     let text_dim = ui.theme.color.text_dim;
-    let cells = cells.to_vec();
     let shown = source.clone();
     let describe = move |world: &World| {
         let Some(path) = current_path::<T>(world, &shown) else {
             return "None".to_string();
         };
-        match cells
-            .iter()
-            .find(|cell| cell.path.as_deref() == Some(path.as_str()))
-        {
-            Some(cell) => format!("{}  {path}", cell.name),
+        let name = world.get_resource::<AssetChoices>().and_then(
+            |choices| {
+                choices
+                    .of::<T>()
+                    .find(|choice| choice.path == path)
+                    .map(|choice| choice.name.clone())
+            },
+        );
+        match name {
+            Some(name) => format!("{name}  {path}"),
             None => path,
         }
     };

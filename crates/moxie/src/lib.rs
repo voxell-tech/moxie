@@ -5,6 +5,7 @@
     reason = "Inherent to Bevy ECS: systems take many params and query tuples."
 )]
 
+mod catalog;
 mod icons;
 mod playback;
 mod presets;
@@ -41,6 +42,7 @@ impl Plugin for MoxiePlugin {
             presets::plugin,
             ui::UiPlugin,
             thumbnails::plugin,
+            catalog::plugin,
         ))
         .add_systems(PreUpdate, ensure_scene_root);
     }

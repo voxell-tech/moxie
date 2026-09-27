@@ -139,10 +139,7 @@ fn label_of<T: Asset>(world: &World, source: &dyn Source) -> String {
     world
         .get_resource::<AssetChoices>()
         .and_then(|choices| {
-            choices
-                .of::<T>()
-                .iter()
-                .find(|choice| choice.path == path)
+            choices.of::<T>().find(|choice| choice.path == path)
         })
         .map(|choice| choice.name.clone())
         .unwrap_or(path)

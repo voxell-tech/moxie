@@ -13,7 +13,9 @@ use bevy::camera::primitives::MeshAabb as _;
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
-use moxie_ui::asset_picker::AssetThumbnailAppExt as _;
+use moxie_ui::asset_picker::{
+    AssetThumbnailAppExt as _, load_choice,
+};
 
 use crate::presets;
 
@@ -67,9 +69,8 @@ fn render_mesh(
     world: &mut World,
     path: &str,
 ) -> Option<Handle<Image>> {
-    let assets = world.resource::<AssetServer>();
-    let mesh = assets.load(path.to_string());
-    let material = assets.load(presets::DEFAULT_MATERIAL);
+    let mesh = load_choice(world, path);
+    let material = load_choice(world, presets::DEFAULT_MATERIAL);
     Some(rig(world, mesh, material))
 }
 
@@ -77,9 +78,8 @@ fn render_material(
     world: &mut World,
     path: &str,
 ) -> Option<Handle<Image>> {
-    let assets = world.resource::<AssetServer>();
-    let mesh = assets.load(MATERIAL_SUBJECT);
-    let material = assets.load(path.to_string());
+    let mesh = load_choice(world, MATERIAL_SUBJECT);
+    let material = load_choice(world, path);
     Some(rig(world, mesh, material))
 }
 
