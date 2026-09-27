@@ -38,9 +38,6 @@ use crate::widgets::tooltip::TooltipExt as _;
 const WIDTH: f32 = 372.0;
 const HEIGHT: f32 = 440.0;
 const THUMBNAIL: f32 = 64.0;
-/// Seconds between two clicks on one cell for them to count as a
-/// double-click.
-const DOUBLE_CLICK: f64 = 0.5;
 
 pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<AssetThumbnails>()
@@ -152,13 +149,6 @@ struct AssetPickerRoot;
 #[derive(Component, Default)]
 struct Search(String);
 
-/// The last cell clicked and when, to tell a double-click.
-#[derive(Component, Default)]
-struct LastClick {
-    cell: Option<usize>,
-    at: f64,
-}
-
 /// Puts back what the field held when the picker opened, and closes
 /// it.
 #[derive(EntityEvent)]
@@ -224,7 +214,6 @@ pub(crate) fn open_asset_picker<T: Asset + TypePath>(
         .spawn((
             AssetPickerRoot,
             Search::default(),
-            LastClick::default(),
             Node {
                 width: percent(100),
                 height: percent(100),
@@ -480,7 +469,7 @@ fn grid<T: Asset>(
                 .unwrap_or_default();
             let mut group = "";
             let cells = cells::<T>(ui.world);
-            for (index, cell) in cells.iter().enumerate() {
+            for cell in &cells {
                 if !cell.name.to_lowercase().contains(&query) {
                     continue;
                 }
@@ -501,7 +490,7 @@ fn grid<T: Asset>(
                         ));
                     });
                 }
-                grid_cell::<T>(ui, root, index, cell, &source);
+                grid_cell::<T>(ui, root, cell, &source);
             }
         });
     });
@@ -527,7 +516,6 @@ fn search_or_choices_changed(
 fn grid_cell<T: Asset>(
     ui: &mut BevyUi,
     root: Entity,
-    index: usize,
     cell: &Cell,
     source: &ClonableSource,
 ) {
@@ -573,23 +561,11 @@ fn grid_cell<T: Asset>(
         )
         .observe(
             move |click: On<Pointer<Click>>,
-                  time: Res<Time>,
-                  mut last: Query<&mut LastClick>,
                   mut commands: Commands| {
                 if click.button != PointerButton::Primary {
                     return;
                 }
-                let now = time.elapsed_secs_f64();
-                let double =
-                    last.get_mut(root).is_ok_and(|mut last| {
-                        let double = last.cell == Some(index)
-                            && now - last.at < DOUBLE_CLICK;
-                        *last = LastClick {
-                            cell: Some(index),
-                            at: now,
-                        };
-                        double
-                    });
+                let double = click.count >= 2;
 
                 let (source, asset) =
                     (assign.clone(), assigned.clone());
