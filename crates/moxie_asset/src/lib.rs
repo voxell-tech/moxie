@@ -2,6 +2,7 @@
 
 mod internal;
 pub mod project;
+mod reflect;
 mod registry;
 
 use bevy::asset::io::AssetSourceBuilder;
@@ -10,6 +11,7 @@ use bevy::prelude::*;
 pub use internal::{
     InternalAsset, InternalAssets, replace_internal_assets,
 };
+pub use reflect::type_data;
 pub use registry::{
     AssetChoice, AssetChoices, AssetKindAppExt, AssetKinds, AssetRef,
 };

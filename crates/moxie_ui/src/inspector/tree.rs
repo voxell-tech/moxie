@@ -14,6 +14,7 @@ use bevy::reflect::{PartialReflect, ReflectRef, TypeRegistry};
 use fynix::composer::Composer;
 use fynix::prelude::*;
 use fynix::records::BuildFn;
+use moxie_asset::type_data;
 
 use bevy::asset::UntypedAssetId;
 
@@ -484,11 +485,10 @@ fn build_leaf(
     type_id: TypeId,
     depth: u32,
 ) {
-    let drawer = {
-        let registry = ui.world.resource::<AppTypeRegistry>().read();
-        registry.get_type_data::<ReflectInspect>(type_id).cloned()
+    let Some(drawer) = type_data::<ReflectInspect>(ui.world, type_id)
+    else {
+        return;
     };
-    let Some(drawer) = drawer else { return };
 
     // Dimmer than the value it labels: the field name is a caption,
     // not the content.

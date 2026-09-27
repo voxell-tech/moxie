@@ -30,6 +30,7 @@ use bevy::sprite::Anchor;
 use bevy::text::{LetterSpacing, LineHeight};
 use fynix::composer::Composer;
 use fynix::prelude::*;
+use moxie_asset::type_data;
 
 use crate::elements::{Frame, Label};
 use crate::fold;
@@ -474,9 +475,7 @@ pub fn inspect_value(ui: &mut BevyUi, source: &dyn Source) {
         .get_represented_type_info()
         .map(|info| info.type_id())
         .and_then(|type_id| {
-            let registry =
-                ui.world.resource::<AppTypeRegistry>().read();
-            registry.get_type_data::<ReflectInspect>(type_id).cloned()
+            type_data::<ReflectInspect>(ui.world, type_id)
         });
 
     if let Some(drawer) = drawer {
