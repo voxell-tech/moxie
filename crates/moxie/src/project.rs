@@ -1,44 +1,29 @@
 //! Saving and loading the editor's project file.
 //!
-//! A `.mox` holds both halves of a project in one RON document: the
-//! entities, as a reflected [`DynamicWorld`], and the animation over
-//! them, as a [`Scene`]. Neither is much use alone: the animation
+//! The file format is [`moxie_asset::project`]'s. This is what the
+//! editor does around it: picking the path, choosing what of the world
+//! is saved, and swapping the loaded project in. The animation
 //! addresses its subjects by [`EntityUid`], which only means anything
 //! once the entities carrying those ids are back in the world.
 
 use std::path::{Path, PathBuf};
 
-use bevy::asset::{AssetServer, LoadFromPath};
+use bevy::asset::AssetServer;
 use bevy::light::CascadeShadowConfig;
 use bevy::prelude::*;
-use bevy::reflect::TypeRegistry;
-use bevy::world_serialization::serde::{
-    DynamicWorldSerializer, WorldDeserializer,
-};
-use bevy::world_serialization::{
-    DynamicWorld, DynamicWorldBuilder, WorldFilter,
-};
+use bevy::world_serialization::{DynamicWorldBuilder, WorldFilter};
 use bevy_motiongfx::scene::asset::MotionGfxScene;
 use bevy_motiongfx::scene::backend::Backend;
 use bevy_motiongfx::scene::id::EntityUid;
 use motiongfx_scene::scene::Scene;
-use serde::de::{DeserializeSeed, MapAccess, Visitor};
-use serde::ser::SerializeStruct;
-use serde::{Deserializer, Serialize, Serializer};
+use moxie_asset::project::{
+    EXTENSION, ProjectFile, read_project, write_project,
+};
 
 use crate::{
     EditorScene, ProjectBookmarks, ProjectPath, SceneRoot,
     SelectedAction, SelectedEntity,
 };
-
-const EXTENSION: &str = "mox";
-
-// The name a project file is written and read under, and its fields.
-// Shared so the reader and the writer cannot drift apart.
-const PROJECT: &str = "Project";
-const WORLD: &str = "world";
-const SCENE: &str = "scene";
-const BOOKMARKS: &str = "bookmarks";
 
 /// Replaces whatever is loaded with a blank project.
 pub(crate) fn new_scene(world: &mut World) {
@@ -103,13 +88,6 @@ pub(crate) fn load_scene(world: &mut World) {
     world.insert_resource(ProjectPath(Some(path)));
 }
 
-/// Everything a project file holds, in hand.
-struct Project {
-    world: DynamicWorld,
-    scene: Scene<Backend>,
-    bookmarks: Vec<PathBuf>,
-}
-
 fn serialize(world: &mut World) -> Option<String> {
     // The root comes too, or the `ChildOf` on everything below it
     // would name an entity the file never held.
@@ -128,14 +106,12 @@ fn serialize(world: &mut World) -> Option<String> {
 
     let scene = world.resource::<EditorScene>();
     let bookmarks = world.resource::<ProjectBookmarks>();
-    let document = Document {
-        world: &dynamic,
-        scene: &scene.scene().0,
-        bookmarks: &bookmarks.0,
-        registry: &registry,
-    };
-
-    match ron::ser::to_string_pretty(&document, pretty()) {
+    match write_project(
+        &dynamic,
+        &scene.scene().0,
+        &bookmarks.0,
+        &registry,
+    ) {
         Ok(text) => Some(text),
         Err(err) => {
             error!("could not serialize the project: {err}");
@@ -148,23 +124,11 @@ fn deserialize(
     world: &mut World,
     text: &str,
     path: &Path,
-) -> Option<Project> {
+) -> Option<ProjectFile<Scene<Backend>>> {
     let registry = world.resource::<AppTypeRegistry>().clone();
     let mut assets = world.resource::<AssetServer>().clone();
 
-    let mut ron = match ron::de::Deserializer::from_str(text) {
-        Ok(ron) => ron,
-        Err(err) => {
-            error!("{} is not valid RON: {err}", path.display());
-            return None;
-        }
-    };
-
-    let seed = ProjectSeed {
-        registry: &registry.read(),
-        assets: &mut assets,
-    };
-    match seed.deserialize(&mut ron) {
+    match read_project(text, &registry.read(), &mut assets) {
         Ok(project) => Some(project),
         Err(err) => {
             error!("could not read {}: {err}", path.display());
@@ -241,110 +205,5 @@ fn ask_for_path(dialog: Dialog) -> Option<PathBuf> {
         Dialog::Save => file
             .save_file()
             .map(|path| path.with_extension(EXTENSION)),
-    }
-}
-
-fn pretty() -> ron::ser::PrettyConfig {
-    ron::ser::PrettyConfig::default()
-        .indentor("  ".to_string())
-        .new_line("\n".to_string())
-}
-
-/// The project, on its way out.
-///
-/// Hand-written because a [`DynamicWorld`] needs the type registry to
-/// serialize at all, which no derive can hand it.
-struct Document<'a> {
-    world: &'a DynamicWorld,
-    scene: &'a Scene<Backend>,
-    bookmarks: &'a [PathBuf],
-    registry: &'a TypeRegistry,
-}
-
-impl Serialize for Document<'_> {
-    fn serialize<S: Serializer>(
-        &self,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        let mut project = serializer.serialize_struct(PROJECT, 3)?;
-        project.serialize_field(
-            WORLD,
-            &DynamicWorldSerializer::new(self.world, self.registry),
-        )?;
-        project.serialize_field(SCENE, self.scene)?;
-        project.serialize_field(BOOKMARKS, self.bookmarks)?;
-        project.end()
-    }
-}
-
-/// The project, on its way in. Carries what the world half needs: the
-/// registry to read components through, and somewhere for the asset
-/// paths in them to be loaded from.
-struct ProjectSeed<'a> {
-    registry: &'a TypeRegistry,
-    assets: &'a mut dyn LoadFromPath,
-}
-
-impl<'de> DeserializeSeed<'de> for ProjectSeed<'_> {
-    type Value = Project;
-
-    fn deserialize<D: Deserializer<'de>>(
-        self,
-        deserializer: D,
-    ) -> Result<Self::Value, D::Error> {
-        deserializer.deserialize_struct(
-            PROJECT,
-            &[WORLD, SCENE, BOOKMARKS],
-            self,
-        )
-    }
-}
-
-impl<'de> Visitor<'de> for ProjectSeed<'_> {
-    type Value = Project;
-
-    fn expecting(
-        &self,
-        formatter: &mut core::fmt::Formatter,
-    ) -> core::fmt::Result {
-        formatter.write_str("a motiongfx project")
-    }
-
-    fn visit_map<A: MapAccess<'de>>(
-        self,
-        mut map: A,
-    ) -> Result<Self::Value, A::Error> {
-        let mut world = None;
-        let mut scene = None;
-        let mut bookmarks = None;
-
-        while let Some(key) = map.next_key::<String>()? {
-            match key.as_str() {
-                WORLD => {
-                    world = Some(map.next_value_seed(
-                        WorldDeserializer {
-                            type_registry: self.registry,
-                            load_from_path: self.assets,
-                        },
-                    )?);
-                }
-                SCENE => scene = Some(map.next_value()?),
-                BOOKMARKS => bookmarks = Some(map.next_value()?),
-                _ => {
-                    map.next_value::<serde::de::IgnoredAny>()?;
-                }
-            }
-        }
-
-        Ok(Project {
-            world: world.ok_or_else(|| {
-                serde::de::Error::missing_field(WORLD)
-            })?,
-            scene: scene.ok_or_else(|| {
-                serde::de::Error::missing_field(SCENE)
-            })?,
-            // Absent in a project saved before bookmarks existed.
-            bookmarks: bookmarks.unwrap_or_default(),
-        })
     }
 }

@@ -21,9 +21,7 @@ bevy = { workspace = true, default-features = true, features = [
     "scene",
     "serialize",
 ] }
-ron = { workspace = true }
 rfd = { workspace = true }
-serde = { workspace = true }
 
 [lints]
 workspace = true
