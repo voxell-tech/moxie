@@ -5,6 +5,7 @@
 use bevy::camera::RenderTarget;
 use bevy::prelude::*;
 
+use crate::thumbnails::ThumbnailCamera;
 use crate::ui::TrackViewportCamera;
 use crate::{EditorSettings, PreviewImage};
 
@@ -18,7 +19,11 @@ pub(crate) fn retarget_scene_cameras(
     preview: Res<PreviewImage>,
     q_camera: Query<
         (Entity, Option<&RenderTarget>),
-        (With<Camera>, Without<TrackViewportCamera>),
+        (
+            With<Camera>,
+            Without<TrackViewportCamera>,
+            Without<ThumbnailCamera>,
+        ),
     >,
 ) {
     for (entity, current) in &q_camera {

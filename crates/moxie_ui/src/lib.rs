@@ -6,6 +6,7 @@
 )]
 
 pub mod asset;
+pub mod asset_picker;
 pub mod context_menu;
 pub mod cursor;
 pub mod drag;
@@ -59,6 +60,7 @@ impl Plugin for MoxieUiPlugin {
             TooltipPlugin,
             FynixPlugin::default(),
             InspectPlugin,
+            asset_picker::plugin,
         ))
         // Seed the feathers palette (its default theme is empty).
         .insert_resource(UiTheme(create_dark_theme()))

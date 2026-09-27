@@ -10,6 +10,7 @@ mod playback;
 mod presets;
 mod project;
 mod scene;
+mod thumbnails;
 mod ui;
 mod view;
 
@@ -39,6 +40,7 @@ impl Plugin for MoxiePlugin {
             MoxieAssetPlugin,
             presets::plugin,
             ui::UiPlugin,
+            thumbnails::plugin,
         ))
         .add_systems(PreUpdate, ensure_scene_root);
     }

@@ -74,6 +74,25 @@ pub fn context_menu(
     );
 }
 
+/// Placement for a surface hung off a zero-size anchor at a point,
+/// flipping toward whichever corner has room.
+pub(crate) fn at_point(window_margin: f32) -> Popover {
+    let placement = |side, align| PopoverPlacement {
+        side,
+        align,
+        gap: 0.0,
+    };
+    Popover {
+        positions: vec![
+            placement(PopoverSide::Bottom, PopoverAlign::Start),
+            placement(PopoverSide::Bottom, PopoverAlign::End),
+            placement(PopoverSide::Top, PopoverAlign::Start),
+            placement(PopoverSide::Top, PopoverAlign::End),
+        ],
+        window_margin,
+    }
+}
+
 /// Closes whatever [`context_menu`] is currently open, if any.
 fn despawn_context_menu(world: &mut World) {
     let open = world
@@ -135,31 +154,7 @@ pub fn open_context_menu(
         ))
         .with(move |ui| {
             ui.elem(elem!(!MenuSurface))
-                .insert(Popover {
-                    positions: vec![
-                        PopoverPlacement {
-                            side: PopoverSide::Bottom,
-                            align: PopoverAlign::Start,
-                            gap: 0.0,
-                        },
-                        PopoverPlacement {
-                            side: PopoverSide::Bottom,
-                            align: PopoverAlign::End,
-                            gap: 0.0,
-                        },
-                        PopoverPlacement {
-                            side: PopoverSide::Top,
-                            align: PopoverAlign::Start,
-                            gap: 0.0,
-                        },
-                        PopoverPlacement {
-                            side: PopoverSide::Top,
-                            align: PopoverAlign::End,
-                            gap: 0.0,
-                        },
-                    ],
-                    window_margin: margin,
-                })
+                .insert(at_point(margin))
                 .with(move |ui| {
                     let mut builder = ContextMenuBuilder { ui };
                     build(&mut builder);

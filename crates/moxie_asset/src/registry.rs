@@ -42,14 +42,6 @@ impl AssetChoices {
             .get(&TypeId::of::<T>())
             .map_or(&[], Vec::as_slice)
     }
-
-    /// The choice registered for `T` under `name`.
-    pub fn named<T: Asset>(
-        &self,
-        name: &str,
-    ) -> Option<&AssetChoice> {
-        self.of::<T>().iter().find(|choice| choice.name == name)
-    }
 }
 
 /// Registering what a file extension loads as.

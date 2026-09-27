@@ -1,9 +1,9 @@
 //! [`Inspect`] for a [`Handle<T>`], for any asset `T`.
 //!
-//! One row, showing whatever asset is currently assigned, and a drop
-//! target for a file dragged from the assets panel whose registered
-//! [`moxie_asset::AssetKinds`] kind matches `T`. A `T` with registered
-//! [`AssetChoices`] also opens a list of them to pick from.
+//! One row, showing whatever asset is currently assigned. Clicking it
+//! opens the [asset picker](crate::asset_picker), and a file dragged
+//! from the assets panel whose registered [`moxie_asset::AssetKinds`]
+//! kind matches `T` can be dropped on it.
 
 use std::any::TypeId;
 
@@ -11,16 +11,17 @@ use bevy::asset::{Asset, AssetPath};
 use bevy::picking::events::{DragDrop, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
+use bevy::ui_widgets::Activate;
 
 use bevy_fynix::WorldEntityMut;
-use bevy_fynix::tag::TagExt as _;
 use fynix::prelude::*;
-use moxie_asset::{ABSOLUTE_SOURCE, AssetChoice, AssetChoices};
+use moxie_asset::{ABSOLUTE_SOURCE, AssetChoices};
 
 use crate::asset::AssetDragging;
+use crate::asset_picker::open_asset_picker;
+use crate::cursor::Cursor;
 use crate::elements::{
-    ButtonCursor, Dropdown, DropdownCursor, DropdownList,
-    DropdownMenu, GhostButton, Icon, Label, LabelCursor, menu_item,
+    ButtonCursor, GhostButton, Icon, Label, LabelCursor,
 };
 use crate::icons;
 use crate::reactive::BevyUi;
@@ -31,111 +32,45 @@ use super::{
 
 impl<T: Asset + TypePath> Inspect for Handle<T> {
     fn build(source: &dyn Source, ui: &mut BevyUi) {
-        let choices = ui
-            .world
-            .get_resource::<AssetChoices>()
-            .map(|choices| choices.of::<T>().to_vec())
-            .unwrap_or_default();
+        let read = source.boxed();
+        let picked = ClonableSource(source.boxed());
+        let muted = ui.theme.color.text_dim;
+        let label = label_of::<T>(ui.world, source);
 
-        if choices.is_empty() {
-            slot::<T>(source, ui);
-        } else {
-            picker::<T>(source, ui, choices);
-        }
-    }
-}
-
-/// The assigned asset, filled only by a drop.
-fn slot<T: Asset>(source: &dyn Source, ui: &mut BevyUi) {
-    let read = source.boxed();
-    let muted = ui.theme.color.text_dim;
-    let label = label_of::<T>(ui.world, source, &[]);
-
-    let mut slot = ui.elem(elem!(
-        !GhostButton,
-        width = percent(100),
-        justify = JustifyContent::SpaceBetween,
-        icon = elem!(Icon, image = icons::ASSET, color = muted),
-        label =
-            elem!(Label, text = label, color = muted, wrap = false)
-    ));
-    slot.bind(
-        |button| button.label().text(),
-        when_changed(source),
-        move |WorldNodeRef { world, .. }| {
-            label_of::<T>(world, &*read, &[])
-        },
-    );
-    accept_drop::<T>(&mut slot, source);
-}
-
-/// The assigned asset, as a dropdown over `choices`. Still takes a
-/// drop, for an asset none of them name.
-fn picker<T: Asset>(
-    source: &dyn Source,
-    ui: &mut BevyUi,
-    choices: Vec<AssetChoice>,
-) {
-    let read = source.boxed();
-    let written = source.boxed();
-    let text = ui.theme.color.text;
-    let text_dim = ui.theme.color.text_dim;
-    let label = label_of::<T>(ui.world, source, &choices);
-    let width = Dropdown::width_for(
-        &choices
-            .iter()
-            .map(|choice| choice.name.clone())
-            .collect::<Vec<_>>(),
-        12.0,
-    );
-
-    ui.elem(elem!(DropdownMenu)).with(move |ui| {
-        let shown = choices.clone();
-        let mut control = ui.elem(elem!(
-            Dropdown,
-            min_width = width,
+        let mut slot = ui.elem(elem!(
+            !GhostButton,
+            width = percent(100),
+            justify = JustifyContent::SpaceBetween,
+            icon = elem!(Icon, image = icons::ASSET, color = muted),
             label = elem!(
                 Label,
                 text = label,
-                wrap = false,
-                color = text
-            ),
-            chevron = elem!(
-                Icon,
-                image = icons::CHEVRON,
-                color = text_dim,
-                size = px(9),
-                rotation = 180.0f32
+                color = muted,
+                wrap = false
             )
         ));
-        control.pointer_tags().bind(
-            |dropdown| dropdown.label().text(),
-            when_changed(&*read),
+        slot.bind(
+            |button| button.label().text(),
+            when_changed(source),
             move |WorldNodeRef { world, .. }| {
-                label_of::<T>(world, &*read, &shown)
+                label_of::<T>(world, &*read)
+            },
+        )
+        .observe(
+            move |_: On<Activate>,
+                  cursor: Cursor,
+                  mut commands: Commands| {
+                let Some(at) = cursor.position() else {
+                    return;
+                };
+                let source = picked.clone();
+                commands.queue(move |world: &mut World| {
+                    open_asset_picker::<T>(world, at, source);
+                });
             },
         );
-        accept_drop::<T>(&mut control, &*written);
-
-        let source = ClonableSource(written.boxed());
-        ui.elem(elem!(DropdownList, width = width)).with(move |ui| {
-            for choice in &choices {
-                let source = source.clone();
-                let path = choice.path.clone();
-                menu_item(
-                    ui,
-                    None,
-                    choice.name.clone(),
-                    move |world| {
-                        let handle = world
-                            .resource::<AssetServer>()
-                            .load::<T>(path.clone());
-                        source.set(world, &handle);
-                    },
-                );
-            }
-        });
-    });
+        accept_drop::<T>(&mut slot, source);
+    }
 }
 
 /// Loads a file dragged from the assets panel into `source`, when its
@@ -185,14 +120,11 @@ fn accept_drop<T: Asset>(
     );
 }
 
-/// What `source` currently holds - the name of the choice it matches,
-/// else the asset's own path if the server knows one, or a
-/// placeholder for a handle with none or nothing assigned at all.
-fn label_of<T: Asset>(
-    world: &World,
-    source: &dyn Source,
-    choices: &[AssetChoice],
-) -> String {
+/// What `source` currently holds - the name of the [`AssetChoices`]
+/// entry it matches, else the asset's own path if the server knows
+/// one, or a placeholder for a handle with none or nothing assigned
+/// at all.
+fn label_of<T: Asset>(world: &World, source: &dyn Source) -> String {
     let Some(handle) = source.read::<Handle<T>>(world) else {
         return "(none)".to_string();
     };
@@ -200,13 +132,18 @@ fn label_of<T: Asset>(
         .get_resource::<AssetServer>()
         .and_then(|assets| assets.get_path(&handle))
     else {
-        return "(unnamed)".to_string();
+        return "(none)".to_string();
     };
 
     let path = path.to_string();
-    choices
-        .iter()
-        .find(|choice| choice.path == path)
+    world
+        .get_resource::<AssetChoices>()
+        .and_then(|choices| {
+            choices
+                .of::<T>()
+                .iter()
+                .find(|choice| choice.path == path)
+        })
         .map(|choice| choice.name.clone())
         .unwrap_or(path)
 }
