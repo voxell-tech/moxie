@@ -68,7 +68,7 @@ pub fn context_menu(
 
             let build = build.clone();
             commands.queue(move |world: &mut World| {
-                spawn_context_menu(world, at, build);
+                open_context_menu(world, at, build);
             });
         },
     );
@@ -85,7 +85,9 @@ fn despawn_context_menu(world: &mut World) {
     }
 }
 
-fn spawn_context_menu(
+/// Opens `build`'s rows at `at`, in logical screen space, closing
+/// whatever menu was already open.
+pub fn open_context_menu(
     world: &mut World,
     at: Vec2,
     build: impl Fn(&mut ContextMenuBuilder)

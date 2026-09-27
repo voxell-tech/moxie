@@ -20,7 +20,10 @@ use bevy_fynix::WorldEntityMut;
 use bevy_motiongfx::scene::id::EntityUid;
 use fynix::composer::Composer;
 use fynix::prelude::*;
-use moxie_ui::context_menu::context_menu;
+use moxie_ui::context_menu::{
+    ContextMenuBuilder, context_menu, open_context_menu,
+};
+use moxie_ui::cursor::Cursor;
 use moxie_ui::elements::{
     Button, ButtonCursor, Frame, FrameCursor, GhostButton, Icon,
     Label, LabelCursor, Panel, ScrollArea, TintButton,
@@ -32,7 +35,7 @@ use moxie_ui::reactive::{
 };
 use moxie_ui::widgets::tooltip::TooltipExt as _;
 
-use crate::{SceneRoot, SelectedEntity};
+use crate::{SceneRoot, SelectedEntity, presets};
 
 /// The [`tail`]'s least height: room below the last row for the
 /// floating button, and a drop target even when the list is full.
@@ -82,9 +85,16 @@ impl Composer<FynixHost> for AddButton {
                 !TintButton::default(),
                 icon = elem!(Icon, image = crate::icons::PLUS)
             ));
-            add.tooltip("New entity").observe(
-                |_: On<Activate>, mut commands: Commands| {
-                    commands.queue(spawn_new_entity);
+            add.tooltip("Add").observe(
+                |_: On<Activate>,
+                 cursor: Cursor,
+                 mut commands: Commands| {
+                    let Some(at) = cursor.position() else {
+                        return;
+                    };
+                    commands.queue(move |world: &mut World| {
+                        open_context_menu(world, at, add_menu);
+                    });
                 },
             );
         })
@@ -144,19 +154,71 @@ impl Composer<FynixHost> for Roots {
 /// Nothing of the animation changes: a [`Stage`](motiongfx_scene::scene::Stage)
 /// seeds the fields an action drives, and a subject with no action on
 /// it keeps whatever it was spawned holding.
-fn spawn_new_entity(world: &mut World) {
+fn spawn_new_entity(world: &mut World) -> Option<Entity> {
     let Ok(root) = world
         .query_filtered::<Entity, With<SceneRoot>>()
         .single(world)
     else {
         error!("Scene root does not exist!");
-        return;
+        return None;
     };
 
     let entity = world.spawn((EntityUid::new(), ChildOf(root))).id();
     insert_essential(world, entity);
 
     world.insert_resource(SelectedEntity(Some(entity)));
+    Some(entity)
+}
+
+/// Meshes the add menu offers, by their [`presets::MESHES`] name.
+const ADD_MESHES: &[&str] = &[
+    "Cube", "Sphere", "Plane", "Cylinder", "Cone", "Torus", "Monkey",
+];
+
+/// What the add button offers: an empty subject, or one that already
+/// shows something.
+fn add_menu(menu: &mut ContextMenuBuilder) {
+    menu.item(None, "Empty", |world| {
+        spawn_new_entity(world);
+    });
+    for &name in ADD_MESHES {
+        menu.item(None, name, move |world| spawn_mesh(world, name));
+    }
+    menu.item(None, "Point Light", |world| {
+        spawn_named(world, "Point Light", PointLight::default());
+    });
+    menu.item(None, "Directional Light", |world| {
+        spawn_named(
+            world,
+            "Directional Light",
+            DirectionalLight::default(),
+        );
+    });
+}
+
+fn spawn_mesh(world: &mut World, name: &str) {
+    let Some(&(_, path)) =
+        presets::MESHES.iter().find(|(preset, _)| *preset == name)
+    else {
+        return;
+    };
+    let assets = world.resource::<AssetServer>();
+    let visual = (
+        Mesh3d(assets.load(path)),
+        MeshMaterial3d::<StandardMaterial>(
+            assets.load(presets::DEFAULT_MATERIAL),
+        ),
+    );
+    spawn_named(world, name, visual);
+}
+
+/// A [`spawn_new_entity`] named `name` and holding `bundle`.
+fn spawn_named(world: &mut World, name: &str, bundle: impl Bundle) {
+    if let Some(entity) = spawn_new_entity(world) {
+        world
+            .entity_mut(entity)
+            .insert((Name::new(name.to_string()), bundle));
+    }
 }
 
 /// Inserts every [`register_essential`](

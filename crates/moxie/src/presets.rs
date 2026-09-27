@@ -26,8 +26,10 @@ pub const MESHES: &[(&str, &str)] = &[
     ("Monkey", "meshes/monkey.glb#Mesh0/Primitive0"),
 ];
 
+pub const DEFAULT_MATERIAL: &str = "materials/default.mat";
+
 pub const MATERIALS: &[(&str, &str)] =
-    &[("Default", "materials/default.mat")];
+    &[("Default", DEFAULT_MATERIAL)];
 
 pub(crate) fn plugin(app: &mut App) {
     app.register_asset_choices::<Mesh>(MESHES)
