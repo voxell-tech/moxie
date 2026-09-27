@@ -15,7 +15,9 @@ use bevy::ui_widgets::Activate;
 
 use bevy_fynix::WorldEntityMut;
 use fynix::prelude::*;
-use moxie_asset::{ABSOLUTE_SOURCE, AssetChoices, AssetRef};
+use moxie_asset::{
+    ABSOLUTE_SOURCE, AssetRef, FoundAssets, asset_choices,
+};
 
 use crate::asset::AssetDragging;
 use crate::asset_picker::open_asset_picker;
@@ -54,7 +56,7 @@ impl<T: Asset + TypePath> Inspect for Handle<T> {
             // The label names what is held, by its choice's name.
             either(
                 when_changed(source),
-                resource_changed::<AssetChoices>(),
+                resource_changed::<FoundAssets>(),
             ),
             move |WorldNodeRef { world, .. }| {
                 label_of::<T>(world, &*read)
@@ -124,7 +126,7 @@ fn accept_drop<T: Asset>(
     );
 }
 
-/// What `source` currently holds - the name of the [`AssetChoices`]
+/// What `source` currently holds - the name of the [`asset_choices`]
 /// entry it matches, else the asset's own path, or a placeholder for a
 /// handle that names nothing.
 fn label_of<T: Asset>(world: &World, source: &dyn Source) -> String {
@@ -136,13 +138,9 @@ fn label_of<T: Asset>(world: &World, source: &dyn Source) -> String {
         return "(none)".to_string();
     };
 
-    let name =
-        world.get_resource::<AssetChoices>().and_then(|choices| {
-            choices
-                .of::<T>()
-                .find(|choice| choice.asset == asset)
-                .map(|choice| choice.name.clone())
-        });
+    let name = asset_choices::<T>(world)
+        .find(|choice| choice.asset == asset)
+        .map(|choice| choice.name.clone());
     match (name, asset) {
         (Some(name), _) => name,
         (None, AssetRef::Path(path)) => path,

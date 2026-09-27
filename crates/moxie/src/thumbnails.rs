@@ -37,9 +37,9 @@ const SETTLE_FRAMES: u8 = 3;
 const MATERIAL_SUBJECT: &str = "meshes/sphere.glb#Mesh0/Primitive0";
 
 pub(crate) fn plugin(app: &mut App) {
-    app.asset_type::<Mesh>().thumbnail(render_mesh);
-    app.asset_type::<StandardMaterial>()
-        .thumbnail(render_material);
+    app.asset_type::<Mesh>().thumbnail = Some(render_mesh);
+    app.asset_type::<StandardMaterial>().thumbnail =
+        Some(render_material);
     app.init_resource::<Studio>()
         .add_systems(Update, (start_rigs, develop).chain());
 }

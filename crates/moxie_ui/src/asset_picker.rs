@@ -1,5 +1,5 @@
 //! Picking the asset a [`Handle<T>`] field holds, from a window of its
-//! own: a searchable grid of every [`AssetChoices`] entry for `T`,
+//! own: a searchable grid of every [`asset_choices`] entry for `T`,
 //! each with a thumbnail when the app registered a way to render one.
 //!
 //! A click assigns at once, so the scene shows the pick while the
@@ -19,7 +19,9 @@ use bevy::ui_widgets::Activate;
 use bevy_fynix::WorldEntityMut;
 use bevy_fynix::tag::TagExt as _;
 use fynix::prelude::*;
-use moxie_asset::{AssetChoices, AssetRef, AssetType, AssetTypes};
+use moxie_asset::{
+    AssetRef, AssetType, AssetTypes, FoundAssets, asset_choices,
+};
 
 use crate::context_menu::at_point;
 use bevy::feathers::cursor::EntityCursor;
@@ -101,7 +103,7 @@ struct Cancel {
     entity: Entity,
 }
 
-/// Asks the app to bring [`AssetChoices`] up to date, before a picker
+/// Asks the app to bring [`FoundAssets`] up to date, before a picker
 /// lists them.
 #[derive(Event)]
 pub struct RefreshAssetChoices;
@@ -116,13 +118,11 @@ struct Cell {
 }
 
 /// "None", unless `T` is [required](AssetType::required), then every
-/// [`AssetChoices`] entry for `T`.
+/// [`asset_choices`] entry for `T`.
 fn cells<T: Asset>(world: &mut World) -> Vec<Cell> {
     let kind = TypeId::of::<T>();
-    let choices = world
-        .get_resource::<AssetChoices>()
-        .map(|choices| choices.of::<T>().cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
+    let choices =
+        asset_choices::<T>(world).cloned().collect::<Vec<_>>();
     let required =
         asset_type(world, kind).is_some_and(|info| info.required);
 
@@ -420,7 +420,7 @@ fn grid<T: Asset>(
 
         let searched_or_listed = either(
             component_changed_on::<Search>(root),
-            resource_changed::<AssetChoices>(),
+            resource_changed::<FoundAssets>(),
         );
         grid.watch(searched_or_listed, move |ui| {
             let query = ui
@@ -570,14 +570,9 @@ fn footer<T: Asset>(ui: &mut BevyUi, source: &ClonableSource) {
         let Some(asset) = current::<T>(world, &shown) else {
             return "None".to_string();
         };
-        let name = world.get_resource::<AssetChoices>().and_then(
-            |choices| {
-                choices
-                    .of::<T>()
-                    .find(|choice| choice.asset == asset)
-                    .map(|choice| choice.name.clone())
-            },
-        );
+        let name = asset_choices::<T>(world)
+            .find(|choice| choice.asset == asset)
+            .map(|choice| choice.name.clone());
         // A file also shows where it is. Anything else has only its
         // name to go by.
         match (name, asset) {

@@ -37,7 +37,7 @@ use bevy::prelude::*;
 
 use asset::AssetDragging;
 use inspector::InspectPlugin;
-use moxie_asset::{AssetChoices, AssetTypes};
+use moxie_asset::{AssetTypes, FoundAssets};
 use reactive::FynixPlugin;
 use widgets::dock::DockPlugin;
 use widgets::tooltip::TooltipPlugin;
@@ -66,7 +66,7 @@ impl Plugin for MoxieUiPlugin {
         .insert_resource(UiTheme(create_dark_theme()))
         .add_systems(Update, elements::fit_action_icons)
         .init_resource::<AssetTypes>()
-        .init_resource::<AssetChoices>()
+        .init_resource::<FoundAssets>()
         .init_resource::<AssetDragging>();
     }
 }

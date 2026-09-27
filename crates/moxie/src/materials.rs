@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use moxie_asset::{AssetTypeAppExt as _, InternalAssets};
 
 pub(crate) fn plugin(app: &mut App) {
-    app.asset_type::<StandardMaterial>().creator(new_material);
+    app.asset_type::<StandardMaterial>().create = Some(new_material);
 }
 
 /// A new internal material, a copy of `seed`'s when there is one.
