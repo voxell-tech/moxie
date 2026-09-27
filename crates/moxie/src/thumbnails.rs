@@ -13,9 +13,8 @@ use bevy::camera::primitives::MeshAabb as _;
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
-use moxie_ui::asset_picker::{
-    AssetThumbnailAppExt as _, load_choice,
-};
+use moxie_asset::AssetRef;
+use moxie_ui::asset_picker::AssetPickerAppExt as _;
 
 use crate::presets;
 
@@ -67,19 +66,19 @@ pub(crate) struct ThumbnailCamera {
 
 fn render_mesh(
     world: &mut World,
-    path: &str,
+    asset: &AssetRef,
 ) -> Option<Handle<Image>> {
-    let mesh = load_choice(world, path);
-    let material = load_choice(world, presets::DEFAULT_MATERIAL);
-    Some(rig(world, mesh, material))
+    let mesh = asset.handle(world.resource::<AssetServer>());
+    Some(rig(world, mesh, presets::DEFAULT_MATERIAL))
 }
 
 fn render_material(
     world: &mut World,
-    path: &str,
+    asset: &AssetRef,
 ) -> Option<Handle<Image>> {
-    let mesh = load_choice(world, MATERIAL_SUBJECT);
-    let material = load_choice(world, path);
+    let assets = world.resource::<AssetServer>();
+    let mesh = assets.load(MATERIAL_SUBJECT);
+    let material = asset.handle(assets);
     Some(rig(world, mesh, material))
 }
 
@@ -159,6 +158,7 @@ fn rig(
 fn develop(
     mut commands: Commands,
     meshes: Res<Assets<Mesh>>,
+    materials: Res<Assets<StandardMaterial>>,
     assets: Res<AssetServer>,
     studio: Res<Studio>,
     mut lights: Query<&mut RenderLayers, Without<ThumbnailCamera>>,
@@ -185,8 +185,9 @@ fn develop(
                     tear_down(&mut commands, light, camera, &rig);
                     continue;
                 }
-                if !assets.is_loaded_with_dependencies(&rig.material)
-                {
+                // Through `Assets` rather than the server: a material
+                // kept under a UUID was never loaded, so never finishes.
+                if !materials.contains(&rig.material) {
                     continue;
                 }
                 let Some(aabb) = meshes

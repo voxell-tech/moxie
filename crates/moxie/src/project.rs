@@ -17,8 +17,9 @@ use bevy_motiongfx::scene::backend::Backend;
 use bevy_motiongfx::scene::id::EntityUid;
 use motiongfx_scene::scene::Scene;
 use moxie_asset::project::{
-    EXTENSION, ProjectFile, read_project, write_project,
+    EXTENSION, ProjectFile, ProjectRef, read_project, write_project,
 };
+use moxie_asset::{InternalAssets, replace_internal_assets};
 
 use crate::{
     EditorScene, ProjectBookmarks, ProjectPath, SceneRoot,
@@ -28,6 +29,7 @@ use crate::{
 /// Replaces whatever is loaded with a blank project.
 pub(crate) fn new_scene(world: &mut World) {
     clear(world);
+    replace_internal_assets(world, Vec::new());
     world.insert_resource(EditorScene::default());
     world.insert_resource(ProjectPath(None));
 }
@@ -68,6 +70,9 @@ pub(crate) fn load_scene(world: &mut World) {
     };
 
     clear(world);
+    // Before the entities: nothing breaks if a handle outruns its
+    // asset, but the first frame then draws nothing where it points.
+    replace_internal_assets(world, project.assets);
 
     let registry = world.resource::<AppTypeRegistry>().clone();
     if let Err(err) = project.world.write_to_world_with(
@@ -106,12 +111,14 @@ fn serialize(world: &mut World) -> Option<String> {
 
     let scene = world.resource::<EditorScene>();
     let bookmarks = world.resource::<ProjectBookmarks>();
-    match write_project(
-        &dynamic,
-        &scene.scene().0,
-        &bookmarks.0,
-        &registry,
-    ) {
+    let assets = world.resource::<InternalAssets>().to_save(world);
+    let project = ProjectRef {
+        world: &dynamic,
+        scene: &scene.scene().0,
+        bookmarks: &bookmarks.0,
+        assets: &assets,
+    };
+    match write_project(&project, &registry) {
         Ok(text) => Some(text),
         Err(err) => {
             error!("could not serialize the project: {err}");

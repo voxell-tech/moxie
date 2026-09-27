@@ -30,7 +30,6 @@ use bevy::sprite::Anchor;
 use bevy::text::{LetterSpacing, LineHeight};
 use fynix::composer::Composer;
 use fynix::prelude::*;
-use moxie_asset::AssetKindAppExt as _;
 
 use crate::elements::{Frame, Label};
 use crate::fold;
@@ -123,8 +122,6 @@ impl Plugin for InspectPlugin {
             .register_inspectable_as::<MeshMaterial3d<StandardMaterial>>(
                 "PBR Material",
             );
-
-        app.register_asset_kind::<StandardMaterial>(&["mat"]);
     }
 }
 

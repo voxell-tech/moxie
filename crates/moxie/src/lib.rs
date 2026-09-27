@@ -7,6 +7,7 @@
 
 mod catalog;
 mod icons;
+mod materials;
 mod playback;
 mod presets;
 mod project;
@@ -43,6 +44,7 @@ impl Plugin for MoxiePlugin {
             ui::UiPlugin,
             thumbnails::plugin,
             catalog::plugin,
+            materials::plugin,
         ))
         .add_systems(PreUpdate, ensure_scene_root);
     }

@@ -202,12 +202,9 @@ fn spawn_mesh(world: &mut World, name: &str) {
     else {
         return;
     };
-    let assets = world.resource::<AssetServer>();
     let visual = (
-        Mesh3d(assets.load(path)),
-        MeshMaterial3d::<StandardMaterial>(
-            assets.load(presets::DEFAULT_MATERIAL),
-        ),
+        Mesh3d(world.resource::<AssetServer>().load(path)),
+        MeshMaterial3d(presets::DEFAULT_MATERIAL),
     );
     spawn_named(world, name, visual);
 }

@@ -1,6 +1,7 @@
-//! The project's own assets, for the asset picker: every file under
-//! the project's folder and its bookmarks whose extension is a
-//! registered kind, and every mesh inside a glTF file there.
+//! The project's own assets, for the asset picker: its internal
+//! assets, every file under the project's folder and its bookmarks
+//! whose extension is a registered kind, and every mesh inside a glTF
+//! file there.
 
 use std::any::TypeId;
 use std::collections::HashMap;
@@ -11,13 +12,15 @@ use bevy::asset::AssetPath;
 use bevy::gltf::{Gltf, GltfAssetLabel, GltfMesh};
 use bevy::prelude::*;
 use moxie_asset::{
-    ABSOLUTE_SOURCE, AssetChoice, AssetChoices, AssetKinds,
+    ABSOLUTE_SOURCE, AssetChoice, AssetChoices, AssetKinds, AssetRef,
+    InternalAssets,
 };
 use moxie_ui::asset_picker::RefreshAssetChoices;
 
 use crate::{ProjectBookmarks, ProjectPath};
 
-const GROUP: &str = "Project";
+const INTERNAL_GROUP: &str = "Project";
+const FILES_GROUP: &str = "Files";
 /// How many folders deep a scan looks.
 const MAX_DEPTH: usize = 6;
 /// Where a scan stops, so a huge folder can't stall the editor.
@@ -163,12 +166,19 @@ fn stem(path: &Path) -> String {
 /// nothing.
 fn publish(world: &mut World) {
     let mut found = HashMap::<TypeId, Vec<AssetChoice>>::new();
+    for asset in world.resource::<InternalAssets>().iter() {
+        found.entry(asset.kind).or_default().push(AssetChoice {
+            name: asset.name.clone(),
+            asset: AssetRef::Uuid(asset.id),
+            group: INTERNAL_GROUP.to_string(),
+        });
+    }
+
     let choice = |name: String, path: AssetPath| AssetChoice {
         name,
-        path: path.to_string(),
-        group: GROUP.to_string(),
+        asset: AssetRef::Path(path.to_string()),
+        group: FILES_GROUP.to_string(),
     };
-
     let scanned = world.resource::<Scanned>();
     for (kind, path) in &scanned.files {
         found

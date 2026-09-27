@@ -9,7 +9,7 @@
 use core::any::TypeId;
 use std::collections::HashMap;
 
-use bevy::asset::Asset;
+use bevy::asset::{Asset, UntypedAssetId, UntypedHandle};
 use bevy::input_focus::InputFocus;
 use bevy::picking::events::{Click, Pointer, Press};
 use bevy::picking::pointer::PointerButton;
@@ -19,7 +19,7 @@ use bevy::ui_widgets::Activate;
 use bevy_fynix::WorldEntityMut;
 use bevy_fynix::tag::TagExt as _;
 use fynix::prelude::*;
-use moxie_asset::AssetChoices;
+use moxie_asset::{AssetChoices, AssetRef};
 
 use crate::context_menu::at_point;
 use crate::elements::{
@@ -33,6 +33,7 @@ use crate::reactive::{
     watch_root,
 };
 use crate::theme::EditorTheme;
+use crate::widgets::tooltip::TooltipExt as _;
 
 const WIDTH: f32 = 372.0;
 const HEIGHT: f32 = 440.0;
@@ -43,31 +44,49 @@ const DOUBLE_CLICK: f64 = 0.5;
 
 pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<AssetThumbnails>()
+        .init_resource::<AssetCreators>()
         .add_systems(Update, picker_keys);
 }
 
-/// Renders a preview of the asset at a path into an image, or `None`
-/// when it can't.
+/// Renders a preview of an asset into an image, or `None` when it
+/// can't.
 pub type RenderThumbnail =
-    fn(&mut World, &str) -> Option<Handle<Image>>;
+    fn(&mut World, &AssetRef) -> Option<Handle<Image>>;
+
+/// Makes a new asset, seeded from `seed` when there is one, and hands
+/// back a handle to it.
+pub type CreateAsset = fn(
+    &mut World,
+    seed: Option<UntypedAssetId>,
+) -> Option<UntypedHandle>;
 
 /// Thumbnail renderers by asset type, and every thumbnail rendered so
 /// far.
 #[derive(Resource, Default)]
 pub struct AssetThumbnails {
     renderers: HashMap<TypeId, RenderThumbnail>,
-    rendered: HashMap<(TypeId, String), Handle<Image>>,
+    rendered: HashMap<(TypeId, AssetRef), Handle<Image>>,
 }
 
-/// Registering how an asset type's thumbnail is rendered.
-pub trait AssetThumbnailAppExt {
+/// What makes a new asset of each type, for a picker's "New" button.
+#[derive(Resource, Default)]
+pub struct AssetCreators(HashMap<TypeId, CreateAsset>);
+
+/// Registering what the asset picker shows and can make, per asset
+/// type.
+pub trait AssetPickerAppExt {
     fn register_asset_thumbnail<T: Asset>(
         &mut self,
         render: RenderThumbnail,
     ) -> &mut Self;
+
+    fn register_asset_creator<T: Asset>(
+        &mut self,
+        create: CreateAsset,
+    ) -> &mut Self;
 }
 
-impl AssetThumbnailAppExt for App {
+impl AssetPickerAppExt for App {
     fn register_asset_thumbnail<T: Asset>(
         &mut self,
         render: RenderThumbnail,
@@ -78,28 +97,51 @@ impl AssetThumbnailAppExt for App {
             .insert(TypeId::of::<T>(), render);
         self
     }
+
+    fn register_asset_creator<T: Asset>(
+        &mut self,
+        create: CreateAsset,
+    ) -> &mut Self {
+        self.world_mut()
+            .get_resource_or_insert_with(AssetCreators::default)
+            .0
+            .insert(TypeId::of::<T>(), create);
+        self
+    }
 }
 
-/// The thumbnail for the `kind` asset at `path`, rendered on first
-/// ask and reused after.
+/// The thumbnail for the `kind` asset `asset`, rendered on first ask
+/// and reused after.
 fn thumbnail(
     world: &mut World,
     kind: TypeId,
-    path: &str,
+    asset: &AssetRef,
 ) -> Option<Handle<Image>> {
-    let key = (kind, path.to_string());
+    let key = (kind, asset.clone());
     let thumbnails = world.get_resource::<AssetThumbnails>()?;
     if let Some(image) = thumbnails.rendered.get(&key) {
         return Some(image.clone());
     }
     let render = *thumbnails.renderers.get(&kind)?;
 
-    let image = render(world, path)?;
+    let image = render(world, asset)?;
     world
         .resource_mut::<AssetThumbnails>()
         .rendered
         .insert(key, image.clone());
     Some(image)
+}
+
+/// Drops every internal asset's thumbnail, which may have been edited
+/// since it was rendered.
+fn forget_internal_thumbnails(world: &mut World) {
+    if let Some(mut thumbnails) =
+        world.get_resource_mut::<AssetThumbnails>()
+    {
+        thumbnails.rendered.retain(|(_, asset), _| {
+            !matches!(asset, AssetRef::Uuid(_))
+        });
+    }
 }
 
 /// The open picker's own root. There is at most one.
@@ -129,11 +171,11 @@ struct Cancel {
 #[derive(Event)]
 pub struct RefreshAssetChoices;
 
-/// One entry of the grid. A `None` path clears the field.
+/// One entry of the grid. `None` clears the field.
 #[derive(Clone)]
 struct Cell {
     name: String,
-    path: Option<String>,
+    asset: Option<AssetRef>,
     group: String,
     thumbnail: Option<Handle<Image>>,
 }
@@ -148,30 +190,20 @@ fn cells<T: Asset>(world: &mut World) -> Vec<Cell> {
 
     let mut cells = vec![Cell {
         name: "None".to_string(),
-        path: None,
+        asset: None,
         group: String::new(),
         thumbnail: None,
     }];
     for choice in choices {
-        let thumbnail = thumbnail(world, kind, &choice.path);
+        let thumbnail = thumbnail(world, kind, &choice.asset);
         cells.push(Cell {
             name: choice.name,
-            path: Some(choice.path),
+            asset: Some(choice.asset),
             group: choice.group,
             thumbnail,
         });
     }
     cells
-}
-
-/// Loads the asset at `path`, which may lie outside the default asset
-/// source.
-pub fn load_choice<T: Asset>(world: &World, path: &str) -> Handle<T> {
-    world
-        .resource::<AssetServer>()
-        .load_builder()
-        .override_unapproved()
-        .load::<T>(path.to_string())
 }
 
 /// Opens the picker for the `T` that `source` holds, anchored at `at`
@@ -182,6 +214,7 @@ pub(crate) fn open_asset_picker<T: Asset + TypePath>(
     source: ClonableSource,
 ) {
     close_asset_picker(world);
+    forget_internal_thumbnails(world);
     world.trigger(RefreshAssetChoices);
 
     let original = read::<T>(world, &source);
@@ -257,15 +290,13 @@ fn read<T: Asset>(
     Handle::<T>::from_reflect(&*source.get(world)?)
 }
 
-/// The asset path `source` holds, if it holds a named asset.
-fn current_path<T: Asset>(
+/// What `source` holds, if it can be named at all.
+fn current<T: Asset>(
     world: &World,
     source: &ClonableSource,
-) -> Option<String> {
+) -> Option<AssetRef> {
     let handle = read::<T>(world, source)?;
-    let path =
-        world.get_resource::<AssetServer>()?.get_path(&handle)?;
-    Some(path.to_string())
+    AssetRef::of(&handle, world.get_resource::<AssetServer>()?)
 }
 
 fn window<T: Asset>(
@@ -304,7 +335,7 @@ fn window<T: Asset>(
         ))
         .insert(at_point(margin))
         .with(move |ui| {
-            header(ui, root, &title);
+            header::<T>(ui, root, &title, &source);
             search(ui, root);
             grid::<T>(ui, root, &source);
             footer::<T>(ui, &source);
@@ -312,16 +343,25 @@ fn window<T: Asset>(
     });
 }
 
-fn header(ui: &mut BevyUi, root: Entity, title: &str) {
+fn header<T: Asset>(
+    ui: &mut BevyUi,
+    root: Entity,
+    title: &str,
+    source: &ClonableSource,
+) {
     let text = ui.theme.color.text;
     let text_dim = ui.theme.color.text_dim;
     let title = title.to_string();
+    let create = ui.world.get_resource::<AssetCreators>().and_then(
+        |creators| creators.0.get(&TypeId::of::<T>()).copied(),
+    );
+    let source = source.clone();
 
     ui.elem(elem!(
         Frame,
         width = percent(100),
         align = AlignItems::Center,
-        justify = JustifyContent::SpaceBetween
+        column_gap = px(4)
     ))
     .with(move |ui| {
         ui.elem(elem!(
@@ -330,6 +370,34 @@ fn header(ui: &mut BevyUi, root: Entity, title: &str) {
             bold = true,
             color = text
         ));
+        ui.elem(elem!(Frame, flex_grow = 1.0f32));
+        if let Some(create) = create {
+            ui.elem(elem!(
+                !GhostButton,
+                icon = elem!(
+                    Icon,
+                    image = icons::PLUS,
+                    color = text_dim,
+                    size = px(10)
+                ),
+                label = elem!(Label, text = "New", color = text)
+            ))
+            .tooltip("New, starting from the current one")
+            .observe(
+                move |_: On<Activate>, mut commands: Commands| {
+                    let source = source.clone();
+                    commands.queue(move |world: &mut World| {
+                        let seed = read::<T>(world, &source)
+                            .map(|handle| handle.id().untyped());
+                        let Some(handle) = create(world, seed) else {
+                            return;
+                        };
+                        source.set(world, &handle.typed::<T>());
+                        world.trigger(RefreshAssetChoices);
+                    });
+                },
+            );
+        }
         ui.elem(elem!(
             !GhostButton,
             icon = elem!(
@@ -472,12 +540,12 @@ fn grid_cell<T: Asset>(
 
     let shown = source.clone();
     let assign = source.clone();
-    let highlighted = cell.path.clone();
-    let assigned = cell.path.clone();
+    let highlighted = cell.asset.clone();
+    let assigned = cell.asset.clone();
     let Cell {
         name, thumbnail, ..
     } = cell.clone();
-    let empty = cell.path.is_none();
+    let empty = cell.asset.is_none();
 
     let mut frame = ui.elem(elem!(
         Frame,
@@ -496,7 +564,7 @@ fn grid_cell<T: Asset>(
             |frame| frame.background(),
             when_changed(&*source.0),
             move |WorldNodeRef { world, .. }| {
-                if current_path::<T>(world, &shown) == highlighted {
+                if current::<T>(world, &shown) == highlighted {
                     selection
                 } else {
                     Color::NONE
@@ -523,12 +591,13 @@ fn grid_cell<T: Asset>(
                         double
                     });
 
-                let (source, path) =
+                let (source, asset) =
                     (assign.clone(), assigned.clone());
                 commands.queue(move |world: &mut World| {
-                    let handle = match path {
-                        Some(path) => load_choice::<T>(world, &path),
-                        None => Handle::default(),
+                    let handle = match asset {
+                        Some(asset) => asset
+                            .handle(world.resource::<AssetServer>()),
+                        None => Handle::<T>::default(),
                     };
                     source.set(world, &handle);
                     if double {
@@ -572,25 +641,31 @@ fn grid_cell<T: Asset>(
         });
 }
 
-/// The pick, by name and path.
+/// The pick, by name and where it comes from.
 fn footer<T: Asset>(ui: &mut BevyUi, source: &ClonableSource) {
     let text_dim = ui.theme.color.text_dim;
     let shown = source.clone();
     let describe = move |world: &World| {
-        let Some(path) = current_path::<T>(world, &shown) else {
+        let Some(asset) = current::<T>(world, &shown) else {
             return "None".to_string();
         };
         let name = world.get_resource::<AssetChoices>().and_then(
             |choices| {
                 choices
                     .of::<T>()
-                    .find(|choice| choice.path == path)
+                    .find(|choice| choice.asset == asset)
                     .map(|choice| choice.name.clone())
             },
         );
-        match name {
-            Some(name) => format!("{name}  {path}"),
-            None => path,
+        // A file also shows where it is. Anything else has only its
+        // name to go by.
+        match (name, asset) {
+            (Some(name), AssetRef::Path(path)) => {
+                format!("{name}  {path}")
+            }
+            (None, AssetRef::Path(path)) => path,
+            (Some(name), AssetRef::Uuid(_)) => name,
+            (None, AssetRef::Uuid(_)) => "(unnamed)".to_string(),
         }
     };
     let text = describe(ui.world);

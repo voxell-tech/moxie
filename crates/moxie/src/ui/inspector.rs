@@ -8,9 +8,14 @@ use fynix::composer::Composer;
 use fynix::prelude::*;
 use motiongfx_scene::block::{Block, Node};
 use motiongfx_scene::refs::{FieldRef, TypeName};
-use moxie_ui::elements::{EntityInspector, Label, ScrollArea};
+use moxie_asset::InternalAssets;
+use moxie_ui::elements::{
+    EntityInspector, Frame, Label, ScrollArea, asset_card,
+};
 use moxie_ui::inspector::Field;
-use moxie_ui::reactive::{BevyUi, FynixHost, resource_changed};
+use moxie_ui::reactive::{
+    BevyUi, FynixHost, component_changed_on, resource_changed,
+};
 
 use crate::SelectedEntity;
 use crate::scene::EditorScene;
@@ -126,4 +131,60 @@ fn build(ui: &mut BevyUi) {
         return;
     };
     ui.compose(EntityInspector { entity });
+
+    ui.elem(elem!(
+        Frame,
+        width = percent(100),
+        direction = FlexDirection::Column
+    ))
+    .watch(material_changed(entity), move |ui| {
+        internal_material_card(ui, entity);
+    });
+}
+
+/// The card for `entity`'s material, when it is one the project owns
+/// and so can be edited. Any other is read-only, and gets none.
+fn internal_material_card(ui: &mut BevyUi, entity: Entity) {
+    let Some(material) = ui
+        .world
+        .get::<MeshMaterial3d<StandardMaterial>>(entity)
+        .map(|material| material.0.clone())
+    else {
+        return;
+    };
+    let Handle::Uuid(uuid, _) = material else {
+        return;
+    };
+    let Some(name) = ui
+        .world
+        .resource::<InternalAssets>()
+        .get(uuid)
+        .map(|asset| asset.name.clone())
+    else {
+        return;
+    };
+    asset_card(
+        ui,
+        material.id().untyped(),
+        format!("Material: {name}"),
+    );
+}
+
+/// Fires when `entity`'s material handle changes, or when the project's
+/// internal assets do.
+fn material_changed(
+    entity: Entity,
+) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
++ Send
++ Sync
++ 'static {
+    let mut material = component_changed_on::<
+        MeshMaterial3d<StandardMaterial>,
+    >(entity);
+    let mut internal = resource_changed::<InternalAssets>();
+    move |WorldNodeRef { world, node }| {
+        let material = material(WorldNodeRef::new(world, node));
+        let internal = internal(WorldNodeRef::new(world, node));
+        material || internal
+    }
 }
