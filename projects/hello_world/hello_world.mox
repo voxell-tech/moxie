@@ -9,7 +9,7 @@
           "bevy_ecs::name::Name": "Flats 2",
           "bevy_mesh::components::Mesh3d": (Path("meshes/cylinder_flat.glb#Mesh0/Primitive0")),
           "bevy_motiongfx::scene::id::EntityUid": ("b8d1ffdc-abaa-4695-9f3a-e018e054bbb4"),
-          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Path("materials/default.mat")),
+          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Uuid("6f0c2e84-3b1d-4a5e-9c67-2d8f1a4b7e10")),
           "bevy_transform::components::transform::Transform": (
             translation: (2.0, 0.0, 0.0),
             rotation: (0.0, 1.0, 0.0, -0.00000004371139),
@@ -24,7 +24,7 @@
           "bevy_ecs::name::Name": "Flats 1",
           "bevy_mesh::components::Mesh3d": (Path("meshes/sphere_flat.glb#Mesh0/Primitive0")),
           "bevy_motiongfx::scene::id::EntityUid": ("f13cccc6-fe99-4b08-83ea-8e2047a3081e"),
-          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Path("materials/default.mat")),
+          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Uuid("6f0c2e84-3b1d-4a5e-9c67-2d8f1a4b7e10")),
           "bevy_transform::components::transform::Transform": (
             translation: (0.0, 0.0, 0.0),
             rotation: (0.0, 1.0, 0.0, -0.00000004371139),
@@ -39,7 +39,7 @@
           "bevy_ecs::name::Name": "Flats 0",
           "bevy_mesh::components::Mesh3d": (Path("meshes/plane.glb#Mesh0/Primitive0")),
           "bevy_motiongfx::scene::id::EntityUid": ("a2ec0ac9-1cf4-4234-a11e-32bc673db0b4"),
-          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Path("materials/default.mat")),
+          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Uuid("6f0c2e84-3b1d-4a5e-9c67-2d8f1a4b7e10")),
           "bevy_transform::components::transform::Transform": (
             translation: (-2.0, 0.0, 0.0),
             rotation: (0.0, 1.0, 0.0, -0.00000004371139),
@@ -72,7 +72,7 @@
           "bevy_ecs::name::Name": "Solids 2",
           "bevy_mesh::components::Mesh3d": (Path("meshes/monkey.glb#Mesh0/Primitive0")),
           "bevy_motiongfx::scene::id::EntityUid": ("15860121-b882-4dd0-94d5-6f8563c80178"),
-          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Path("materials/default.mat")),
+          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Uuid("6f0c2e84-3b1d-4a5e-9c67-2d8f1a4b7e10")),
           "bevy_transform::components::transform::Transform": (
             translation: (2.0, 0.0, 0.0),
             rotation: (0.0, 1.0, 0.0, -0.00000004371139),
@@ -87,7 +87,7 @@
           "bevy_ecs::name::Name": "Solids 1",
           "bevy_mesh::components::Mesh3d": (Path("meshes/sphere.glb#Mesh0/Primitive0")),
           "bevy_motiongfx::scene::id::EntityUid": ("8f231763-6ed4-45ee-8a0f-78d80ee3f8b0"),
-          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Path("materials/default.mat")),
+          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Uuid("6f0c2e84-3b1d-4a5e-9c67-2d8f1a4b7e10")),
           "bevy_transform::components::transform::Transform": (
             translation: (0.0, 0.0, 0.0),
             rotation: (0.0, 1.0, 0.0, -0.00000004371139),
@@ -102,7 +102,7 @@
           "bevy_ecs::name::Name": "Solids 0",
           "bevy_mesh::components::Mesh3d": (Path("meshes/cube.glb#Mesh0/Primitive0")),
           "bevy_motiongfx::scene::id::EntityUid": ("90d72875-f1d4-4af4-bf0e-d19913343106"),
-          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Path("materials/default.mat")),
+          "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>": (Uuid("6f0c2e84-3b1d-4a5e-9c67-2d8f1a4b7e10")),
           "bevy_transform::components::transform::Transform": (
             translation: (-2.0, 0.9711165, 0.0),
             rotation: (0.0, 1.0, 0.0, -0.00000004371139),

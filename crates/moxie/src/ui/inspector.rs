@@ -1,16 +1,24 @@
 //! Inspects whatever is selected in the hierarchy: every reflectable
 //! component of one entity, each under a collapsible header.
 
+use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
+use bevy::reflect::PartialReflect;
 use bevy_motiongfx::scene::backend::Backend;
 use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
 use fynix::composer::Composer;
 use fynix::prelude::*;
 use motiongfx_scene::block::{Block, Node};
 use motiongfx_scene::refs::{FieldRef, TypeName};
-use moxie_ui::elements::{EntityInspector, Label, ScrollArea};
-use moxie_ui::inspector::Field;
-use moxie_ui::reactive::{BevyUi, FynixHost, resource_changed};
+use moxie_asset::InternalAssets;
+use moxie_ui::elements::{
+    EntityInspector, Frame, Label, ScrollArea, asset_card,
+};
+use moxie_ui::inspector::{Field, Source, reflect_changed};
+use moxie_ui::reactive::{
+    BevyUi, FynixHost, component_changed_on, resource_changed,
+    structure_changed,
+};
 
 use crate::SelectedEntity;
 use crate::scene::EditorScene;
@@ -20,7 +28,10 @@ use crate::scene::EditorScene;
 /// makes an inspector row's label a drag source
 /// ([`moxie_ui::inspector::FieldAnimatable`]).
 pub(crate) fn is_animatable(world: &World, field: &Field) -> bool {
-    if world.get::<EntityUid>(field.entity()).is_none() {
+    let subject = field
+        .entity()
+        .and_then(|entity| world.get::<EntityUid>(entity));
+    if subject.is_none() {
         return false;
     }
     let Some(field_ref) = field_ref_of(world, field) else {
@@ -35,7 +46,9 @@ pub(crate) fn is_animatable(world: &World, field: &Field) -> bool {
 /// scene - what turns its label's diamond blue instead of neutral
 /// ([`moxie_ui::inspector::FieldHasAction`]).
 pub(crate) fn has_action(world: &World, field: &Field) -> bool {
-    let Some(uid) = world.get::<EntityUid>(field.entity()).copied()
+    let Some(&uid) = field
+        .entity()
+        .and_then(|entity| world.get::<EntityUid>(entity))
     else {
         return false;
     };
@@ -81,7 +94,7 @@ pub(crate) fn field_ref_of(
     }
     let registry = world.resource::<AppTypeRegistry>().read();
     let type_path =
-        registry.get(field.component())?.type_info().type_path();
+        registry.get(field.root_type())?.type_info().type_path();
     let path = format!("::{}", field.path().replace('.', "::"));
     Some(FieldRef::new(TypeName::new(type_path), path))
 }
@@ -121,4 +134,92 @@ fn build(ui: &mut BevyUi) {
         return;
     };
     ui.compose(EntityInspector { entity });
+
+    ui.elem(elem!(
+        Frame,
+        width = percent(100),
+        direction = FlexDirection::Column
+    ))
+    .watch(material_changed(entity), move |ui| {
+        internal_material_card(ui, entity);
+    });
+}
+
+/// The card for `entity`'s material, when it is one the project owns
+/// and so can be edited. Any other is read-only, and gets none.
+fn internal_material_card(ui: &mut BevyUi, entity: Entity) {
+    let Some(material) = ui
+        .world
+        .get::<MeshMaterial3d<StandardMaterial>>(entity)
+        .map(|material| material.0.clone())
+    else {
+        return;
+    };
+    let Handle::Uuid(uuid, _) = material else {
+        return;
+    };
+    if ui.world.resource::<InternalAssets>().get(uuid).is_none() {
+        return;
+    }
+    asset_card(
+        ui,
+        material.id().untyped(),
+        "Material".to_string(),
+        Some(&InternalName(uuid)),
+    );
+}
+
+/// An internal asset's name, for a text field to edit.
+#[derive(Clone)]
+struct InternalName(Uuid);
+
+impl Source for InternalName {
+    fn get(&self, world: &World) -> Option<Box<dyn PartialReflect>> {
+        let asset =
+            world.get_resource::<InternalAssets>()?.get(self.0)?;
+        Some(Box::new(asset.name.clone()))
+    }
+
+    fn set(&self, world: &mut World, value: &dyn PartialReflect) {
+        if let Some(name) = String::from_reflect(value) {
+            world
+                .resource_mut::<InternalAssets>()
+                .rename(self.0, name);
+        }
+    }
+
+    fn changed(
+        &self,
+    ) -> Box<dyn FnMut(&World) -> bool + Send + Sync> {
+        let name = self.clone();
+        Box::new(reflect_changed(move |world| name.get(world)))
+    }
+
+    fn boxed(&self) -> Box<dyn Source> {
+        Box::new(self.clone())
+    }
+}
+
+/// Fires when `entity`'s material handle changes, or when an internal
+/// asset comes or goes. A rename alone doesn't: the card's own Name row
+/// shows it, and rebuilding would take the text field out from under
+/// the typing.
+fn material_changed(
+    entity: Entity,
+) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
++ Send
++ Sync
++ 'static {
+    let mut material = component_changed_on::<
+        MeshMaterial3d<StandardMaterial>,
+    >(entity);
+    let mut internal =
+        structure_changed::<InternalAssets, _>(|internal| {
+            internal.iter().map(|asset| asset.id).collect::<Vec<_>>()
+        });
+    move |WorldNodeRef { world, node }| {
+        let material = material(WorldNodeRef::new(world, node));
+        let internal = internal(WorldNodeRef::new(world, node));
+        material || internal
+    }
 }

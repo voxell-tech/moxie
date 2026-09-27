@@ -1,26 +1,26 @@
 #![doc = include_str!("../README.md")]
 
+mod internal;
+pub mod project;
 mod registry;
-mod std_material;
 
 use bevy::asset::io::AssetSourceBuilder;
-use bevy::ecs::reflect::AppTypeRegistry;
 use bevy::prelude::*;
 
-pub use registry::{AssetKindAppExt, AssetKinds};
-pub use std_material::{StdMaterialAssetLoader, serialize_to_ron};
+pub use internal::{
+    InternalAsset, InternalAssets, replace_internal_assets,
+};
+pub use registry::{
+    AssetChoice, AssetChoices, AssetKindAppExt, AssetKinds, AssetRef,
+};
 
 pub struct MoxieAssetPlugin;
 
 impl Plugin for MoxieAssetPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AssetKinds>();
-
-        let registry =
-            app.world().resource::<AppTypeRegistry>().clone();
-        app.register_asset_loader(StdMaterialAssetLoader::new(
-            &registry,
-        ));
+        app.init_resource::<AssetKinds>()
+            .init_resource::<AssetChoices>()
+            .init_resource::<InternalAssets>();
     }
 }
 

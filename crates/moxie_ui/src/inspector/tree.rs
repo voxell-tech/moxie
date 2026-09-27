@@ -15,7 +15,9 @@ use fynix::composer::Composer;
 use fynix::prelude::*;
 use fynix::records::BuildFn;
 
-use super::{Field, FieldRow, ReflectInspect, enums};
+use bevy::asset::UntypedAssetId;
+
+use super::{Field, FieldRow, Owner, ReflectInspect, enums};
 use crate::elements::{Button, Frame, Icon, Label, TintButton};
 use crate::fold::{self, CHEVRON_SHUT, Foldable, FoldsOn};
 use crate::icons;
@@ -27,39 +29,70 @@ use crate::reactive::{BevyUi, FynixHost};
 #[derive(Component, Default)]
 struct ClosedSections(HashSet<(TypeId, String)>);
 
-/// Whether the section at `component`/`path` on `entity` is open.
+/// [`ClosedSections`], for every inspected asset.
+#[derive(Resource, Default)]
+pub(crate) struct ClosedAssetSections(
+    HashSet<(UntypedAssetId, TypeId, String)>,
+);
+
+/// Whether the section at `root`/`path` on `owner` is open.
 pub(crate) fn section_open(
     world: &World,
-    entity: Entity,
-    component: TypeId,
+    owner: Owner,
+    root: TypeId,
     path: &str,
 ) -> bool {
-    !world.get::<ClosedSections>(entity).is_some_and(|sections| {
-        sections.0.contains(&(component, path.to_string()))
-    })
+    let path = path.to_string();
+    let closed = match owner {
+        Owner::Entity(entity) => {
+            world.get::<ClosedSections>(entity).is_some_and(
+                |sections| sections.0.contains(&(root, path)),
+            )
+        }
+        Owner::Asset(id) => {
+            world.get_resource::<ClosedAssetSections>().is_some_and(
+                |sections| sections.0.contains(&(id, root, path)),
+            )
+        }
+    };
+    !closed
 }
 
-/// Flips the section at `component`/`path` on `entity` open or shut.
+/// Flips the section at `root`/`path` on `owner` open or shut.
 pub(crate) fn toggle_section(
     world: &mut World,
-    entity: Entity,
-    component: TypeId,
+    owner: Owner,
+    root: TypeId,
     path: String,
     open: bool,
 ) {
+    let entity = match owner {
+        Owner::Entity(entity) => entity,
+        Owner::Asset(id) => {
+            let mut sections = world.get_resource_or_insert_with(
+                ClosedAssetSections::default,
+            );
+            if open {
+                sections.0.remove(&(id, root, path));
+            } else {
+                sections.0.insert((id, root, path));
+            }
+            return;
+        }
+    };
     let Ok(mut entity) = world.get_entity_mut(entity) else {
         return;
     };
     match entity.get_mut::<ClosedSections>() {
         Some(mut sections) if !open => {
-            sections.0.insert((component, path));
+            sections.0.insert((root, path));
         }
         Some(mut sections) => {
-            sections.0.remove(&(component, path));
+            sections.0.remove(&(root, path));
         }
         None if !open => {
             let mut sections = HashSet::default();
-            sections.insert((component, path));
+            sections.insert((root, path));
             entity.insert(ClosedSections(sections));
         }
         None => {}
@@ -551,7 +584,7 @@ fn build_variant(
     // entry is always this same variant.
     ui.compose(Section::new(
         name,
-        (root.entity(), root.component(), path),
+        (root.owner(), root.root_type(), path),
         move |ui: &mut BevyUi| {
             let Some(Entry::Variant {
                 variants,
@@ -586,7 +619,7 @@ fn build_group(
     // stale data forward.
     ui.compose(Section::new(
         name,
-        (root.entity(), root.component(), path),
+        (root.owner(), root.root_type(), path),
         move |ui: &mut BevyUi| {
             let walked = entries(ui.world, &group_field);
             build_entries(ui, &group_field, walked, depth + 1);
@@ -599,9 +632,9 @@ fn build_group(
 pub struct Section<F, H> {
     pub name: String,
     pub body: F,
-    /// This section's place in `ClosedSections`, as entity,
-    /// component, path.
-    pub section: (Entity, TypeId, String),
+    /// This section's place in `ClosedSections`, as owner, root type,
+    /// path.
+    pub section: (Owner, TypeId, String),
     /// Run on the header once it's built, after folding is wired to
     /// it - for whatever else the header should carry, like a delete
     /// button. A no-op when left out.
@@ -615,7 +648,7 @@ impl<F> Section<F, fn(ElementMut<'_, '_, FynixHost, Button>)> {
     /// A section with nothing extra on its header.
     pub fn new(
         name: String,
-        section: (Entity, TypeId, String),
+        section: (Owner, TypeId, String),
         body: F,
     ) -> Self {
         Self {
@@ -647,8 +680,8 @@ impl<
             section,
             on_header,
         } = self;
-        let (entity, component, path) = section;
-        let open = section_open(ui.world, entity, component, &path);
+        let (owner, root, path) = section;
+        let open = section_open(ui.world, owner, root, &path);
 
         let muted = ui.theme.color.text_dim;
         let primary = ui.theme.color.text;
@@ -682,8 +715,8 @@ impl<
             on_toggle: move |world: &mut World, open: bool| {
                 toggle_section(
                     world,
-                    entity,
-                    component,
+                    owner,
+                    root,
                     path.clone(),
                     open,
                 );

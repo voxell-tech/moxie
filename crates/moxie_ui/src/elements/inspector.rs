@@ -11,6 +11,7 @@
 use std::any::TypeId;
 use std::borrow::Cow;
 
+use bevy::asset::UntypedAssetId;
 use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
 use bevy::reflect::TypeRegistration;
@@ -33,8 +34,9 @@ use crate::context_menu::context_menu;
 use crate::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use crate::icons;
 use crate::inspector::{
-    Field, FieldAnimatable, InspectorFields, ReflectEssential,
-    ReflectInspectGroup, ReflectInspectable, draggable_field,
+    ClonableSource, Field, FieldAnimatable, FieldRow,
+    InspectorFields, ReflectEssential, ReflectInspectGroup,
+    ReflectInspectable, Source, draggable_field, inspect_value,
     root_leaf, section_open, toggle_section,
 };
 use crate::reactive::{
@@ -71,7 +73,30 @@ impl Composer<FynixHost> for ComponentInspector {
         self,
         ui: &mut BevyUi,
     ) -> ElementHandle<FynixHost, Frame> {
-        let field = Field::new(self.entity, self.component);
+        RootInspector {
+            root: Field::new(self.entity, self.component),
+            depth: self.depth,
+        }
+        .compose(ui)
+    }
+}
+
+/// Inspector for a [`Field`]'s whole root: a component or an asset.
+pub struct RootInspector {
+    pub root: Field,
+    /// How many [`Foldable`](crate::fold::Foldable) bodies this sits
+    /// under, for `FieldRow` to keep its columns aligned.
+    pub depth: u32,
+}
+
+impl Composer<FynixHost> for RootInspector {
+    type Element = Frame;
+
+    fn compose(
+        self,
+        ui: &mut BevyUi,
+    ) -> ElementHandle<FynixHost, Frame> {
+        let field = self.root;
         let built = field.clone();
         let depth = self.depth;
 
@@ -414,29 +439,51 @@ fn essential(world: &World, component: TypeId) -> bool {
 #[derive(Component)]
 struct CardClosed;
 
-/// One component's own card: a title that's always there, above a
-/// body that folds flush under it - no rail, no indent, each field
-/// reading like its own root - like Unity's per-component panel.
+/// One asset's own card, the same as a component's, titled `name`.
+/// With `rename`, a Name row above its fields edits what the asset is
+/// called.
+pub fn asset_card(
+    ui: &mut BevyUi,
+    id: UntypedAssetId,
+    title: String,
+    rename: Option<&dyn Source>,
+) {
+    let rename = rename.map(|source| ClonableSource(source.boxed()));
+    root_card(ui, Field::asset(id), title, rename);
+}
+
+/// One component's own card.
 fn component_card(
     ui: &mut BevyUi,
     entity: Entity,
     component: TypeId,
     name: String,
 ) {
-    let deletable = !essential(ui.world, component);
-    let open = section_open(ui.world, entity, component, "");
+    root_card(ui, Field::new(entity, component), name, None);
+}
+
+/// One root's own card: a title that's always there, above a body that
+/// folds flush under it - no rail, no indent, each field reading like
+/// its own root - like Unity's per-component panel.
+fn root_card(
+    ui: &mut BevyUi,
+    root: Field,
+    name: String,
+    rename: Option<ClonableSource>,
+) {
+    let (owner, root_type) = (root.owner(), root.root_type());
+    // Only a component can be taken off what holds it.
+    let deletable =
+        root.entity().filter(|_| !essential(ui.world, root_type));
+    let open = section_open(ui.world, owner, root_type, "");
     // The title stands in for a genuine field's own name when the
-    // whole component is one nameless leaf, so it carries that
-    // field's drag source too, same as `FieldName` gives a row of
-    // its own.
-    let drag_field =
-        root_leaf(ui.world, &Field::new(entity, component)).filter(
-            |field| {
-                ui.world
-                    .resource::<FieldAnimatable>()
-                    .allows(ui.world, field)
-            },
-        );
+    // whole root is one nameless leaf, so it carries that field's drag
+    // source too, same as `FieldName` gives a row of its own.
+    let drag_field = root_leaf(ui.world, &root).filter(|field| {
+        ui.world
+            .resource::<FieldAnimatable>()
+            .allows(ui.world, field)
+    });
     let background = ui.theme.color.panel;
     let radius = ui.theme.space.card_radius;
     let padding = ui.theme.space.card_padding;
@@ -494,8 +541,8 @@ fn component_card(
                         }
                         toggle_section(
                             world,
-                            entity,
-                            component,
+                            owner,
+                            root_type,
                             String::new(),
                             opening,
                         );
@@ -518,14 +565,14 @@ fn component_card(
             draggable_field(&mut header, field, name);
         }
 
-        if deletable {
+        if let Some(entity) = deletable {
             context_menu(&mut header, move |menu| {
                 let critical = menu.theme().color.critical;
                 menu.item(
                     Some((icons::TRASH, critical)),
                     "Delete",
                     move |world| {
-                        remove_component(world, entity, component);
+                        remove_component(world, entity, root_type);
                     },
                 );
             });
@@ -553,9 +600,21 @@ fn component_card(
                 if ui.world.get::<CardClosed>(node).is_some() {
                     return;
                 }
-                ui.compose(ComponentInspector {
-                    entity,
-                    component,
+                if let Some(rename) = rename.clone() {
+                    let muted = ui.theme.color.text_dim;
+                    ui.compose(FieldRow {
+                        label: "Name".to_string(),
+                        color: muted,
+                        bold: false,
+                        depth: 0,
+                        field: None,
+                        value: move |ui: &mut BevyUi| {
+                            inspect_value(ui, &*rename.0);
+                        },
+                    });
+                }
+                ui.compose(RootInspector {
+                    root: root.clone(),
                     depth: 0,
                 });
             },

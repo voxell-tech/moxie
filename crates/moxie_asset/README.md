@@ -6,9 +6,10 @@
 
 **Moxie Asset** is the asset infrastructure the
 [Moxie](https://github.com/voxell-tech/moxie) editor's UI builds on: a
-registry of which file extension loads as which `Asset`, the source a
-bookmark's absolute path resolves through, and the `.mat` material
-file format. `MoxieAssetPlugin` wires all of it onto an `App` at once.
+registry of which file extension loads as which `Asset` and what is
+offered wherever one is picked, the source a bookmark's absolute path
+resolves through, the internal assets a project owns, and the `.mox`
+project file format. `MoxieAssetPlugin` wires it onto an `App` at once.
 
 ## Join the community!
 

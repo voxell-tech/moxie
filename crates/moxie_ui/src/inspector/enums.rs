@@ -29,7 +29,7 @@ use bevy_fynix::tag::TagExt as _;
 use fynix::composer::Composer;
 use fynix::prelude::*;
 
-use super::{Source, when_changed};
+use super::{ClonableSource, Source, when_changed};
 use crate::elements::{
     Dropdown, DropdownCursor, DropdownList, DropdownMenu, Frame,
     Icon, Label, LabelCursor, menu_item,
@@ -268,31 +268,6 @@ fn list(
             option(ui, &*source, variant);
         }
     });
-}
-
-/// A boxed [`Source`] cloned through [`Source::boxed`] rather than
-/// derived - a trait object isn't `Clone` on its own - so `option`'s
-/// row can hand [`menu_item`] a closure it's free to run more than
-/// once.
-struct ClonableSource(Box<dyn Source>);
-
-impl Clone for ClonableSource {
-    fn clone(&self) -> Self {
-        Self(self.0.boxed())
-    }
-}
-
-impl ClonableSource {
-    // Methods of its own: a closure only using the field captures
-    // just that field - `Box<dyn Source>` on its own, which isn't
-    // `Clone`.
-    fn get(&self, world: &World) -> Option<Box<dyn PartialReflect>> {
-        self.0.get(world)
-    }
-
-    fn set(&self, world: &mut World, value: &dyn PartialReflect) {
-        self.0.set(world, value);
-    }
 }
 
 fn option(ui: &mut BevyUi, source: &dyn Source, variant: String) {

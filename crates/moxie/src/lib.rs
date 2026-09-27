@@ -5,10 +5,16 @@
     reason = "Inherent to Bevy ECS: systems take many params and query tuples."
 )]
 
+mod catalog;
 mod icons;
+mod materials;
 mod playback;
+mod presets;
 mod project;
 mod scene;
+#[cfg(test)]
+mod tests;
+mod thumbnails;
 mod ui;
 mod view;
 
@@ -36,7 +42,11 @@ impl Plugin for MoxiePlugin {
             BevyMotionGfxPlugin,
             SettingsPlugin::new("org.voxell.motiongfx.editor"),
             MoxieAssetPlugin,
+            presets::plugin,
             ui::UiPlugin,
+            thumbnails::plugin,
+            catalog::plugin,
+            materials::plugin,
         ))
         .add_systems(PreUpdate, ensure_scene_root);
     }

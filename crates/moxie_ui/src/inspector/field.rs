@@ -1,5 +1,6 @@
 use std::any::TypeId;
 
+use bevy::asset::{ReflectAsset, UntypedAssetId};
 use bevy::ecs::change_detection::{ComponentTicks, Tick};
 use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
@@ -7,24 +8,33 @@ use bevy::reflect::{GetPath, PartialReflect};
 
 use super::Source;
 
-/// Where an inspector reads and writes: one component of one entity,
-/// and the reflect path reaching a leaf inside it. The empty path is
-/// the component itself.
+/// What a [`Field`]'s root value lives in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Owner {
+    /// A component of this entity.
+    Entity(Entity),
+    /// This asset, in its `Assets` collection.
+    Asset(UntypedAssetId),
+}
+
+/// Where an inspector reads and writes: one root value, a component of
+/// an entity or an asset, and the reflect path reaching a leaf inside
+/// it. The empty path is the root itself.
 ///
 /// A resource is a component too. Bevy parks each one on an entity
 /// of its own, so which it was handed never comes up. That entity is
 /// settled once, when the field is built.
 ///
 /// A [`Source`] a widget can be handed. It carries no value: a widget
-/// re-reads through the path whenever the component changes, so
-/// nothing goes stale behind a snapshot.
+/// re-reads through the path whenever the root changes, so nothing
+/// goes stale behind a snapshot.
 ///
 /// Holds a [`TypeId`], so a field can be named before the world has
 /// registered the type.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Field {
-    entity: Entity,
-    component: TypeId,
+    owner: Owner,
+    root: TypeId,
     path: Box<str>,
 }
 
@@ -32,8 +42,8 @@ impl Field {
     /// The whole of one component, which is the empty path.
     pub fn new(entity: Entity, component: TypeId) -> Self {
         Self {
-            entity,
-            component,
+            owner: Owner::Entity(entity),
+            root: component,
             path: "".into(),
         }
     }
@@ -41,6 +51,15 @@ impl Field {
     /// The whole of one component, named by type.
     pub fn of<T: Component + Reflect>(entity: Entity) -> Self {
         Self::new(entity, TypeId::of::<T>())
+    }
+
+    /// The whole of one asset.
+    pub fn asset(id: UntypedAssetId) -> Self {
+        Self {
+            owner: Owner::Asset(id),
+            root: id.type_id(),
+            path: "".into(),
+        }
     }
 
     /// The leaf one step further in, which is how the walk descends.
@@ -52,53 +71,71 @@ impl Field {
         };
 
         Self {
-            entity: self.entity,
-            component: self.component,
+            owner: self.owner,
+            root: self.root,
             path: path.into_boxed_str(),
         }
     }
 
-    /// The same component, back at its root.
+    /// The same root, back at the empty path.
     pub fn root(&self) -> Self {
-        Self::new(self.entity, self.component)
+        Self {
+            owner: self.owner,
+            root: self.root,
+            path: "".into(),
+        }
     }
 
-    pub fn entity(&self) -> Entity {
-        self.entity
+    pub fn owner(&self) -> Owner {
+        self.owner
     }
 
-    pub fn component(&self) -> TypeId {
-        self.component
+    /// The entity whose component this is, or `None` for an asset.
+    pub fn entity(&self) -> Option<Entity> {
+        match self.owner {
+            Owner::Entity(entity) => Some(entity),
+            Owner::Asset(_) => None,
+        }
+    }
+
+    /// The root's type: the component's, or the asset's.
+    pub fn root_type(&self) -> TypeId {
+        self.root
     }
 
     pub fn path(&self) -> &str {
         &self.path
     }
 
-    /// The accessor for this field's component, cloned out so the
-    /// registry guard is never held while the caller runs. Nesting
-    /// two read guards on one thread can deadlock the moment a writer
-    /// queues between them, and callers here reach for the registry
-    /// again.
-    fn accessor(&self, world: &World) -> Option<ReflectComponent> {
+    /// The type data for this field's root, cloned out so the registry
+    /// guard is never held while the caller runs. Nesting two read
+    /// guards on one thread can deadlock the moment a writer queues
+    /// between them, and callers here reach for the registry again.
+    fn type_data<D: bevy::reflect::TypeData + Clone>(
+        &self,
+        world: &World,
+    ) -> Option<D> {
         let registry = world.resource::<AppTypeRegistry>().read();
-        registry
-            .get_type_data::<ReflectComponent>(self.component)
-            .cloned()
+        registry.get_type_data::<D>(self.root).cloned()
     }
 
-    /// Runs `read` against the whole component, or returns `None`
-    /// when the entity is gone, does not carry it, or its type was
-    /// never registered with `#[reflect(Component)]` /
-    /// `#[reflect(Resource)]`.
+    /// Runs `read` against the whole root, or returns `None` when it is
+    /// gone or its type was never registered with
+    /// `#[reflect(Component)]` / `#[reflect(Resource)]` /
+    /// `#[reflect(Asset)]`.
     pub fn read<R>(
         &self,
         world: &World,
         read: impl FnOnce(&dyn Reflect) -> R,
     ) -> Option<R> {
-        let component = self.accessor(world)?;
-        let value =
-            component.reflect(world.get_entity(self.entity).ok()?)?;
+        let value = match self.owner {
+            Owner::Entity(entity) => self
+                .type_data::<ReflectComponent>(world)?
+                .reflect(world.get_entity(entity).ok()?)?,
+            Owner::Asset(id) => self
+                .type_data::<ReflectAsset>(world)?
+                .get(world, id)?,
+        };
         Some(read(value))
     }
 
@@ -113,28 +150,42 @@ impl Field {
             .flatten()
     }
 
-    /// Runs `write` against the whole component.
+    /// Runs `write` against the whole root.
     pub fn write<R>(
         &self,
         world: &mut World,
         write: impl FnOnce(&mut dyn Reflect) -> R,
     ) -> Option<R> {
-        let component = self.accessor(world)?;
-        let mut entity = world.get_entity_mut(self.entity).ok()?;
-        let mut value = component.reflect_mut(&mut entity)?;
-        Some(write(&mut *value))
+        match self.owner {
+            Owner::Entity(entity) => {
+                let component =
+                    self.type_data::<ReflectComponent>(world)?;
+                let mut entity = world.get_entity_mut(entity).ok()?;
+                let mut value = component.reflect_mut(&mut entity)?;
+                Some(write(&mut *value))
+            }
+            Owner::Asset(id) => {
+                let asset = self.type_data::<ReflectAsset>(world)?;
+                Some(write(asset.get_mut(world, id)?))
+            }
+        }
     }
 
-    /// Whether the component is there at all.
+    /// Whether the root is there at all.
     pub fn exists(&self, world: &World) -> bool {
-        let Ok(entity) = world.get_entity(self.entity) else {
-            return false;
-        };
-        let Some(component) = self.accessor(world) else {
-            return false;
-        };
-
-        component.contains(entity)
+        match self.owner {
+            Owner::Entity(entity) => {
+                let Ok(entity) = world.get_entity(entity) else {
+                    return false;
+                };
+                self.type_data::<ReflectComponent>(world).is_some_and(
+                    |component| component.contains(entity),
+                )
+            }
+            Owner::Asset(id) => self
+                .type_data::<ReflectAsset>(world)
+                .is_some_and(|asset| asset.get(world, id).is_some()),
+        }
     }
 
     /// The leaf inside an already-read component. An empty path is
@@ -150,15 +201,27 @@ impl Field {
         }
     }
 
-    /// The tick the component last changed on, which is what the
-    /// bindings poll instead of re-reading through reflection every
-    /// frame.
+    /// The tick the root last changed on, which is what the bindings
+    /// poll instead of re-reading through reflection every frame. An
+    /// asset has no tick of its own, so it rides its whole `Assets`
+    /// collection's.
     pub(crate) fn changed_tick(&self, world: &World) -> Option<Tick> {
-        let id = world.components().get_id(self.component)?;
-        let ComponentTicks { changed, .. } = world
-            .get_entity(self.entity)
-            .ok()?
-            .get_change_ticks_by_id(id)?;
+        let ComponentTicks { changed, .. } = match self.owner {
+            Owner::Entity(entity) => {
+                let id = world.components().get_id(self.root)?;
+                world
+                    .get_entity(entity)
+                    .ok()?
+                    .get_change_ticks_by_id(id)?
+            }
+            Owner::Asset(_) => {
+                let assets = self
+                    .type_data::<ReflectAsset>(world)?
+                    .assets_resource_type_id();
+                let id = world.components().get_id(assets)?;
+                world.get_resource_change_ticks_by_id(id)?
+            }
+        };
         Some(changed)
     }
 }

@@ -30,13 +30,12 @@ use bevy::sprite::Anchor;
 use bevy::text::{LetterSpacing, LineHeight};
 use fynix::composer::Composer;
 use fynix::prelude::*;
-use moxie_asset::AssetKindAppExt as _;
 
 use crate::elements::{Frame, Label};
 use crate::fold;
 use crate::reactive::{BevyUi, FynixHost};
 
-pub use field::Field;
+pub use field::{Field, Owner};
 use field_drag::FieldName;
 pub(crate) use field_drag::draggable_field;
 pub use field_drag::{DraggedField, FieldAnimatable, FieldHasAction};
@@ -123,8 +122,6 @@ impl Plugin for InspectPlugin {
             .register_inspectable_as::<MeshMaterial3d<StandardMaterial>>(
                 "PBR Material",
             );
-
-        app.register_asset_kind::<StandardMaterial>(&["mat"]);
     }
 }
 
@@ -391,6 +388,38 @@ pub trait SourceExt: Source {
 }
 
 impl<S: Source + ?Sized> SourceExt for S {}
+
+/// A boxed [`Source`] cloned through [`Source::boxed`] rather than
+/// derived - a trait object isn't `Clone` on its own - so a
+/// [`menu_item`](crate::elements::menu_item) row can be handed a
+/// closure it's free to run more than once.
+pub(crate) struct ClonableSource(pub(crate) Box<dyn Source>);
+
+impl Clone for ClonableSource {
+    fn clone(&self) -> Self {
+        Self(self.0.boxed())
+    }
+}
+
+impl ClonableSource {
+    // Methods of its own: a closure only using the field captures
+    // just that field - `Box<dyn Source>` on its own, which isn't
+    // `Clone`.
+    pub(crate) fn get(
+        &self,
+        world: &World,
+    ) -> Option<Box<dyn PartialReflect>> {
+        self.0.get(world)
+    }
+
+    pub(crate) fn set(
+        &self,
+        world: &mut World,
+        value: &dyn PartialReflect,
+    ) {
+        self.0.set(world, value);
+    }
+}
 
 /// A source's signal, in the shape the kernel polls with. Nothing
 /// about a source depends on the node asking.
