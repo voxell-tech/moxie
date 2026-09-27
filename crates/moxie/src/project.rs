@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use bevy::asset::AssetServer;
 use bevy::light::CascadeShadowConfig;
 use bevy::prelude::*;
-use bevy::reflect::{FromType, GetTypeRegistration, TypeRegistry};
 use bevy::world_serialization::{DynamicWorldBuilder, WorldFilter};
 use bevy_motiongfx::scene::asset::MotionGfxScene;
 use bevy_motiongfx::scene::backend::Backend;
@@ -116,7 +115,7 @@ pub(crate) fn serialize(world: &mut World) -> Option<String> {
     let registry = registry.read();
 
     let dynamic = DynamicWorldBuilder::from_world(world, &registry)
-        .with_component_filter(subject_components(&registry))
+        .with_component_filter(subject_components())
         .extract_entities(subjects.into_iter())
         .build();
 
@@ -181,65 +180,27 @@ fn clear(world: &mut World) {
     world.insert_resource(ProjectBookmarks::default());
 }
 
-pub(crate) fn plugin(app: &mut App) {
-    app.save_component::<SceneRoot>()
-        .save_component::<EntityUid>()
-        .save_component::<Name>()
-        .save_component::<Transform>()
-        .save_component::<Visibility>()
-        .save_component::<Children>()
-        .save_component::<ChildOf>()
-        .save_component::<Camera3d>()
-        .save_component::<CascadeShadowConfig>()
-        .save_component::<DirectionalLight>()
-        .save_component::<PointLight>()
-        .save_component::<RectLight>()
-        .save_component::<SpotLight>()
-        .save_component::<Mesh3d>()
-        .save_component::<MeshMaterial3d<StandardMaterial>>()
-        .save_component::<Camera2d>();
-}
-
-/// Marks a component a project file saves with its subject. The rest
-/// is the running editor's business, and a file that hoards it would
-/// not load into a different one.
-#[derive(Clone, Copy)]
-pub(crate) struct ReflectSaved;
-
-impl<T> FromType<T> for ReflectSaved {
-    fn from_type() -> Self {
-        Self
-    }
-}
-
-pub(crate) trait SaveAppExt {
-    /// Saves `T` with every subject that has one.
-    fn save_component<
-        T: Component + Reflect + TypePath + GetTypeRegistration,
-    >(
-        &mut self,
-    ) -> &mut Self;
-}
-
-impl SaveAppExt for App {
-    fn save_component<
-        T: Component + Reflect + TypePath + GetTypeRegistration,
-    >(
-        &mut self,
-    ) -> &mut Self {
-        self.register_type::<T>()
-            .register_type_data::<T, ReflectSaved>()
-    }
-}
-
-/// Every component marked [`ReflectSaved`], and nothing else.
-fn subject_components(registry: &TypeRegistry) -> WorldFilter {
-    registry.iter_with_data::<ReflectSaved>().fold(
-        WorldFilter::deny_all(),
-        |filter, (registration, _)| {
-            filter.allow_by_id(registration.type_id())
-        },
-    )
+/// What a subject is saved as. An allowlist: the rest is the running
+/// editor's business, and a file that hoards it would not load into
+/// a different one.
+fn subject_components() -> WorldFilter {
+    WorldFilter::deny_all()
+        .allow::<SceneRoot>()
+        .allow::<EntityUid>()
+        .allow::<Name>()
+        .allow::<Transform>()
+        .allow::<Visibility>()
+        .allow::<Children>()
+        .allow::<ChildOf>()
+        .allow::<Camera3d>()
+        .allow::<CascadeShadowConfig>()
+        .allow::<DirectionalLight>()
+        .allow::<PointLight>()
+        .allow::<RectLight>()
+        .allow::<SpotLight>()
+        .allow::<Mesh3d>()
+        .allow::<MeshMaterial3d<StandardMaterial>>()
+        .allow::<Camera2d>()
 }
 
 enum Dialog {
