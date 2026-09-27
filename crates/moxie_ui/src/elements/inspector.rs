@@ -34,8 +34,9 @@ use crate::context_menu::context_menu;
 use crate::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use crate::icons;
 use crate::inspector::{
-    Field, FieldAnimatable, InspectorFields, ReflectEssential,
-    ReflectInspectGroup, ReflectInspectable, draggable_field,
+    ClonableSource, Field, FieldAnimatable, FieldRow,
+    InspectorFields, ReflectEssential, ReflectInspectGroup,
+    ReflectInspectable, Source, draggable_field, inspect_value,
     root_leaf, section_open, toggle_section,
 };
 use crate::reactive::{
@@ -439,8 +440,16 @@ fn essential(world: &World, component: TypeId) -> bool {
 struct CardClosed;
 
 /// One asset's own card, the same as a component's, titled `name`.
-pub fn asset_card(ui: &mut BevyUi, id: UntypedAssetId, name: String) {
-    root_card(ui, Field::asset(id), name);
+/// With `rename`, a Name row above its fields edits what the asset is
+/// called.
+pub fn asset_card(
+    ui: &mut BevyUi,
+    id: UntypedAssetId,
+    title: String,
+    rename: Option<&dyn Source>,
+) {
+    let rename = rename.map(|source| ClonableSource(source.boxed()));
+    root_card(ui, Field::asset(id), title, rename);
 }
 
 /// One component's own card.
@@ -450,13 +459,18 @@ fn component_card(
     component: TypeId,
     name: String,
 ) {
-    root_card(ui, Field::new(entity, component), name);
+    root_card(ui, Field::new(entity, component), name, None);
 }
 
 /// One root's own card: a title that's always there, above a body that
 /// folds flush under it - no rail, no indent, each field reading like
 /// its own root - like Unity's per-component panel.
-fn root_card(ui: &mut BevyUi, root: Field, name: String) {
+fn root_card(
+    ui: &mut BevyUi,
+    root: Field,
+    name: String,
+    rename: Option<ClonableSource>,
+) {
     let (owner, root_type) = (root.owner(), root.root_type());
     // Only a component can be taken off what holds it.
     let deletable =
@@ -585,6 +599,19 @@ fn root_card(ui: &mut BevyUi, root: Field, name: String) {
             move |ui| {
                 if ui.world.get::<CardClosed>(node).is_some() {
                     return;
+                }
+                if let Some(rename) = rename.clone() {
+                    let muted = ui.theme.color.text_dim;
+                    ui.compose(FieldRow {
+                        label: "Name".to_string(),
+                        color: muted,
+                        bold: false,
+                        depth: 0,
+                        field: None,
+                        value: move |ui: &mut BevyUi| {
+                            inspect_value(ui, &*rename.0);
+                        },
+                    });
                 }
                 ui.compose(RootInspector {
                     root: root.clone(),

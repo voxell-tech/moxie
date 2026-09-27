@@ -30,7 +30,15 @@ const GLTF_EXTENSIONS: &[&str] = &["glb", "gltf"];
 pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<Scanned>()
         .add_observer(on_refresh)
-        .add_systems(Update, on_gltf_loaded);
+        .add_systems(
+            Update,
+            (
+                on_gltf_loaded,
+                // A new or renamed internal asset shows at once, with no
+                // rescan of the disk.
+                publish.run_if(resource_changed::<InternalAssets>),
+            ),
+        );
 }
 
 /// What the last scan found.

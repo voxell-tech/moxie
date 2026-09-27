@@ -47,6 +47,15 @@ impl InternalAssets {
         self.entries.push(asset);
     }
 
+    /// Calls the internal asset `id` by `name` from now on.
+    pub fn rename(&mut self, id: Uuid, name: String) {
+        if let Some(asset) =
+            self.entries.iter_mut().find(|entry| entry.id == id)
+        {
+            asset.name = name;
+        }
+    }
+
     pub fn get(&self, id: Uuid) -> Option<&InternalAsset> {
         self.entries.iter().find(|entry| entry.id == id)
     }
