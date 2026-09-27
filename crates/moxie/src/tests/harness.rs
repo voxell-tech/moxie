@@ -12,7 +12,7 @@ use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::log::LogPlugin;
 use bevy::picking::backend::HitData;
-use bevy::picking::events::{Click, Pointer};
+use bevy::picking::events::{Click, Drag, DragEnd, Pointer};
 use bevy::picking::pointer::{Location, PointerButton, PointerId};
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
@@ -152,6 +152,47 @@ impl Editor {
     /// click bubbles up from there, as a real one does.
     pub(crate) fn click(&mut self, text: &str, count: u8) {
         let entity = self.text(text);
+        self.pointer(
+            entity,
+            Click {
+                button: PointerButton::Primary,
+                hit: HitData::new(
+                    Entity::PLACEHOLDER,
+                    0.0,
+                    None,
+                    None,
+                ),
+                duration: Duration::ZERO,
+                count,
+            },
+        );
+        self.step(SETTLE);
+    }
+
+    /// Drags `entity` `dx` pixels to the right and lets go.
+    pub(crate) fn drag(&mut self, entity: Entity, dx: f32) {
+        let button = PointerButton::Primary;
+        let distance = Vec2::new(dx, 0.0);
+        self.pointer(
+            entity,
+            Drag {
+                button,
+                distance,
+                delta: distance,
+            },
+        );
+        self.step(1);
+        self.pointer(entity, DragEnd { button, distance });
+        self.step(SETTLE);
+    }
+
+    /// Sends `event` from the mouse to `entity`, bubbling up from
+    /// there as a real one does.
+    fn pointer<E: Clone + core::fmt::Debug + Reflect>(
+        &mut self,
+        entity: Entity,
+        event: E,
+    ) {
         let location = Location {
             target: NormalizedRenderTarget::None {
                 width: 1,
@@ -159,19 +200,12 @@ impl Editor {
             },
             position: Vec2::ZERO,
         };
-        let click = Click {
-            button: PointerButton::Primary,
-            hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            duration: Duration::ZERO,
-            count,
-        };
         self.world().trigger(Pointer::new(
             PointerId::Mouse,
             location,
-            click,
+            event,
             entity,
         ));
-        self.step(SETTLE);
     }
 
     /// Taps `key`: pressed for a frame, then let go.

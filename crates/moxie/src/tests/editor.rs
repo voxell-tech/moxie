@@ -160,6 +160,66 @@ fn a_project_saves_only_marked_components() {
 }
 
 #[test]
+fn a_field_built_later_has_the_editor_caret() {
+    let mut editor = Editor::new();
+    // The inspector builds its fields once something is selected.
+    add_cube(&mut editor);
+
+    let base5 =
+        moxie_ui::theme::EditorTheme::default().palette.base[5];
+    let world = editor.world();
+    let carets = world
+        .query::<&bevy::text::TextCursorStyle>()
+        .iter(world)
+        .map(|caret| caret.color)
+        .collect::<Vec<_>>();
+    assert!(!carets.is_empty());
+    assert!(carets.iter().all(|&color| color == base5), "{carets:?}");
+}
+
+#[test]
+fn dragging_a_number_field_scrubs_its_value() {
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+
+    // The row the translation label heads, and its first input, x.
+    let label = editor.text("translation");
+    let world = editor.world();
+    let mut row = label;
+    let x = loop {
+        row = world.get::<ChildOf>(row).expect("in a row").parent();
+        if let Some(x) = first_number_input(world, row) {
+            break x;
+        }
+    };
+    editor.drag(x, 50.0);
+
+    let translation = editor
+        .world()
+        .get::<Transform>(cube)
+        .expect("placed")
+        .translation;
+    assert_eq!(translation, Vec3::new(0.5, 0.0, 0.0));
+}
+
+/// The text of the first number field under `root`, depth first.
+fn first_number_input(world: &World, root: Entity) -> Option<Entity> {
+    use bevy::feathers::controls::FeathersNumberInput;
+
+    let children = world.get::<Children>(root)?;
+    children.iter().find_map(|child| {
+        let in_number =
+            world.get::<FeathersNumberInput>(root).is_some();
+        if in_number
+            && world.get::<bevy::text::EditableText>(child).is_some()
+        {
+            return Some(child);
+        }
+        first_number_input(world, child)
+    })
+}
+
+#[test]
 fn the_sample_project_opens() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../projects/hello_world/hello_world.mox");

@@ -4,14 +4,19 @@ use crate::reactive::FynixBuild;
 use bevy::feathers::controls::{
     FeathersNumberInput, FeathersTextInput,
     FeathersTextInputContainer, NumberFormat, NumberInputValue,
+    UpdateNumberInput,
 };
-use bevy::feathers::cursor::EntityCursor;
+use bevy::feathers::cursor::{EntityCursor, OverrideCursor};
+use bevy::feathers::theme::UiTheme;
+use bevy::feathers::tokens;
 use bevy::input_focus::InputFocus;
+use bevy::picking::events::{Drag, DragEnd, Pointer};
+use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::scene::EntityWorldMutSceneExt;
-use bevy::text::EditableText;
+use bevy::text::{EditableText, TextCursorStyle};
 use bevy::ui::Checked;
-use bevy::ui_widgets::Checkbox as CheckboxBehavior;
+use bevy::ui_widgets::{Checkbox as CheckboxBehavior, ValueChange};
 use bevy::window::SystemCursorIcon;
 use bevy_fynix::WorldEntityMut;
 use fynix::element::element;
@@ -148,11 +153,194 @@ pub(super) fn number_scene(
         layout.width = width;
         layout.flex_grow = 0.0;
     }
+    style_caret(entity);
+    let field = entity.id();
+    scrub_on_drag(entity.world_mut(), field);
+}
+
+/// Styles the caret of the input under `entity` from the theme.
+/// Feathers styles one only when its theme changes, so an input built
+/// after that keeps bevy's own default.
+fn style_caret(entity: &mut impl WorldEntityMut) {
+    let node = entity.id();
+    let world = entity.world_mut();
+    let Some(input) = TextField::text_input(world, node) else {
+        return;
+    };
+    let theme = world.resource::<UiTheme>();
+    let caret = TextCursorStyle {
+        color: theme.color(&tokens::TEXT_INPUT_CURSOR),
+        selection_color: theme.color(&tokens::TEXT_INPUT_SELECTION),
+        unfocused_selection_color: theme
+            .color(&tokens::TEXT_INPUT_SELECTION_UNFOCUSED),
+        selected_text_color: None,
+    };
+    world.entity_mut(input).insert(caret);
 }
 
 impl NumberField {
     fn build(&self, build: &mut FynixBuild<'_, Self>) {
         number_scene(self.format, self.width, build);
+    }
+}
+
+/// Makes dragging sideways across `field`'s text scrub its value. On
+/// the text itself: it keeps a drag to itself, to select with.
+fn scrub_on_drag(world: &mut World, field: Entity) {
+    let Some(input) = TextField::text_input(world, field) else {
+        return;
+    };
+    world
+        .entity_mut(input)
+        .observe(
+            move |drag: On<Pointer<Drag>>, mut commands: Commands| {
+                if drag.button != PointerButton::Primary {
+                    return;
+                }
+                let dx = drag.distance.x;
+                commands.queue(move |world: &mut World| {
+                    scrub(world, field, dx);
+                });
+            },
+        )
+        .observe(
+            move |_: On<Pointer<DragEnd>>, mut commands: Commands| {
+                commands.queue(move |world: &mut World| {
+                    end_scrub(world, field);
+                });
+            },
+        );
+}
+
+/// What a scrubbed field held when the scrub began.
+#[derive(Component)]
+struct Scrub(NumberInputValue);
+
+/// How far a press must move sideways before it scrubs rather than
+/// clicks, in logical pixels.
+const SCRUB_SLOP: f32 = 3.0;
+/// How much a float changes per pixel dragged.
+const SCRUB_STEP: f64 = 0.01;
+/// How many pixels an integer is dragged per unit.
+const SCRUB_PIXELS_PER_UNIT: f32 = 4.0;
+const SCRUBBING: EntityCursor =
+    EntityCursor::System(SystemCursorIcon::EwResize);
+
+/// Scrubs `field` to `dx` pixels past where the drag began.
+fn scrub(world: &mut World, field: Entity, dx: f32) {
+    let start = match world.get::<Scrub>(field) {
+        Some(scrub) => scrub.0,
+        None => {
+            if dx.abs() < SCRUB_SLOP {
+                return;
+            }
+            let Some(start) = shown(world, field) else {
+                return;
+            };
+            world.entity_mut(field).insert(Scrub(start));
+            // Scrubbing, not typing: no caret, and the field takes
+            // what it is sent.
+            world.resource_mut::<InputFocus>().clear();
+            world.resource_mut::<OverrideCursor>().0 =
+                Some(SCRUBBING);
+            start
+        }
+    };
+
+    let value = match start {
+        NumberInputValue::F32(v) => {
+            NumberInputValue::F32(nudge(v as f64, dx) as f32)
+        }
+        NumberInputValue::F64(v) => {
+            NumberInputValue::F64(nudge(v, dx))
+        }
+        NumberInputValue::I32(v) => NumberInputValue::I32(
+            v + (dx / SCRUB_PIXELS_PER_UNIT).round() as i32,
+        ),
+        NumberInputValue::I64(v) => NumberInputValue::I64(
+            v + (dx / SCRUB_PIXELS_PER_UNIT).round() as i64,
+        ),
+    };
+    world.trigger(UpdateNumberInput {
+        entity: field,
+        value,
+    });
+    changed(world, field, value, false);
+}
+
+/// `start` moved `dx` pixels' worth, kept to the step so it reads
+/// cleanly.
+fn nudge(start: f64, dx: f32) -> f64 {
+    let steps = (dx as f64).round();
+    ((start + steps * SCRUB_STEP) / SCRUB_STEP).round() * SCRUB_STEP
+}
+
+/// Ends a scrub on `field`, if one is under way, and settles on where
+/// it got to.
+fn end_scrub(world: &mut World, field: Entity) {
+    if world.entity_mut(field).take::<Scrub>().is_none() {
+        return;
+    }
+    let mut cursor = world.resource_mut::<OverrideCursor>();
+    if cursor.0 == Some(SCRUBBING) {
+        cursor.0 = None;
+    }
+    if let Some(value) = shown(world, field) {
+        changed(world, field, value, true);
+    }
+}
+
+/// The number `field` shows.
+fn shown(world: &World, field: Entity) -> Option<NumberInputValue> {
+    let format = *world.get::<NumberFormat>(field)?;
+    let input = TextField::text_input(world, field)?;
+    let text = world.get::<EditableText>(input)?.value().to_string();
+    let text = text.trim();
+    Some(match format {
+        NumberFormat::F32 => {
+            NumberInputValue::F32(text.parse().ok()?)
+        }
+        NumberFormat::F64 => {
+            NumberInputValue::F64(text.parse().ok()?)
+        }
+        NumberFormat::I32 => {
+            NumberInputValue::I32(text.parse().ok()?)
+        }
+        NumberFormat::I64 => {
+            NumberInputValue::I64(text.parse().ok()?)
+        }
+    })
+}
+
+/// Tells whoever listens on `field` that it now holds `value`, the
+/// way a typed edit does.
+fn changed(
+    world: &mut World,
+    field: Entity,
+    value: NumberInputValue,
+    is_final: bool,
+) {
+    match value {
+        NumberInputValue::F32(value) => world.trigger(ValueChange {
+            source: field,
+            value,
+            is_final,
+        }),
+        NumberInputValue::F64(value) => world.trigger(ValueChange {
+            source: field,
+            value,
+            is_final,
+        }),
+        NumberInputValue::I32(value) => world.trigger(ValueChange {
+            source: field,
+            value,
+            is_final,
+        }),
+        NumberInputValue::I64(value) => world.trigger(ValueChange {
+            source: field,
+            value,
+            is_final,
+        }),
     }
 }
 
@@ -240,6 +428,7 @@ fn text_scene(
     }
 
     set_text(value, entity);
+    style_caret(entity);
 }
 
 /// Write `value` into the child [`EditableText`].
