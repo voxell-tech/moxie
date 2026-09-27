@@ -11,14 +11,16 @@
 use core::time::Duration;
 use std::collections::BTreeSet;
 
+use bevy::asset::uuid::Uuid;
 use bevy::picking::events::{DragDrop, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
 use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
 use bevy_motiongfx::scene::id::SceneUid;
+use bevy_motiongfx::scene::value_pool::insert_scene_value;
 use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
 use motiongfx_scene::refs::FieldRef;
-use motiongfx_scene::scene::{FieldSeed, Subject};
+use motiongfx_scene::scene::{FieldSeed, Scene, Subject};
 use moxie_ui::cursor::{Cursor, PointerEventExt as _};
 use moxie_ui::inspector::{DraggedField, Field};
 use moxie_ui::layout::logical_rect;
@@ -188,64 +190,32 @@ fn create(
     };
 
     let landed = {
+        let registry = type_registry.read();
         let mut editor = world.resource_mut::<EditorScene>();
-        let scene = editor.edit();
+        let Scene {
+            stage,
+            animation,
+            values,
+            ..
+        } = &mut editor.edit().0;
+        let mut pool =
+            || insert_scene_value(values, &registry, &*value);
 
-        let Some(id) =
-            bevy_motiongfx::scene::value_pool::insert_scene_value(
-                &mut scene.values,
-                &type_registry.read(),
-                &*value,
-            )
-        else {
+        let Some(id) = pool() else {
             return;
         };
-
-        // Only the first action on a field needs its own seed; later
-        // actions reuse it instead of orphaning a pool entry.
-        let existing_seed = scene
-            .0
-            .stage
-            .subjects
-            .iter()
-            .find(|s| s.id == subject)
-            .and_then(|s| {
-                s.fields
-                    .iter()
-                    .find(|seed| seed.field == field_ref)
-                    .map(|seed| seed.value)
-            });
-
-        let seed_id = match existing_seed {
-            Some(seed_id) => seed_id,
-            None => {
-                // Separate from `id`: the action panel edits an
-                // action's value in place, so sharing one would let
-                // editing it overwrite the stage too.
-                let Some(seed_id) =
-                    bevy_motiongfx::scene::value_pool::insert_scene_value(
-                        &mut scene.values,
-                        &type_registry.read(),
-                        &*value,
-                    )
-                else {
-                    return;
-                };
-                seed_id
-            }
-        };
-
         // The field's live value, at the moment nothing has animated
         // it yet - the only point this is also its correct staged
         // starting value. `stage` is a no-op without an entry here,
         // and baking silently falls back to whatever the world
-        // already holds.
-        seed_field(
-            &mut scene.0.stage.subjects,
-            subject,
-            field_ref.clone(),
-            seed_id,
-        );
+        // already holds. Pooled apart from `id`: the action panel
+        // edits an action's value in place, and that must not move
+        // the stage too.
+        if seed_field(&mut stage.subjects, subject, &field_ref, pool)
+            .is_none()
+        {
+            return;
+        }
 
         let node = SceneNode::action(ActionCmd {
             subject,
@@ -257,7 +227,7 @@ fn create(
             interp: Some(AnimInterp::Linear),
             name: None,
         });
-        splice(&mut scene.0.animation, target, node)
+        splice(animation, target, node)
     };
 
     if let Some(path) = landed
@@ -269,27 +239,34 @@ fn create(
     RebuildTick::bump_in(world);
 }
 
-/// Stages `field` on `subject` at `value`, unless it already is -
-/// only the first action ever created for a field needs one; every
-/// later one's start comes from replaying what came before it.
+/// Stages `field` on `subject` at what `pool` pools, unless it already
+/// is: only the first action ever created for a field needs one, and
+/// every later one's start comes from replaying what came before it.
+/// `None` when `pool` fails.
 fn seed_field(
     subjects: &mut Vec<Subject<Backend>>,
     subject: SceneUid,
-    field: FieldRef,
-    value: bevy::asset::uuid::Uuid,
-) {
+    field: &FieldRef,
+    pool: impl FnOnce() -> Option<Uuid>,
+) -> Option<()> {
     let entry = subjects.iter_mut().find(|s| s.id == subject);
+    if entry.as_ref().is_some_and(|s| {
+        s.fields.iter().any(|seed| seed.field == *field)
+    }) {
+        return Some(());
+    }
+    let seed = FieldSeed {
+        field: field.clone(),
+        value: pool()?,
+    };
     match entry {
-        Some(entry) => {
-            if !entry.fields.iter().any(|seed| seed.field == field) {
-                entry.fields.push(FieldSeed { field, value });
-            }
-        }
+        Some(entry) => entry.fields.push(seed),
         None => subjects.push(Subject {
             id: subject,
-            fields: vec![FieldSeed { field, value }],
+            fields: vec![seed],
         }),
     }
+    Some(())
 }
 
 /// Puts `node` where `target` says, returning the path it landed at.
@@ -342,5 +319,46 @@ fn splice(
             landed.push(if before { 0 } else { 1 });
             Some(landed)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy_motiongfx::scene::id::EntityUid;
+
+    use super::*;
+
+    #[test]
+    fn a_field_is_seeded_once() {
+        let subject = SceneUid::Entity(EntityUid::new());
+        let field = FieldRef::new("T", "::x");
+        let mut subjects = Vec::new();
+
+        let first = Uuid::new_v4();
+        seed_field(&mut subjects, subject, &field, || Some(first));
+        seed_field(&mut subjects, subject, &field, || {
+            panic!("a seeded field pools nothing")
+        });
+
+        let [entry] = subjects.as_slice() else {
+            panic!("{} subjects, not one", subjects.len());
+        };
+        let [seed] = entry.fields.as_slice() else {
+            panic!("{} seeds, not one", entry.fields.len());
+        };
+        assert_eq!(seed.value, first);
+    }
+
+    #[test]
+    fn a_failed_pool_stages_nothing() {
+        let subject = SceneUid::Entity(EntityUid::new());
+        let field = FieldRef::new("T", "::x");
+        let mut subjects = Vec::new();
+
+        assert!(
+            seed_field(&mut subjects, subject, &field, || None)
+                .is_none()
+        );
+        assert!(subjects.is_empty());
     }
 }
