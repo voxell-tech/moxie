@@ -16,6 +16,7 @@ use bevy::text::EditableText;
 use bevy::ui::widget::ImageNode;
 use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
 
+use crate::subject::Target;
 use crate::{
     EditorSettings, EditorState, PreviewImage, ProjectBookmarks,
     ProjectPath, SelectedAction, SelectedEntity, playback, scene,
@@ -41,10 +42,18 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((MoxieUiPlugin, timeline::TimelinePlugin))
             .insert_resource(moxie_ui::inspector::FieldAnimatable(
-                Some(inspector::is_animatable),
+                Some(|world, field| {
+                    Target::of(world, field).is_some_and(|target| {
+                        target.is_animatable(world)
+                    })
+                }),
             ))
             .insert_resource(moxie_ui::inspector::FieldHasAction(
-                Some(inspector::has_action),
+                Some(|world, field| {
+                    Target::of(world, field).is_some_and(|target| {
+                        target.has_action(world)
+                    })
+                }),
             ))
             .register_field_icon(
                 field!(<Transform>::translation),

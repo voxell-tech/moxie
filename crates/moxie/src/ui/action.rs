@@ -314,7 +314,7 @@ fn summarize(world: &World, path: &[usize]) -> Option<Shape> {
     Some(Shape {
         path: Some(path.to_vec()),
         kind: "Action",
-        subject: Some(subject::label(world, action.subject)),
+        subject: Some(subject::Label::of(world, action.subject)),
         combinator: None,
         value: Some(Pooled(action.value)),
         rows: vec![

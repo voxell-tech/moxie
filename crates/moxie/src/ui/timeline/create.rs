@@ -28,7 +28,6 @@ use super::block_layout;
 use super::hint::HintNode;
 use super::reorder::{self, Target};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
-use crate::ui::inspector::field_ref_of;
 use crate::{EditorScene, SelectedAction, TimelineView, subject};
 
 /// A dropped field's action runs this long until there is a reason to
@@ -168,10 +167,11 @@ fn create(
 ) {
     use moxie_ui::inspector::Source;
 
-    let Some(subject) = subject::of_field(world, field) else {
-        return;
-    };
-    let Some(field_ref) = field_ref_of(world, field) else {
+    let Some(subject::Target {
+        subject,
+        field: field_ref,
+    }) = subject::Target::of(world, field)
+    else {
         return;
     };
     let Some(value) = field.get(world) else {
