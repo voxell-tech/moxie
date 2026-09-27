@@ -92,6 +92,9 @@ pub trait TooltipExt: WorldEntityMut {
     /// Shows `text` near the cursor after a short hover.
     fn tooltip(&mut self, text: impl Into<String>) -> &mut Self {
         let text = text.into();
+        // Names an icon-only button for debugging and tests, which have
+        // no label to find it by.
+        self.insert(Name::new(text.clone()));
         self.tooltip_with(move |ui| {
             let h = ui.theme.space.md;
             let v = ui.theme.space.xs;

@@ -89,9 +89,9 @@ impl Composer<FynixHost> for AddButton {
                 |_: On<Activate>,
                  cursor: Cursor,
                  mut commands: Commands| {
-                    let Some(at) = cursor.position() else {
-                        return;
-                    };
+                    // Pressed with no pointer, from the keyboard: the
+                    // corner, where placement pushes it on screen.
+                    let at = cursor.position().unwrap_or_default();
                     commands.queue(move |world: &mut World| {
                         open_context_menu(world, at, add_menu);
                     });

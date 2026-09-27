@@ -64,8 +64,13 @@ pub(crate) fn load_scene(world: &mut World) {
             return;
         }
     };
+    open(world, &text, path);
+}
 
-    let Some(project) = deserialize(world, &text, &path) else {
+/// Replaces whatever is loaded with the project `text` holds, read
+/// from `path`.
+pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
+    let Some(project) = deserialize(world, text, &path) else {
         return;
     };
 
@@ -93,7 +98,7 @@ pub(crate) fn load_scene(world: &mut World) {
     world.insert_resource(ProjectPath(Some(path)));
 }
 
-fn serialize(world: &mut World) -> Option<String> {
+pub(crate) fn serialize(world: &mut World) -> Option<String> {
     // The root comes too, or the `ChildOf` on everything below it
     // would name an entity the file never held.
     let subjects: Vec<Entity> = world

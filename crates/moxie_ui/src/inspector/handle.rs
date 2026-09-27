@@ -60,9 +60,9 @@ impl<T: Asset + TypePath> Inspect for Handle<T> {
             move |_: On<Activate>,
                   cursor: Cursor,
                   mut commands: Commands| {
-                let Some(at) = cursor.position() else {
-                    return;
-                };
+                // Pressed with no pointer, from the keyboard: the
+                // corner, where placement pushes it on screen.
+                let at = cursor.position().unwrap_or_default();
                 let source = picked.clone();
                 commands.queue(move |world: &mut World| {
                     open_asset_picker::<T>(world, at, source);

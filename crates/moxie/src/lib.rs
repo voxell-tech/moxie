@@ -6,6 +6,8 @@
 )]
 
 mod catalog;
+#[cfg(test)]
+mod harness;
 mod icons;
 mod materials;
 mod playback;
