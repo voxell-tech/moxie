@@ -2,7 +2,7 @@ use bevy::asset::uuid::Uuid;
 use bevy::input::keyboard::Key;
 use bevy::prelude::*;
 use bevy_motiongfx::scene::id::EntityUid;
-use moxie_asset::InternalAssets;
+use moxie_asset::{ABSOLUTE_SOURCE, InternalAssets};
 
 use super::harness::{Editor, SETTLE};
 use crate::{SelectedEntity, presets, project};
@@ -39,6 +39,13 @@ fn only_internal(editor: &mut Editor) -> (Uuid, String) {
         panic!("{} internal assets, not one", all.len());
     };
     (asset.id, asset.name.clone())
+}
+
+#[test]
+fn files_load_from_anywhere_on_disk() {
+    let mut editor = Editor::new();
+    let assets = editor.world().resource::<AssetServer>();
+    assert!(assets.get_source(ABSOLUTE_SOURCE).is_ok());
 }
 
 #[test]

@@ -21,6 +21,8 @@ mod view;
 use core::time::Duration;
 use std::path::PathBuf;
 
+use bevy::app::PluginGroupBuilder;
+use bevy::asset::UnapprovedPathMode;
 use bevy::prelude::*;
 use bevy::settings::{
     ReflectSettingsGroup, SettingsGroup, SettingsPlugin,
@@ -29,8 +31,22 @@ use bevy_motiongfx::BevyMotionGfxPlugin;
 use bevy_motiongfx::prelude::TimelineId;
 use bevy_motiongfx::scene::id::EntityUid;
 
-use moxie_asset::MoxieAssetPlugin;
+use moxie_asset::{MoxieAssetPlugin, register_absolute_source};
 pub use scene::EditorScene;
+
+/// Bevy's [`DefaultPlugins`], with assets set up the way the editor
+/// loads them.
+pub fn default_plugins() -> PluginGroupBuilder {
+    DefaultPlugins
+        .build()
+        // Asset sources build when `AssetPlugin` does.
+        .add_before::<AssetPlugin>(register_absolute_source)
+        .set(AssetPlugin {
+            file_path: "../../assets".into(),
+            unapproved_path_mode: UnapprovedPathMode::Deny,
+            ..default()
+        })
+}
 
 /// Plugin that renders a timeline editor UI for the first
 /// [`Timeline`](bevy_motiongfx::prelude::BevyTimeline).

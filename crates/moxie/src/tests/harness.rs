@@ -7,7 +7,6 @@
 
 use core::time::Duration;
 
-use bevy::asset::UnapprovedPathMode;
 use bevy::camera::NormalizedRenderTarget;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
@@ -24,7 +23,6 @@ use bevy::ui_widgets::{
 };
 use bevy::window::ExitCondition;
 use bevy::winit::WinitPlugin;
-use moxie_asset::register_absolute_source;
 
 use crate::MoxiePlugin;
 
@@ -40,13 +38,7 @@ impl Editor {
     pub(crate) fn new() -> Self {
         let mut app = App::new();
         app.add_plugins((
-            register_absolute_source,
-            DefaultPlugins
-                .set(AssetPlugin {
-                    file_path: "../../assets".into(),
-                    unapproved_path_mode: UnapprovedPathMode::Deny,
-                    ..default()
-                })
+            crate::default_plugins()
                 .set(WindowPlugin {
                     primary_window: None,
                     exit_condition: ExitCondition::DontExit,
