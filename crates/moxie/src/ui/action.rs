@@ -79,7 +79,7 @@ struct Shape {
     /// Empty when the path no longer lands on a node.
     kind: &'static str,
     /// Set only for an action: a block has none to show.
-    subject: Option<subject::Label>,
+    subject: Option<subject::Caption>,
     /// Set only for a block: which of Chain/All/Flow it is, for the
     /// Type row's picker. An action has none to show.
     combinator: Option<&'static str>,
@@ -314,7 +314,7 @@ fn summarize(world: &World, path: &[usize]) -> Option<Shape> {
     Some(Shape {
         path: Some(path.to_vec()),
         kind: "Action",
-        subject: Some(subject::Label::of(world, action.subject)),
+        subject: Some(subject::Caption::of(world, action.subject)),
         combinator: None,
         value: Some(Pooled(action.value)),
         rows: vec![

@@ -35,7 +35,8 @@ use moxie_ui::reactive::{
 };
 use moxie_ui::widgets::tooltip::TooltipExt as _;
 
-use crate::{SceneRoot, SelectedEntity, presets, subject};
+use crate::subject::Caption;
+use crate::{SceneRoot, SelectedEntity, presets};
 
 /// The [`tail`]'s least height: room below the last row for the
 /// floating button, and a drop target even when the list is full.
@@ -617,36 +618,22 @@ fn is_subject(world: &World, entity: Entity) -> bool {
     world.get::<EntityUid>(entity).is_some()
 }
 
-/// Its [`Name`], or the head of its id. A whole uuid is unreadable;
-/// the first characters tell two unnamed subjects apart. A blank
-/// `Name` counts as unset, the same as having none.
+/// `None` once `entity` is no subject.
+fn caption_of(world: &World, entity: Entity) -> Option<Caption> {
+    let uid = *world.get::<EntityUid>(entity)?;
+    Some(Caption::entity(world.get::<Name>(entity), uid))
+}
+
 fn name_of(world: &World, entity: Entity) -> String {
-    placeholder_name(world.get::<Name>(entity), world.get(entity))
+    caption_of(world, entity).map_or_else(
+        || "?".to_string(),
+        |caption| caption.text().to_string(),
+    )
 }
 
 /// Whether [`name_of`] is standing in for a name `entity` doesn't
 /// have.
 fn is_unnamed(world: &World, entity: Entity) -> bool {
-    world
-        .get::<Name>(entity)
-        .is_none_or(|name| name.as_str().is_empty())
-}
-
-/// [`name_of`]'s fallback, shared with [`drag`] for the row it drags
-/// off - a system param's `Query<&Name>` gets `Option<&Name>` the
-/// same way `World::get` does, so both read it identically.
-pub(crate) fn placeholder_name(
-    name: Option<&Name>,
-    uid: Option<&EntityUid>,
-) -> String {
-    if let Some(name) = name
-        && !name.as_str().is_empty()
-    {
-        return name.as_str().to_string();
-    }
-
-    match uid {
-        Some(uid) => subject::uid_head(*uid),
-        None => "?".to_string(),
-    }
+    caption_of(world, entity)
+        .is_none_or(|caption| caption.name.is_none())
 }

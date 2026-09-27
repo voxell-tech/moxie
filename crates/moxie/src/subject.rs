@@ -71,31 +71,63 @@ impl Target {
 /// A subject as a row shows it, split so its id can render muted where
 /// its name cannot.
 #[derive(Clone, PartialEq)]
-pub(crate) struct Label {
-    /// Its name, while it is still in the world.
+pub(crate) struct Caption {
+    /// Its name, while it is still in the world and has one.
     pub(crate) name: Option<String>,
     /// The head of its id: a whole uuid is unreadable, but two subjects
     /// sharing a name still need telling apart.
     pub(crate) head: String,
 }
 
-impl Label {
+impl Caption {
     pub(crate) fn of(world: &World, subject: SceneUid) -> Self {
         match subject {
-            SceneUid::Entity(uid) => Self {
-                name: world
+            SceneUid::Entity(uid) => {
+                let name = world
                     .get_resource::<SceneUidMap>()
                     .and_then(|map| map.entity(uid))
-                    .and_then(|entity| world.get::<Name>(entity))
-                    .map(|name| name.as_str().to_string()),
-                head: uid_head(uid),
-            },
+                    .and_then(|entity| world.get::<Name>(entity));
+                Self::entity(name, uid)
+            }
         }
+    }
+
+    /// The entity `uid`, called `name`. A blank name counts as none.
+    pub(crate) fn entity(
+        name: Option<&Name>,
+        uid: EntityUid,
+    ) -> Self {
+        const HEAD: usize = 8;
+        Self {
+            name: name
+                .map(Name::as_str)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string),
+            head: uid.to_string().chars().take(HEAD).collect(),
+        }
+    }
+
+    /// Its name, or the head of its id when it has none.
+    pub(crate) fn text(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.head)
     }
 }
 
-/// How much of an id a row shows.
-pub(crate) fn uid_head(uid: EntityUid) -> String {
-    const HEAD: usize = 8;
-    uid.to_string().chars().take(HEAD).collect()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_blank_name_reads_as_the_id() {
+        let uid = EntityUid::new();
+        let head = uid.to_string()[..8].to_string();
+
+        let named = Caption::entity(Some(&Name::new("Cube")), uid);
+        assert_eq!(named.text(), "Cube");
+        for name in [None, Some(&Name::new(""))] {
+            let caption = Caption::entity(name, uid);
+            assert_eq!(caption.name, None);
+            assert_eq!(caption.text(), head);
+        }
+    }
 }
