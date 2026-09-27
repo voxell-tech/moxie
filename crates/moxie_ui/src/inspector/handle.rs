@@ -24,7 +24,7 @@ use crate::elements::{
     ButtonCursor, GhostButton, Icon, Label, LabelCursor,
 };
 use crate::icons;
-use crate::reactive::{BevyUi, FynixHost, resource_changed};
+use crate::reactive::{BevyUi, either, resource_changed};
 
 use super::{
     ClonableSource, Inspect, Source, SourceExt, when_changed,
@@ -51,7 +51,11 @@ impl<T: Asset + TypePath> Inspect for Handle<T> {
         ));
         slot.bind(
             |button| button.label().text(),
-            held_or_named_changed(source),
+            // The label names what is held, by its choice's name.
+            either(
+                when_changed(source),
+                resource_changed::<AssetChoices>(),
+            ),
             move |WorldNodeRef { world, .. }| {
                 label_of::<T>(world, &*read)
             },
@@ -70,23 +74,6 @@ impl<T: Asset + TypePath> Inspect for Handle<T> {
             },
         );
         accept_drop::<T>(&mut slot, source);
-    }
-}
-
-/// Fires when `source` holds another asset, or when what the assets are
-/// called changes.
-fn held_or_named_changed(
-    source: &dyn Source,
-) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
-+ Send
-+ Sync
-+ 'static {
-    let mut held = when_changed(source);
-    let mut named = resource_changed::<AssetChoices>();
-    move |WorldNodeRef { world, node }| {
-        let held = held(WorldNodeRef::new(world, node));
-        let named = named(WorldNodeRef::new(world, node));
-        held || named
     }
 }
 

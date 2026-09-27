@@ -32,7 +32,7 @@ use crate::elements::{
 use crate::icons;
 use crate::inspector::{ClonableSource, when_changed};
 use crate::reactive::{
-    BevyUi, FynixHost, component_changed_on, resource_changed,
+    BevyUi, component_changed_on, either, resource_changed,
     watch_root,
 };
 use crate::theme::EditorTheme;
@@ -494,7 +494,11 @@ fn grid<T: Asset>(
             layout.align_content = AlignContent::FlexStart;
         }
 
-        grid.watch(search_or_choices_changed(root), move |ui| {
+        let searched_or_listed = either(
+            component_changed_on::<Search>(root),
+            resource_changed::<AssetChoices>(),
+        );
+        grid.watch(searched_or_listed, move |ui| {
             let query = ui
                 .world
                 .get::<Search>(root)
@@ -527,23 +531,6 @@ fn grid<T: Asset>(
             }
         });
     });
-}
-
-/// Fires on either, since the grid lists [`AssetChoices`] filtered by
-/// the [`Search`].
-fn search_or_choices_changed(
-    root: Entity,
-) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
-+ Send
-+ Sync
-+ 'static {
-    let mut searched = component_changed_on::<Search>(root);
-    let mut listed = resource_changed::<AssetChoices>();
-    move |WorldNodeRef { world, node }| {
-        let searched = searched(WorldNodeRef::new(world, node));
-        let listed = listed(WorldNodeRef::new(world, node));
-        searched || listed
-    }
 }
 
 fn grid_cell<T: Asset>(

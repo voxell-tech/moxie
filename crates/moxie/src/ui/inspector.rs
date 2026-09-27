@@ -16,8 +16,8 @@ use moxie_ui::elements::{
 };
 use moxie_ui::inspector::{Field, Source, reflect_changed};
 use moxie_ui::reactive::{
-    BevyUi, FynixHost, component_changed_on, resource_changed,
-    structure_changed,
+    BevyUi, FynixHost, component_changed_on, either,
+    resource_changed, structure_changed,
 };
 
 use crate::SelectedEntity;
@@ -210,16 +210,12 @@ fn material_changed(
 + Send
 + Sync
 + 'static {
-    let mut material = component_changed_on::<
-        MeshMaterial3d<StandardMaterial>,
-    >(entity);
-    let mut internal =
+    either(
+        component_changed_on::<MeshMaterial3d<StandardMaterial>>(
+            entity,
+        ),
         structure_changed::<InternalAssets, _>(|internal| {
             internal.iter().map(|asset| asset.id).collect::<Vec<_>>()
-        });
-    move |WorldNodeRef { world, node }| {
-        let material = material(WorldNodeRef::new(world, node));
-        let internal = internal(WorldNodeRef::new(world, node));
-        material || internal
-    }
+        }),
+    )
 }

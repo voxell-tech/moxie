@@ -27,7 +27,9 @@ use moxie_ui::elements::{
     Button, Frame, Icon, Label, Panel, ScrollArea, TintButton,
 };
 use moxie_ui::fold::{CHEVRON_SHUT, Foldable, FoldsOn};
-use moxie_ui::reactive::{BevyUi, FynixHost, resource_changed};
+use moxie_ui::reactive::{
+    BevyUi, FynixHost, either, resource_changed,
+};
 
 use crate::{ProjectBookmarks, ProjectPath};
 
@@ -134,24 +136,14 @@ impl Composer<FynixHost> for Listing {
             ),
             scroll_x = false
         ))
-        .watch(bookmarks_or_project_changed(), build_bookmarks)
+        .watch(
+            either(
+                resource_changed::<ProjectBookmarks>(),
+                resource_changed::<ProjectPath>(),
+            ),
+            build_bookmarks,
+        )
         .handle()
-    }
-}
-
-/// Fires on either resource, since [`build_bookmarks`] draws from
-/// both.
-fn bookmarks_or_project_changed()
--> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
-+ Send
-+ Sync
-+ 'static {
-    let mut bookmarks = resource_changed::<ProjectBookmarks>();
-    let mut project = resource_changed::<ProjectPath>();
-    move |WorldNodeRef { world, node }| {
-        let a = bookmarks(WorldNodeRef::new(world, node));
-        let b = project(WorldNodeRef::new(world, node));
-        a || b
     }
 }
 

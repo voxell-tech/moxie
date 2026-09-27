@@ -140,6 +140,28 @@ pub(crate) fn tick_changed(
     }
 }
 
+/// Fires when `a` or `b` does. Both are polled every time, so neither
+/// misses a change while the other fires.
+pub fn either(
+    mut a: impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
+    + Send
+    + Sync
+    + 'static,
+    mut b: impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
+    + Send
+    + Sync
+    + 'static,
+) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
++ Send
++ Sync
++ 'static {
+    move |WorldNodeRef { world, node }| {
+        let a = a(WorldNodeRef::new(world, node));
+        let b = b(WorldNodeRef::new(world, node));
+        a || b
+    }
+}
+
 /// Fires when the current `S` differs from the last poll.
 pub fn state_changed<S: States>()
 -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
