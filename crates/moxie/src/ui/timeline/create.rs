@@ -168,7 +168,9 @@ fn create(
 ) {
     use moxie_ui::inspector::Source;
 
-    let Some(uid) = world.get::<EntityUid>(field.entity()).copied()
+    let Some(&uid) = field
+        .entity()
+        .and_then(|entity| world.get::<EntityUid>(entity))
     else {
         return;
     };

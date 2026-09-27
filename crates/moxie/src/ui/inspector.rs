@@ -20,7 +20,10 @@ use crate::scene::EditorScene;
 /// makes an inspector row's label a drag source
 /// ([`moxie_ui::inspector::FieldAnimatable`]).
 pub(crate) fn is_animatable(world: &World, field: &Field) -> bool {
-    if world.get::<EntityUid>(field.entity()).is_none() {
+    let subject = field
+        .entity()
+        .and_then(|entity| world.get::<EntityUid>(entity));
+    if subject.is_none() {
         return false;
     }
     let Some(field_ref) = field_ref_of(world, field) else {
@@ -35,7 +38,9 @@ pub(crate) fn is_animatable(world: &World, field: &Field) -> bool {
 /// scene - what turns its label's diamond blue instead of neutral
 /// ([`moxie_ui::inspector::FieldHasAction`]).
 pub(crate) fn has_action(world: &World, field: &Field) -> bool {
-    let Some(uid) = world.get::<EntityUid>(field.entity()).copied()
+    let Some(&uid) = field
+        .entity()
+        .and_then(|entity| world.get::<EntityUid>(entity))
     else {
         return false;
     };
@@ -81,7 +86,7 @@ pub(crate) fn field_ref_of(
     }
     let registry = world.resource::<AppTypeRegistry>().read();
     let type_path =
-        registry.get(field.component())?.type_info().type_path();
+        registry.get(field.root_type())?.type_info().type_path();
     let path = format!("::{}", field.path().replace('.', "::"));
     Some(FieldRef::new(TypeName::new(type_path), path))
 }

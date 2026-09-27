@@ -36,7 +36,7 @@ use crate::elements::{Frame, Label};
 use crate::fold;
 use crate::reactive::{BevyUi, FynixHost};
 
-pub use field::Field;
+pub use field::{Field, Owner};
 use field_drag::FieldName;
 pub(crate) use field_drag::draggable_field;
 pub use field_drag::{DraggedField, FieldAnimatable, FieldHasAction};
