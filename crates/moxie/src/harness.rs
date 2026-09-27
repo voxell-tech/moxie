@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn a_mesh_is_never_none() {
+    fn a_mesh_or_material_is_never_none() {
         let mut editor = Editor::new();
         let cube = add_cube(&mut editor);
         // So the mesh field is the one thing showing "Cube".
@@ -315,10 +315,9 @@ mod tests {
         editor.tap(KeyCode::Escape, Key::Escape);
 
         editor.press("Default");
-        assert_eq!(
-            editor.texts("None").len(),
-            1,
-            "None for a material"
+        assert!(
+            editor.texts("None").is_empty(),
+            "no None for a material"
         );
     }
 
