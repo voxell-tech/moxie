@@ -276,9 +276,15 @@ fn type_into(world: &mut World, field: Entity) {
     }
 }
 
-/// What a scrubbed field held when the scrub began.
+/// A scrub under way on a field.
 #[derive(Component)]
-struct Scrub(NumberInputValue);
+struct Scrub {
+    /// What the field held when the scrub began.
+    start: NumberInputValue,
+    /// What it was last scrubbed to. What the scrub settles on: the
+    /// field's own text may not show it yet.
+    last: NumberInputValue,
+}
 
 /// How far a press must move sideways before it scrubs rather than
 /// clicks, in logical pixels.
@@ -293,7 +299,7 @@ const DRAG_CURSOR: EntityCursor =
 /// Scrubs `field` to `dx` pixels past where the drag began.
 fn scrub(world: &mut World, field: Entity, dx: f32) {
     let start = match world.get::<Scrub>(field) {
-        Some(scrub) => scrub.0,
+        Some(scrub) => scrub.start,
         None => {
             if dx.abs() < SCRUB_SLOP {
                 return;
@@ -301,7 +307,9 @@ fn scrub(world: &mut World, field: Entity, dx: f32) {
             let Some(start) = shown(world, field) else {
                 return;
             };
-            world.entity_mut(field).insert(Scrub(start));
+            world
+                .entity_mut(field)
+                .insert(Scrub { start, last: start });
             // Held however far the pointer strays from the field.
             world.resource_mut::<OverrideCursor>().0 =
                 Some(DRAG_CURSOR);
@@ -323,6 +331,9 @@ fn scrub(world: &mut World, field: Entity, dx: f32) {
             v + (dx / SCRUB_PIXELS_PER_UNIT).round() as i64,
         ),
     };
+    if let Some(mut scrub) = world.get_mut::<Scrub>(field) {
+        scrub.last = value;
+    }
     world.trigger(UpdateNumberInput {
         entity: field,
         value,
@@ -340,16 +351,14 @@ fn nudge(start: f64, dx: f32) -> f64 {
 /// Ends a scrub on `field`, if one is under way, and settles on where
 /// it got to.
 fn end_scrub(world: &mut World, field: Entity) {
-    if world.entity_mut(field).take::<Scrub>().is_none() {
+    let Some(scrub) = world.entity_mut(field).take::<Scrub>() else {
         return;
-    }
+    };
     let mut cursor = world.resource_mut::<OverrideCursor>();
     if cursor.0 == Some(DRAG_CURSOR) {
         cursor.0 = None;
     }
-    if let Some(value) = shown(world, field) {
-        changed(world, field, value, true);
-    }
+    changed(world, field, scrub.last, true);
 }
 
 /// The number `field` shows.
