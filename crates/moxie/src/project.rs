@@ -105,6 +105,11 @@ pub(crate) fn serialize(world: &mut World) -> Option<String> {
         .query_filtered::<Entity, Or<(With<EntityUid>, With<SceneRoot>)>>()
         .iter(world)
         .collect();
+    let world = &*world;
+
+    // Before the registry is locked below: gathering them reads it too,
+    // and a second read on a thread already holding one can deadlock.
+    let assets = world.resource::<InternalAssets>().to_save(world);
 
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
@@ -116,7 +121,6 @@ pub(crate) fn serialize(world: &mut World) -> Option<String> {
 
     let scene = world.resource::<EditorScene>();
     let bookmarks = world.resource::<ProjectBookmarks>();
-    let assets = world.resource::<InternalAssets>().to_save(world);
     let project = ProjectRef {
         world: &dynamic,
         scene: &scene.scene().0,
