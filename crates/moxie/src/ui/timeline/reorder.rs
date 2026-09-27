@@ -1,6 +1,6 @@
 //! Dragging a node's body elsewhere in the tree. Action leaves and
 //! block headers share this, each just a node at a path. Where it lands
-//! is [`drop`]'s.
+//! is [`landing`]'s.
 //!
 //! The tree is written only when the drag ends. Until then the dragged
 //! box and its subtree are the preview, offset by how far the cursor
@@ -23,8 +23,8 @@ use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::{BevyFynix, FynixHost, FynixSet};
 
 use super::block_layout;
-use super::drop::{self, Target, block_at_mut, under};
 use super::hint::HintNode;
+use super::landing::{self, Target, block_at_mut, under};
 use super::prune;
 use super::retime::{BoxPath, GapPath};
 use super::{BlockFoldState, RebuildTick, TrackViewport};
@@ -215,8 +215,8 @@ fn preview(
     }
 
     gesture.target =
-        drop::resolve(content, &layout, root, Some(&gesture.path));
-    drop::announce_hint(
+        landing::resolve(content, &layout, root, Some(&gesture.path));
+    landing::announce_hint(
         &mut commands,
         &hint,
         kernel.theme(),
@@ -415,7 +415,7 @@ fn relocate(
             before: *before,
         },
     };
-    drop::place(root, &target, node)
+    landing::place(root, &target, node)
 }
 
 /// Pulls the node at `path` out of the tree.

@@ -5,7 +5,7 @@
 //! generic field drag ([`DraggedField`]). This module is the timeline
 //! half: the landing preview while a field is held over the track, and
 //! on release splicing a fresh [`SceneNode::Action`] into the tree.
-//! Where it lands, and the hint marking it, are [`drop`]'s.
+//! Where it lands, and the hint marking it, are [`landing`]'s.
 
 use core::time::Duration;
 use std::collections::BTreeSet;
@@ -26,8 +26,8 @@ use moxie_ui::layout::logical_rect;
 use moxie_ui::reactive::{BevyFynix, FynixSet};
 
 use super::block_layout;
-use super::drop;
 use super::hint::HintNode;
+use super::landing;
 use super::{BlockFoldState, RebuildTick, TrackViewport};
 use crate::{EditorScene, SelectedAction, TimelineView, subject};
 
@@ -97,9 +97,9 @@ fn preview(
         folded.paths(),
         kernel.theme().space,
     );
-    let target = drop::resolve(content, &layout, root, None);
+    let target = landing::resolve(content, &layout, root, None);
 
-    drop::announce_hint(
+    landing::announce_hint(
         &mut commands,
         &hint,
         kernel.theme(),
@@ -181,7 +181,7 @@ fn create(
             &world.resource::<EditorScene>().scene().0.animation;
         let space = world.resource::<BevyFynix>().theme().space;
         let layout = block_layout::layout(root, view, folded, space);
-        drop::resolve(content, &layout, root, None)
+        landing::resolve(content, &layout, root, None)
     };
 
     let landed = {
@@ -223,7 +223,7 @@ fn create(
             name: None,
         });
         match target {
-            Some(target) => drop::place(animation, &target, node),
+            Some(target) => landing::place(animation, &target, node),
             // Loose past every block: a top-level child.
             None => {
                 animation.children.push(node);
