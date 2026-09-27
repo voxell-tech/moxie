@@ -7,6 +7,7 @@
 
 mod icons;
 mod playback;
+mod presets;
 mod project;
 mod scene;
 mod ui;
@@ -36,6 +37,7 @@ impl Plugin for MoxiePlugin {
             BevyMotionGfxPlugin,
             SettingsPlugin::new("org.voxell.motiongfx.editor"),
             MoxieAssetPlugin,
+            presets::plugin,
             ui::UiPlugin,
         ))
         .add_systems(PreUpdate, ensure_scene_root);

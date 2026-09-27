@@ -392,6 +392,38 @@ pub trait SourceExt: Source {
 
 impl<S: Source + ?Sized> SourceExt for S {}
 
+/// A boxed [`Source`] cloned through [`Source::boxed`] rather than
+/// derived - a trait object isn't `Clone` on its own - so a
+/// [`menu_item`](crate::elements::menu_item) row can be handed a
+/// closure it's free to run more than once.
+pub(crate) struct ClonableSource(pub(crate) Box<dyn Source>);
+
+impl Clone for ClonableSource {
+    fn clone(&self) -> Self {
+        Self(self.0.boxed())
+    }
+}
+
+impl ClonableSource {
+    // Methods of its own: a closure only using the field captures
+    // just that field - `Box<dyn Source>` on its own, which isn't
+    // `Clone`.
+    pub(crate) fn get(
+        &self,
+        world: &World,
+    ) -> Option<Box<dyn PartialReflect>> {
+        self.0.get(world)
+    }
+
+    pub(crate) fn set(
+        &self,
+        world: &mut World,
+        value: &dyn PartialReflect,
+    ) {
+        self.0.set(world, value);
+    }
+}
+
 /// A source's signal, in the shape the kernel polls with. Nothing
 /// about a source depends on the node asking.
 pub fn when_changed(

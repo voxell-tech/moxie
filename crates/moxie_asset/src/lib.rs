@@ -7,14 +7,17 @@ use bevy::asset::io::AssetSourceBuilder;
 use bevy::ecs::reflect::AppTypeRegistry;
 use bevy::prelude::*;
 
-pub use registry::{AssetKindAppExt, AssetKinds};
+pub use registry::{
+    AssetChoice, AssetChoices, AssetKindAppExt, AssetKinds,
+};
 pub use std_material::{StdMaterialAssetLoader, serialize_to_ron};
 
 pub struct MoxieAssetPlugin;
 
 impl Plugin for MoxieAssetPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AssetKinds>();
+        app.init_resource::<AssetKinds>()
+            .init_resource::<AssetChoices>();
 
         let registry =
             app.world().resource::<AppTypeRegistry>().clone();

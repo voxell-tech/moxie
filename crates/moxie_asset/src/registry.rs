@@ -20,12 +20,51 @@ impl AssetKinds {
     }
 }
 
+/// Named asset paths offered for picking, by the asset's own
+/// [`TypeId`].
+#[derive(Resource, Default)]
+pub struct AssetChoices {
+    by_kind: HashMap<TypeId, Vec<AssetChoice>>,
+}
+
+/// One pickable asset.
+#[derive(Clone, Debug)]
+pub struct AssetChoice {
+    pub name: String,
+    /// Relative to the default asset source.
+    pub path: String,
+}
+
+impl AssetChoices {
+    /// Every choice registered for `T`, in registration order.
+    pub fn of<T: Asset>(&self) -> &[AssetChoice] {
+        self.by_kind
+            .get(&TypeId::of::<T>())
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// The choice registered for `T` under `name`.
+    pub fn named<T: Asset>(
+        &self,
+        name: &str,
+    ) -> Option<&AssetChoice> {
+        self.of::<T>().iter().find(|choice| choice.name == name)
+    }
+}
+
 /// Registering what a file extension loads as.
 pub trait AssetKindAppExt {
     /// Marks every extension in `extensions` as loading a `T`.
     fn register_asset_kind<T: Asset>(
         &mut self,
         extensions: &[&str],
+    ) -> &mut Self;
+
+    /// Offers every `(name, path)` in `choices` wherever a `T` is
+    /// picked.
+    fn register_asset_choices<T: Asset>(
+        &mut self,
+        choices: &[(&str, &str)],
     ) -> &mut Self;
 }
 
@@ -42,6 +81,24 @@ impl AssetKindAppExt for App {
                 .by_extension
                 .insert(extension.to_lowercase(), TypeId::of::<T>());
         }
+        self
+    }
+
+    fn register_asset_choices<T: Asset>(
+        &mut self,
+        choices: &[(&str, &str)],
+    ) -> &mut Self {
+        let mut registered = self
+            .world_mut()
+            .get_resource_or_insert_with(AssetChoices::default);
+        registered
+            .by_kind
+            .entry(TypeId::of::<T>())
+            .or_default()
+            .extend(choices.iter().map(|(name, path)| AssetChoice {
+                name: name.to_string(),
+                path: path.to_string(),
+            }));
         self
     }
 }
