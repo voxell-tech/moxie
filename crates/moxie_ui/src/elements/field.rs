@@ -9,12 +9,16 @@ use bevy::feathers::controls::{
 use bevy::feathers::cursor::{EntityCursor, OverrideCursor};
 use bevy::feathers::theme::UiTheme;
 use bevy::feathers::tokens;
-use bevy::input_focus::InputFocus;
-use bevy::picking::events::{Drag, DragEnd, Pointer};
+use bevy::input::keyboard::KeyboardInput;
+use bevy::input_focus::{
+    FocusCause, FocusGained, FocusLost, FocusedInput, InputFocus,
+};
+use bevy::picking::Pickable;
+use bevy::picking::events::{Click, Drag, DragEnd, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::scene::EntityWorldMutSceneExt;
-use bevy::text::{EditableText, TextCursorStyle};
+use bevy::text::{EditableText, TextCursorStyle, TextEdit};
 use bevy::ui::Checked;
 use bevy::ui_widgets::{Checkbox as CheckboxBehavior, ValueChange};
 use bevy::window::SystemCursorIcon;
@@ -155,7 +159,7 @@ pub(super) fn number_scene(
     }
     style_caret(entity);
     let field = entity.id();
-    scrub_on_drag(entity.world_mut(), field);
+    modes(entity.world_mut(), field);
 }
 
 /// Styles the caret of the input under `entity` from the theme.
@@ -181,35 +185,95 @@ fn style_caret(entity: &mut impl WorldEntityMut) {
 impl NumberField {
     fn build(&self, build: &mut FynixBuild<'_, Self>) {
         number_scene(self.format, self.width, build);
+
+        // On the field rather than its text, which a format change
+        // rebuilds. In drag mode the text ignores the pointer, so all
+        // of these land here.
+        let field = build.id();
+        build
+            .observe(
+                move |drag: On<Pointer<Drag>>,
+                      mut commands: Commands| {
+                    if drag.button != PointerButton::Primary {
+                        return;
+                    }
+                    let dx = drag.distance.x;
+                    commands.queue(move |world: &mut World| {
+                        scrub(world, field, dx);
+                    });
+                },
+            )
+            .observe(
+                move |_: On<Pointer<DragEnd>>,
+                      mut commands: Commands| {
+                    commands.queue(move |world: &mut World| {
+                        end_scrub(world, field);
+                    });
+                },
+            )
+            .observe(
+                move |click: On<Pointer<Click>>,
+                      mut commands: Commands| {
+                    if click.button != PointerButton::Primary {
+                        return;
+                    }
+                    commands.queue(move |world: &mut World| {
+                        type_into(world, field);
+                    });
+                },
+            );
     }
 }
 
-/// Makes dragging sideways across `field`'s text scrub its value. On
-/// the text itself: it keeps a drag to itself, to select with.
-fn scrub_on_drag(world: &mut World, field: Entity) {
+/// Puts `field` in its two modes. Dragged, it scrubs, and its text
+/// ignores the pointer. Typed into, its text has focus and takes the
+/// pointer back, to place a caret and select with.
+fn modes(world: &mut World, field: Entity) {
     let Some(input) = TextField::text_input(world, field) else {
         return;
     };
+    world.entity_mut(field).insert(DRAG_CURSOR);
     world
         .entity_mut(input)
+        .insert(Pickable::IGNORE)
+        .observe(|gained: On<FocusGained>, mut commands: Commands| {
+            commands
+                .entity(gained.entity)
+                .insert(Pickable::default());
+        })
+        .observe(|lost: On<FocusLost>, mut commands: Commands| {
+            commands.entity(lost.entity).insert(Pickable::IGNORE);
+        })
         .observe(
-            move |drag: On<Pointer<Drag>>, mut commands: Commands| {
-                if drag.button != PointerButton::Primary {
-                    return;
+            |key: On<FocusedInput<KeyboardInput>>,
+             mut focus: ResMut<InputFocus>| {
+                if key.input.key_code == KeyCode::Enter
+                    && key.input.state.is_pressed()
+                {
+                    focus.clear();
                 }
-                let dx = drag.distance.x;
-                commands.queue(move |world: &mut World| {
-                    scrub(world, field, dx);
-                });
-            },
-        )
-        .observe(
-            move |_: On<Pointer<DragEnd>>, mut commands: Commands| {
-                commands.queue(move |world: &mut World| {
-                    end_scrub(world, field);
-                });
             },
         );
+}
+
+/// Switches `field` to typing, with its whole value selected to type
+/// over. Not at the end of a scrub, and not when it is typed into
+/// already.
+fn type_into(world: &mut World, field: Entity) {
+    if world.get::<Scrub>(field).is_some() {
+        return;
+    }
+    let Some(input) = TextField::text_input(world, field) else {
+        return;
+    };
+    let mut focus = world.resource_mut::<InputFocus>();
+    if focus.get() == Some(input) {
+        return;
+    }
+    focus.set(input, FocusCause::Pressed);
+    if let Some(mut text) = world.get_mut::<EditableText>(input) {
+        text.queue_edit(TextEdit::SelectAll);
+    }
 }
 
 /// What a scrubbed field held when the scrub began.
@@ -223,7 +287,7 @@ const SCRUB_SLOP: f32 = 3.0;
 const SCRUB_STEP: f64 = 0.01;
 /// How many pixels an integer is dragged per unit.
 const SCRUB_PIXELS_PER_UNIT: f32 = 4.0;
-const SCRUBBING: EntityCursor =
+const DRAG_CURSOR: EntityCursor =
     EntityCursor::System(SystemCursorIcon::EwResize);
 
 /// Scrubs `field` to `dx` pixels past where the drag began.
@@ -238,11 +302,9 @@ fn scrub(world: &mut World, field: Entity, dx: f32) {
                 return;
             };
             world.entity_mut(field).insert(Scrub(start));
-            // Scrubbing, not typing: no caret, and the field takes
-            // what it is sent.
-            world.resource_mut::<InputFocus>().clear();
+            // Held however far the pointer strays from the field.
             world.resource_mut::<OverrideCursor>().0 =
-                Some(SCRUBBING);
+                Some(DRAG_CURSOR);
             start
         }
     };
@@ -282,7 +344,7 @@ fn end_scrub(world: &mut World, field: Entity) {
         return;
     }
     let mut cursor = world.resource_mut::<OverrideCursor>();
-    if cursor.0 == Some(SCRUBBING) {
+    if cursor.0 == Some(DRAG_CURSOR) {
         cursor.0 = None;
     }
     if let Some(value) = shown(world, field) {

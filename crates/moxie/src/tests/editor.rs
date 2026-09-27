@@ -2,6 +2,7 @@ use std::path::Path;
 
 use bevy::asset::uuid::Uuid;
 use bevy::input::keyboard::Key;
+use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_motiongfx::scene::id::EntityUid;
 use moxie_asset::{ABSOLUTE_SOURCE, AssetRef, InternalAssets};
@@ -181,17 +182,8 @@ fn a_field_built_later_has_the_editor_caret() {
 fn dragging_a_number_field_scrubs_its_value() {
     let mut editor = Editor::new();
     let cube = add_cube(&mut editor);
+    let (x, _) = translation_x(&mut editor);
 
-    // The row the translation label heads, and its first input, x.
-    let label = editor.text("translation");
-    let world = editor.world();
-    let mut row = label;
-    let x = loop {
-        row = world.get::<ChildOf>(row).expect("in a row").parent();
-        if let Some(x) = first_number_input(world, row) {
-            break x;
-        }
-    };
     editor.drag(x, 50.0);
 
     let translation = editor
@@ -200,6 +192,51 @@ fn dragging_a_number_field_scrubs_its_value() {
         .expect("placed")
         .translation;
     assert_eq!(translation, Vec3::new(0.5, 0.0, 0.0));
+}
+
+#[test]
+fn a_clicked_number_field_is_typed_into_until_enter() {
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+    let (x, text) = translation_x(&mut editor);
+    let pickable = |editor: &mut Editor| {
+        editor
+            .world()
+            .get::<bevy::picking::Pickable>(text)
+            .is_some_and(|pickable| pickable.is_hoverable)
+    };
+    assert!(!pickable(&mut editor), "dragged, not typed into");
+
+    editor.click_entity(x, 1);
+    let focus = editor.world().resource::<InputFocus>().get();
+    assert_eq!(focus, Some(text));
+    assert!(pickable(&mut editor), "the text takes the pointer");
+
+    // The pointer lands on the text now, which selects with a drag.
+    editor.drag(text, 50.0);
+    let moved =
+        editor.world().get::<Transform>(cube).expect("placed");
+    assert_eq!(moved.translation, Vec3::ZERO);
+
+    editor.tap(KeyCode::Enter, Key::Enter);
+    let focus = editor.world().resource::<InputFocus>().get();
+    assert_eq!(focus, None);
+    assert!(!pickable(&mut editor), "back to dragging");
+}
+
+/// The number field for the translation's x, and the text inside it.
+fn translation_x(editor: &mut Editor) -> (Entity, Entity) {
+    let mut row = editor.text("translation");
+    let world = editor.world();
+    let text = loop {
+        row = world.get::<ChildOf>(row).expect("in a row").parent();
+        if let Some(text) = first_number_input(world, row) {
+            break text;
+        }
+    };
+    let field =
+        world.get::<ChildOf>(text).expect("in a field").parent();
+    (field, text)
 }
 
 /// The text of the first number field under `root`, depth first.

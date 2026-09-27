@@ -21,7 +21,7 @@ use bevy::render::sync_world::SyncWorldPlugin;
 use bevy::ui_widgets::{
     Activate, Button as ButtonBehavior, MenuItem,
 };
-use bevy::window::ExitCondition;
+use bevy::window::{ExitCondition, PrimaryWindow};
 use bevy::winit::WinitPlugin;
 
 use crate::MoxiePlugin;
@@ -64,6 +64,9 @@ impl Editor {
         ));
         app.finish();
         app.cleanup();
+        // Keys reach whatever has focus by way of the primary window,
+        // so there has to be one, drawn or not.
+        app.world_mut().spawn((Window::default(), PrimaryWindow));
 
         let mut editor = Self { app };
         editor.step(SETTLE);
@@ -152,6 +155,11 @@ impl Editor {
     /// click bubbles up from there, as a real one does.
     pub(crate) fn click(&mut self, text: &str, count: u8) {
         let entity = self.text(text);
+        self.click_entity(entity, count);
+    }
+
+    /// Clicks `entity` `count` times in a row.
+    pub(crate) fn click_entity(&mut self, entity: Entity, count: u8) {
         self.pointer(
             entity,
             Click {
