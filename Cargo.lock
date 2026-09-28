@@ -917,7 +917,6 @@ dependencies = [
 [[package]]
 name = "bevy_fynix"
 version = "0.0.1"
-source = "git+https://github.com/voxell-tech/fynix#8484f11602a1fd5b7054e421bb95ecbaa36e9ce9"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -2883,7 +2882,6 @@ dependencies = [
 [[package]]
 name = "fynix"
 version = "0.0.1"
-source = "git+https://github.com/voxell-tech/fynix#8484f11602a1fd5b7054e421bb95ecbaa36e9ce9"
 dependencies = [
  "fynix_macros",
  "hashbrown 0.17.1",
@@ -2895,7 +2893,6 @@ dependencies = [
 [[package]]
 name = "fynix_macros"
 version = "0.0.1"
-source = "git+https://github.com/voxell-tech/fynix#8484f11602a1fd5b7054e421bb95ecbaa36e9ce9"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
