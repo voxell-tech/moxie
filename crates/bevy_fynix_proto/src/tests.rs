@@ -15,6 +15,8 @@ use bevy_text::{
 use bevy_time::TimePlugin;
 use bevy_ui::widget::Text;
 
+mod structure;
+
 use crate::mounted::Mounts;
 use crate::tokens::{TextTokens, Tone};
 use crate::views::label;
