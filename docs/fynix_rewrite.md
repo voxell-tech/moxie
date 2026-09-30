@@ -565,14 +565,72 @@ button(content).fill(highlight).transition(Button::FILL, Motion::Expand);
 - **Interruption** starts from wherever the value had got to, as today.
   A spring curve carries velocity, so a reversal mid-transition is
   smooth, which today's `min(duration, spent)` only approximates.
-- **Enter and exit.** `.enter(Fade)` and `.exit(Fade)`. An exiting node
-  stays alive until its exit ends. It needs keyed `each` to tell a
-  node that is really leaving from one that is only rebuilt; a full
-  rebuild runs no exit.
+- **Enter and exit.** See below.
 - **Reduced motion.** One token scales every curve to zero.
 - **Layout transitions, later.** FLIP: measure a node before and after
   layout, animate the difference as a transform. It needs a hook after
   bevy's layout pass and runs one frame late, so it comes last.
+
+### Props every element shares
+
+Opacity and scale belong to every element, so rules for every kind of
+element reach them: `cx.set::<Visual>(|v, _| v.opacity(0.5))`. Each
+element also has them as its own props (`label(x).opacity(0.5)`), and
+lends them to the core through `Element::visual`, so `Visual` rules and
+state rules resolve into the same fields. A rule for the element's own
+kind beats a `Visual` rule.
+
+In Bevy, opacity multiplies the alpha of what the element draws, and
+scale is its `UiTransform`. The two behave differently in a subtree:
+Bevy has no opacity a node's children inherit, so fading a subtree
+means a rule reaching every element in it, while a scale on the root
+already scales its children. A rule that should only touch the root
+goes in `cx.root(..)`.
+
+### Entering and leaving
+
+Entering and leaving are two more states, which the framework sets
+itself, and they are styled like any other:
+
+```rust
+line(name)
+    .when::<Entering, _>(hidden)
+    .when::<Leaving, _>(hidden)
+    .transition(Motion::Expand)
+// The same, shorter:
+line(name).appear(hidden).transition(Motion::Expand)
+
+fn hidden<T>(cx: &mut Cx<Bevy, T>) {
+    cx.set::<Visual>(|v, _| v.opacity(0.0));
+    cx.root(|cx| cx.set::<Visual>(|v, _| v.scale(0.9)));
+}
+```
+
+- **Entering** is put on a view's root when a rule reading it is
+  built, so the first write already has it. It comes off after that
+  update, which marks the view dirty, and the transition runs to the
+  resting values from the next update on. Views with no rule for it
+  never get it.
+- **Leaving** is put on the root of a view that `keyed` or `each`
+  drops, if its root element has a transition. The view stays where it
+  was, stops taking input, and its `Leaving` rules animate it out over
+  that curve. After the same length again, the space it took collapses
+  (`Backend::collapse`) and then it is despawned. A view with no
+  transition is despawned at once, and reduced motion drops every
+  leaving view at the next update.
+- **The collapse** measures the node, pins its size along the parent's
+  main axis, clips it, zeroes its padding and minimum size, and shrinks
+  it to nothing. It pulls the parent's gap beside it back with a
+  negative margin, so nothing jumps when it goes. While it runs, the
+  node's own element leaves its size to the collapse.
+- **Order.** `each` keeps a leaving row after the row it followed, so
+  other rows move around it until it is gone. `keyed` builds the new
+  view beside the leaving one.
+
+Only views fynix removes itself can animate out. An entity despawned
+from outside the UI vanishes at once. A leaving view's timing is two
+lengths of its root element's curve, fade then collapse, not a wait on
+the transitions inside it.
 
 ## Three real call sites
 
@@ -816,9 +874,9 @@ are scoped set rules" above) are now in the prototype, and `Stateful`,
 - finding 10: a call site's `.when` reaches a composite's parts, and
   one rule block can light a button's frame and every label in it.
 
-Findings 6 and 15 remain: transitions are still whole-snapshot, and
-properties every element shares still need a home. Building it turned
-up three more:
+Findings 6 and 15 remained: transitions were still whole-snapshot, and
+properties every element shares still needed a home. Building it
+turned up three more:
 
 16. **The one-rule form does not chain.** `label(x).when::<A, _>(a)`
     returns a wrapper, not a `Label`, so a second `.when` is the block
@@ -833,6 +891,27 @@ up three more:
     rule.** `set::<Stateful<Label, T>>(|l| l.when(..))` did that. The
     same is now a `.when` block on an ancestor, which reads the
     ancestor's state, not each element's own.
+
+Entering and leaving (see "Entering and leaving" above) answer finding
+15 with `Visual`, and turned up four more:
+
+19. **No opacity a subtree inherits.** Bevy draws each node's colours
+    as they are, so fading a subtree takes a rule reaching every
+    element in it, and overlapping translucent children do not fade as
+    one layer. A frame's border is not faded either, since `Frame`
+    does not own its border colour.
+20. **`keyed` and `each` containers are rows.** A container is a bare
+    node, which lays its children out left to right, so a leaving
+    view's collapse takes its width, and a switched screen appears
+    beside the old one until it goes. Containers need a direction, or
+    a frame of their own.
+21. **A leaving view's timing is a guess.** It fades for one length of
+    its root element's curve and collapses for another, instead of
+    waiting for the transitions under it to settle, which would need
+    `Mounted` to know which elements are under which node.
+22. **A returning key does not revive its leaving view.** A row
+    removed and added back while it leaves is built fresh beside the
+    old one.
 
 The hover source changed too. The `Hovered` marker used to be set by
 `Pointer<Over>` and `Pointer<Out>` observers on the node. Both events

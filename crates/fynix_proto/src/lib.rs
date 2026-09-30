@@ -27,6 +27,7 @@ pub mod scoped;
 pub mod structure;
 pub mod transition;
 pub mod view;
+pub mod visual;
 
 #[cfg(test)]
 mod tests;
@@ -44,3 +45,4 @@ pub use view::{
     AnyView, Element, Layered, Settable, Styled, View, ViewExt,
     ViewSeq,
 };
+pub use visual::{Visual, VisualMut};

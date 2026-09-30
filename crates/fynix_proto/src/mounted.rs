@@ -15,7 +15,7 @@ use typarena::type_table::TypeTable;
 use crate::backend::Backend;
 use crate::layer::Live;
 use crate::rules::RuleArena;
-use crate::transition::Run;
+use crate::transition::{Curve, Run};
 use crate::view::Element;
 
 /// A set of structural views built together, dropped together.
@@ -76,6 +76,17 @@ type NodeFn<B> =
 struct Hooks<B: Backend> {
     mark: NodeFn<B>,
     remove: NodeFn<B>,
+    curve: fn(&TypeTable<B::Node>, B::Node) -> Option<Curve>,
+}
+
+/// A dropped view's root, kept while it animates out: first its
+/// elements travel to their leaving state, then the space it takes
+/// collapses, then it is despawned.
+struct Leaving<B: Backend> {
+    node: B::Node,
+    curve: Curve,
+    elapsed: Duration,
+    collapsing: bool,
 }
 
 impl<B: Backend> Clone for Hooks<B> {
@@ -97,6 +108,7 @@ pub struct Mounted<B: Backend, T> {
     /// The elements whose state rules are read on each node, besides
     /// the node's own element.
     readers: HashMap<B::Node, Vec<B::Node>>,
+    leaving: Vec<Leaving<B>>,
     /// Structural views by id, parents before the views they build.
     slots: BTreeMap<Group, Slot<B, T>>,
     /// The slot of each container node.
@@ -114,6 +126,7 @@ impl<B: Backend, T> Default for Mounted<B, T> {
             kinds: HashSet::new(),
             hooks: HashMap::new(),
             readers: HashMap::new(),
+            leaving: Vec::new(),
             slots: BTreeMap::new(),
             containers: HashMap::new(),
             next_group: 0,
@@ -141,20 +154,17 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
             Hooks {
                 mark: mark::<B, T, E>,
                 remove: remove::<B, T, E>,
+                curve: curve::<B, T, E>,
             },
         );
         // Checks often fire on their first call, which the snapshot
         // just taken already covers.
         element.changed(world);
         live.changed::<T>(world);
-        for layer in &live.layers {
-            let on = layer.on(node);
-            (layer.when.watch)(world, on);
-            if on != node {
-                let readers = self.readers.entry(on).or_default();
-                if !readers.contains(&node) {
-                    readers.push(node);
-                }
+        for on in live.read_on(node) {
+            let readers = self.readers.entry(on).or_default();
+            if !readers.contains(&node) {
+                readers.push(node);
             }
         }
         B::on_mount(world, node);
@@ -197,12 +207,77 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
             (hooks.remove)(&mut self.table, node);
         }
         self.readers.remove(&node);
+        self.leaving.retain(|leaving| leaving.node != node);
         if let Some(id) = self.containers.remove(&node) {
             if let Some(slot) = self.slots.remove(&id) {
                 self.forget(slot);
             }
             self.drop_group(id);
         }
+    }
+
+    /// Takes out the view whose root is `node`: animated out when its
+    /// root element travels over a curve, despawned at once otherwise.
+    pub(crate) fn leave(
+        &mut self,
+        world: &mut B::World,
+        node: B::Node,
+    ) {
+        let curve = self
+            .hooks
+            .get(&node)
+            .and_then(|hooks| (hooks.curve)(&self.table, node));
+        match curve {
+            Some(curve) => {
+                B::leave(world, node);
+                self.leaving.push(Leaving {
+                    node,
+                    curve,
+                    elapsed: Duration::ZERO,
+                    collapsing: false,
+                });
+            }
+            None => B::despawn(world, node),
+        }
+    }
+
+    /// Whether `node` is the root of a view still animating out.
+    pub fn is_leaving(&self, node: B::Node) -> bool {
+        self.leaving.iter().any(|leaving| leaving.node == node)
+    }
+
+    /// Moves every leaving view on by `tick`.
+    fn update_leaving(&mut self, world: &mut B::World, tick: Tick) {
+        self.leaving.retain_mut(|leaving| {
+            let duration = leaving.curve.duration;
+            leaving.elapsed += tick.delta;
+            if tick.reduced_motion {
+                B::despawn(world, leaving.node);
+                return false;
+            }
+            if !leaving.collapsing {
+                if leaving.elapsed < duration {
+                    return true;
+                }
+                // What is left of the tick goes to the collapse.
+                leaving.collapsing = true;
+                leaving.elapsed -= duration;
+                B::collapse(world, leaving.node, 0.0);
+            }
+            if leaving.elapsed >= duration {
+                B::collapse(world, leaving.node, 1.0);
+                B::despawn(world, leaving.node);
+                return false;
+            }
+            let progress = leaving.elapsed.as_secs_f32()
+                / duration.as_secs_f32();
+            B::collapse(
+                world,
+                leaving.node,
+                (leaving.curve.ease)(progress),
+            );
+            true
+        });
     }
 
     /// A group for structural views built together.
@@ -289,6 +364,7 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
         for update in &self.updates {
             update(&mut self.table, world, theme, tick);
         }
+        self.update_leaving(world, tick);
     }
 
     /// The rules stored for the scopes and captures alive.
@@ -341,6 +417,13 @@ fn mark<B: Backend, T: 'static, E: Element<B, T>>(
     if let Some(mount) = table.get_mut::<Mount<B, T, E>>(&node) {
         mount.dirty = true;
     }
+}
+
+fn curve<B: Backend, T: 'static, E: Element<B, T>>(
+    table: &TypeTable<B::Node>,
+    node: B::Node,
+) -> Option<Curve> {
+    table.get::<Mount<B, T, E>>(&node)?.live.curve()
 }
 
 fn remove<B: Backend, T: 'static, E: Element<B, T>>(

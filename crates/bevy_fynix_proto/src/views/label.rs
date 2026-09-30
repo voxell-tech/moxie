@@ -1,11 +1,9 @@
 use bevy::color::Color;
 use bevy::ecs::entity::Entity;
 use bevy::ecs::world::World;
-use bevy::math::Vec2;
 use bevy::text::{
     FontSize, LineBreak, TextColor, TextFont, TextLayout,
 };
-use bevy::ui::UiTransform;
 use bevy::ui::widget::Text;
 use motiongfx_interp::interpolation::{InterpFn, Interpolation};
 
@@ -13,6 +11,7 @@ use crate::prop::Prop;
 use crate::state::own_when;
 use crate::tokens::{TextTokens, Tone};
 use crate::transition::BevyMarker;
+use crate::visual::{faded, scaled, visual_access, visual_props};
 use crate::{Bevy, Element, Styled};
 
 /// A run of text.
@@ -21,8 +20,7 @@ pub struct Label {
     pub size: Prop<f32>,
     pub tone: Prop<Tone>,
     pub wrap: Prop<bool>,
-    /// The factor the node is scaled by around its centre after
-    /// layout, 1.0 when unset.
+    pub opacity: Prop<f32>,
     pub scale: Prop<f32>,
 }
 
@@ -54,10 +52,7 @@ impl Label {
         self
     }
 
-    pub fn scale(mut self, scale: impl Into<Prop<f32>>) -> Self {
-        self.scale = scale.into();
-        self
-    }
+    visual_props!();
 }
 
 fynix_proto::styled!(Label {
@@ -65,6 +60,7 @@ fynix_proto::styled!(Label {
     size,
     tone,
     wrap,
+    opacity,
     scale
 });
 
@@ -77,6 +73,7 @@ pub struct LabelSnapshot {
     pub size: f32,
     pub color: Color,
     pub wrap: bool,
+    pub opacity: f32,
     pub scale: f32,
 }
 
@@ -93,6 +90,11 @@ impl Interpolation<BevyMarker> for LabelSnapshot {
                 t,
             ),
             wrap: to.wrap,
+            opacity: <f32 as Interpolation<()>>::interp(
+                &from.opacity,
+                &to.opacity,
+                t,
+            ),
             scale: <f32 as Interpolation<()>>::interp(
                 &from.scale,
                 &to.scale,
@@ -121,6 +123,7 @@ impl<T: TextTokens> Element<Bevy, T> for Label {
             size: self.size.get(world).unwrap_or(theme.body_size()),
             color: theme.tone(tone),
             wrap: self.wrap.get(world).unwrap_or(true),
+            opacity: self.opacity.get(world).unwrap_or(1.0),
             scale: self.scale.get(world).unwrap_or(1.0),
         }
     }
@@ -141,12 +144,12 @@ impl<T: TextTokens> Element<Bevy, T> for Label {
                 font_size: FontSize::Px(snapshot.size),
                 ..Default::default()
             },
-            TextColor(snapshot.color),
+            TextColor(faded(snapshot.color, snapshot.opacity)),
             TextLayout {
                 linebreak,
                 ..Default::default()
             },
-            UiTransform::from_scale(Vec2::splat(snapshot.scale)),
+            scaled(snapshot.scale),
         ));
     }
 
@@ -155,6 +158,7 @@ impl<T: TextTokens> Element<Bevy, T> for Label {
             || self.size.is_bound()
             || self.tone.is_bound()
             || self.wrap.is_bound()
+            || self.opacity.is_bound()
             || self.scale.is_bound()
     }
 
@@ -163,12 +167,15 @@ impl<T: TextTokens> Element<Bevy, T> for Label {
             | self.size.changed(world)
             | self.tone.changed(world)
             | self.wrap.changed(world)
+            | self.opacity.changed(world)
             | self.scale.changed(world)
     }
 
     fn interp() -> Option<InterpFn<LabelSnapshot>> {
         Some(<LabelSnapshot as Interpolation<BevyMarker>>::interp)
     }
+
+    visual_access!();
 }
 
 #[cfg(test)]
@@ -176,7 +183,10 @@ mod tests {
     use core::time::Duration;
 
     use bevy::app::App;
+    use bevy::color::Alpha;
+    use bevy::math::Vec2;
     use bevy::time::{TimePlugin, TimeUpdateStrategy};
+    use bevy::ui::UiTransform;
 
     use super::*;
     use crate::tokens::{Curve, Motion, MotionTokens};
@@ -298,12 +308,46 @@ mod tests {
     }
 
     #[test]
-    fn size_color_and_scale_blend_while_text_and_wrap_snap() {
+    fn opacity_multiplies_the_text_alpha() {
+        let mut app = app();
+        let node =
+            mount::<Plain>(app.world_mut(), label("x").opacity(0.25));
+
+        let color = app.world().get::<TextColor>(node).unwrap().0;
+        assert_eq!(color, Color::WHITE.with_alpha(0.25));
+    }
+
+    #[test]
+    fn a_rule_for_every_element_reaches_a_label() {
+        let mut app = app();
+        let root = mount::<Plain>(
+            app.world_mut(),
+            crate::AnyView::<Bevy, Plain>::new(|cx| {
+                cx.set::<crate::Visual>(|v, _| {
+                    v.opacity(0.5).scale(3.0)
+                });
+                cx.set::<Label>(|l, _| l.scale(2.0));
+                cx.build(label("x"))
+            }),
+        );
+
+        let color = app.world().get::<TextColor>(root).unwrap().0;
+        assert_eq!(color, Color::WHITE.with_alpha(0.5));
+        assert_eq!(
+            scale(&app, root),
+            Vec2::splat(2.0),
+            "a rule for labels beats one for every element"
+        );
+    }
+
+    #[test]
+    fn size_color_opacity_and_scale_blend_while_text_and_wrap_snap() {
         let from = LabelSnapshot {
             text: "a".into(),
             size: 10.0,
             color: Color::BLACK,
             wrap: true,
+            opacity: 0.0,
             scale: 1.0,
         };
         let to = LabelSnapshot {
@@ -311,6 +355,7 @@ mod tests {
             size: 20.0,
             color: Color::WHITE,
             wrap: false,
+            opacity: 1.0,
             scale: 2.0,
         };
 
@@ -321,6 +366,7 @@ mod tests {
 
         assert_eq!(mid.text, "b");
         assert_eq!(mid.size, 15.0);
+        assert_eq!(mid.opacity, 0.5);
         assert_eq!(mid.scale, 1.5);
         assert_eq!(
             mid.color,

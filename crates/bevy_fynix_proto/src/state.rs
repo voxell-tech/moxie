@@ -17,6 +17,7 @@ use bevy::picking::events::{Pointer, Press, Release};
 use bevy::picking::hover::Hovered as PickingHovered;
 use fynix_proto::{Condition, ScopedExt, When};
 
+use crate::leave::Entering;
 use crate::{Bevy, Cx, Styled};
 
 /// The pointer is over the node or one of its descendants.
@@ -91,6 +92,13 @@ fn watch_state<S: Component>(world: &mut World, node: Entity) {
         .insert(Watched::<S>(PhantomData))
         .observe(state_inserted::<S>)
         .observe(state_removed::<S>);
+    if TypeId::of::<S>() == TypeId::of::<Entering>() {
+        crate::leave::enter(world, node);
+        return;
+    }
+    let Ok(mut entity) = world.get_entity_mut(node) else {
+        return;
+    };
     let tracked = [TypeId::of::<Hovered>(), TypeId::of::<Pressed>()];
     if tracked.contains(&TypeId::of::<S>())
         && !entity.contains::<PickingHovered>()
@@ -138,9 +146,39 @@ pub trait StateExt: Sized {
     ) -> When<Self, F, State<S>> {
         self.when_in::<State<S>, F>(rules)
     }
+
+    /// This view, animating in from what `away` sets and out to it
+    /// again: `away` holds while it is [`Entering`] and while it is
+    /// [`Leaving`](crate::Leaving). It needs a transition to move.
+    ///
+    /// ```ignore
+    /// line(name).appear(hidden).transition(Motion::Expand)
+    /// ```
+    #[allow(clippy::type_complexity)]
+    fn appear<T: 'static>(
+        self,
+        away: fn(&mut Cx<'_, Bevy, T>),
+    ) -> When<
+        When<Self, fn(&mut Cx<'_, Bevy, T>), State<Entering>>,
+        fn(&mut Cx<'_, Bevy, T>),
+        State<crate::Leaving>,
+    > {
+        self.when::<Entering, _>(away)
+            .when::<crate::Leaving, _>(away)
+    }
 }
 
 impl<V> StateExt for V {}
+
+/// Where a view is while out of sight, for [`StateExt::appear`]:
+/// every element in it transparent, and its root scaled down a little.
+/// Scale is only set on the root, as children take their parent's.
+pub fn hidden<T: 'static>(cx: &mut Cx<'_, Bevy, T>) {
+    cx.set::<crate::Visual>(|visual, _| visual.opacity(0.0));
+    cx.root(|cx| {
+        cx.set::<crate::Visual>(|visual, _| visual.scale(0.9))
+    });
+}
 
 /// A rule an element writes on itself, as the block of a
 /// [`StateExt::when`].

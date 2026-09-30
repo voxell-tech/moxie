@@ -1,8 +1,10 @@
 //! The prototype's views in a window, one section per idea in
 //! `docs/fynix_rewrite.md`: a theme implemented through token traits,
 //! an app-wide set rule, bound labels, hover rules with transitions,
-//! one state rule reaching a button's parts, a scoped rule, a folding section, field rows, a screen switch and a
-//! keyed list that rebuild structure, and a reduced-motion switch.
+//! one state rule reaching a button's parts, a scoped rule, a folding
+//! section, field rows, a screen switch and a keyed list that rebuild
+//! structure and animate views in and out, and a reduced-motion
+//! switch.
 //!
 //! `cargo run -p bevy_fynix_proto --example gallery`
 
@@ -29,7 +31,7 @@ use bevy_fynix_proto::views::{
 use bevy_fynix_proto::{
     AnyView, Bevy, Cx, FynixProtoPlugin, Hovered, Pressed,
     ReducedMotion, ScopedExt, StateExt, Theme, View, ViewExt, each,
-    keyed, mount, resource,
+    hidden, keyed, mount, resource,
 };
 
 /// What a view is built with, in this app.
@@ -340,7 +342,8 @@ fn action(
 }
 
 /// A `keyed` on the screen resource. Each screen is built when it is
-/// shown, under the app's preamble.
+/// shown, under the app's preamble, and fades in as the last one fades
+/// out.
 fn switching() -> impl View<Bevy, Monokai> {
     column((
         row((
@@ -370,6 +373,8 @@ fn switching() -> impl View<Bevy, Monokai> {
                         .tone(Tone::Dim),
                 ))
                 .gap(2.0)
+                .appear::<Monokai>(hidden)
+                .transition(Motion::Expand)
                 .boxed(),
                 Screen::Details => column((
                     label("Details").tone(Tone::Accent),
@@ -379,6 +384,8 @@ fn switching() -> impl View<Bevy, Monokai> {
                     })),
                 ))
                 .gap(2.0)
+                .appear::<Monokai>(hidden)
+                .transition(Motion::Expand)
                 .boxed(),
             }
         }),
@@ -394,7 +401,8 @@ struct Rows {
 }
 
 /// An `each` keyed by row id. A row that stays keeps its entity, so
-/// its hover transition survives a reorder.
+/// its hover transition survives a reorder. New rows fade in, and a
+/// removed row fades out before the space it took closes.
 fn keyed_list() -> impl View<Bevy, Monokai> {
     column((
         row((
@@ -418,7 +426,11 @@ fn keyed_list() -> impl View<Bevy, Monokai> {
         each(
             resource::<Rows, _>(|rows| rows.ids.clone()),
             |id| *id,
-            |id| line(&format!("Row {id}")).boxed(),
+            |id| {
+                line(&format!("Row {id}"))
+                    .appear::<Monokai>(hidden)
+                    .boxed()
+            },
         ),
     ))
     .gap(6.0)

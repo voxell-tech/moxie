@@ -11,10 +11,12 @@ use bevy::ui::{
 
 use motiongfx_interp::interpolation::{InterpFn, Interpolation};
 
+use crate::leave::Collapsing;
 use crate::prop::Prop;
 use crate::state::own_when;
 use crate::tokens::SpacingTokens;
 use crate::transition::BevyMarker;
+use crate::visual::{faded, scaled, visual_access, visual_props};
 use crate::{Bevy, Element, Styled};
 
 /// A bevy_ui [`Node`] with a fill, holding no views of its own.
@@ -32,6 +34,8 @@ pub struct Frame {
     pub align: Prop<AlignItems>,
     pub fill: Prop<Color>,
     pub radius: Prop<f32>,
+    pub opacity: Prop<f32>,
+    pub scale: Prop<f32>,
 }
 
 pub fn frame() -> Frame {
@@ -63,6 +67,8 @@ macro_rules! forward_all_frame_props {
             align: AlignItems,
             fill: Color,
             radius: f32,
+            opacity: f32,
+            scale: f32,
         );
     };
 }
@@ -94,6 +100,8 @@ impl Frame {
         fill: Color,
         radius: f32,
     );
+
+    visual_props!();
 }
 
 fynix_proto::styled!(Frame {
@@ -107,6 +115,8 @@ fynix_proto::styled!(Frame {
     align,
     fill,
     radius,
+    opacity,
+    scale,
 });
 
 own_when!(Frame);
@@ -125,14 +135,27 @@ pub struct FrameSnapshot {
     pub align: Option<AlignItems>,
     pub fill: Color,
     pub radius: f32,
+    pub opacity: f32,
+    pub scale: f32,
 }
 
-/// The fill blends and everything else takes the target.
+/// The fill, opacity and scale blend, and everything else takes the
+/// target.
 impl Interpolation<BevyMarker> for FrameSnapshot {
     fn interp(from: &Self, to: &Self, t: f32) -> Self {
         Self {
             fill: <Color as Interpolation<BevyMarker>>::interp(
                 &from.fill, &to.fill, t,
+            ),
+            opacity: <f32 as Interpolation<()>>::interp(
+                &from.opacity,
+                &to.opacity,
+                t,
+            ),
+            scale: <f32 as Interpolation<()>>::interp(
+                &from.scale,
+                &to.scale,
+                t,
             ),
             ..to.clone()
         }
@@ -158,6 +181,8 @@ impl<T: SpacingTokens> Element<Bevy, T> for Frame {
             align: self.align.get(world),
             fill: self.fill.get(world).unwrap_or(Color::NONE),
             radius: self.radius.get(world).unwrap_or(0.0),
+            opacity: self.opacity.get(world).unwrap_or(1.0),
+            scale: self.scale.get(world).unwrap_or(1.0),
         }
     }
 
@@ -167,6 +192,8 @@ impl<T: SpacingTokens> Element<Bevy, T> for Frame {
         node: Entity,
     ) {
         let mut entity = world.entity_mut(node);
+        // A collapsing node's size is the collapse's to write.
+        let sized = !entity.contains::<Collapsing>();
         if let Some(mut ui) = entity.get_mut::<Node>() {
             if let Some(direction) = snapshot.direction {
                 ui.flex_direction = direction;
@@ -174,13 +201,14 @@ impl<T: SpacingTokens> Element<Bevy, T> for Frame {
             ui.border_radius = BorderRadius::all(px(snapshot.radius));
             ui.row_gap = px(snapshot.gap);
             ui.column_gap = px(snapshot.gap);
-            if let Some(padding) = snapshot.padding {
+            if let Some(padding) = snapshot.padding.filter(|_| sized)
+            {
                 ui.padding = padding;
             }
-            if let Some(width) = snapshot.width {
+            if let Some(width) = snapshot.width.filter(|_| sized) {
                 ui.width = width;
             }
-            if let Some(height) = snapshot.height {
+            if let Some(height) = snapshot.height.filter(|_| sized) {
                 ui.height = height;
             }
             if let Some(grow) = snapshot.grow {
@@ -193,7 +221,10 @@ impl<T: SpacingTokens> Element<Bevy, T> for Frame {
                 ui.align_items = align;
             }
         }
-        entity.insert(BackgroundColor(snapshot.fill));
+        entity.insert((
+            BackgroundColor(faded(snapshot.fill, snapshot.opacity)),
+            scaled(snapshot.scale),
+        ));
     }
 
     fn is_live(&self) -> bool {
@@ -207,6 +238,8 @@ impl<T: SpacingTokens> Element<Bevy, T> for Frame {
             || self.align.is_bound()
             || self.fill.is_bound()
             || self.radius.is_bound()
+            || self.opacity.is_bound()
+            || self.scale.is_bound()
     }
 
     fn changed(&mut self, world: &World) -> bool {
@@ -220,11 +253,15 @@ impl<T: SpacingTokens> Element<Bevy, T> for Frame {
             | self.align.changed(world)
             | self.fill.changed(world)
             | self.radius.changed(world)
+            | self.opacity.changed(world)
+            | self.scale.changed(world)
     }
 
     fn interp() -> Option<InterpFn<FrameSnapshot>> {
         Some(<FrameSnapshot as Interpolation<BevyMarker>>::interp)
     }
+
+    visual_access!();
 }
 
 #[cfg(test)]
@@ -283,6 +320,8 @@ mod tests {
             align: None,
             fill: Color::BLACK,
             radius: 2.0,
+            opacity: 1.0,
+            scale: 1.0,
         };
         let to = FrameSnapshot {
             direction: Some(FlexDirection::Column),

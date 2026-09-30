@@ -12,6 +12,7 @@ use lenz::Lenz;
 use motiongfx_interp::ease;
 use motiongfx_interp::interpolation::Interpolation;
 
+mod leave;
 mod state;
 mod structure;
 
@@ -47,6 +48,9 @@ struct Node {
     size: f32,
     /// The fake backend's one state.
     lit: bool,
+    leaving: bool,
+    /// How far the space it takes has collapsed, once it has begun.
+    collapsed: Option<f32>,
 }
 
 struct Fake;
@@ -91,6 +95,18 @@ impl Backend for Fake {
             .as_mut()
             .expect("a live parent")
             .children = children.to_vec();
+    }
+
+    fn leave(world: &mut World, node: usize) {
+        if let Some(node) = world.nodes[node].as_mut() {
+            node.leaving = true;
+        }
+    }
+
+    fn collapse(world: &mut World, node: usize, progress: f32) {
+        if let Some(node) = world.nodes[node].as_mut() {
+            node.collapsed = Some(progress);
+        }
     }
 }
 

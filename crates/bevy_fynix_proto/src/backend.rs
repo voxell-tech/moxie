@@ -49,4 +49,12 @@ impl fynix_proto::Backend for Bevy {
     ) {
         world.entity_mut(parent).replace_children(children);
     }
+
+    fn leave(world: &mut World, node: Entity) {
+        crate::leave::leave(world, node);
+    }
+
+    fn collapse(world: &mut World, node: Entity, progress: f32) {
+        crate::leave::collapse(world, node, progress);
+    }
 }

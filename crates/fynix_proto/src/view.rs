@@ -11,6 +11,7 @@ use crate::backend::Backend;
 use crate::cx::Cx;
 use crate::layer::Live;
 use crate::transition::Tween;
+use crate::visual::{Visual, VisualMut};
 
 /// Something that can be built under a node, with the theme `T`.
 pub trait View<B: Backend, T> {
@@ -197,18 +198,36 @@ pub trait Element<B: Backend, T>: Layered {
     fn interp() -> Option<InterpFn<Self::Snapshot>> {
         None
     }
+
+    /// Its [`Visual`] props, for rules for every kind of element to
+    /// reach. `None` for an element without them.
+    fn visual(&mut self) -> Option<VisualMut<'_, B::World>> {
+        None
+    }
 }
 
 impl<B: Backend, T: 'static, E: Element<B, T>> View<B, T> for E {
-    fn build(self, cx: &mut Cx<'_, B, T>) -> B::Node {
+    fn build(mut self, cx: &mut Cx<'_, B, T>) -> B::Node {
         let call = self.set_mask();
         let layers = cx.layers::<E>();
+        let (visual_call, visual_layers) = match self.visual() {
+            Some(visual) => {
+                (visual.set_mask(), cx.layers::<Visual<B::World>>())
+            }
+            None => (0, Vec::new()),
+        };
         let curve = cx.curve();
         let mut element = E::resolve(self, cx);
+        if let Some(mut visual) = element.visual() {
+            // After the element's own rules, which are more specific.
+            visual.fill(cx.resolve(Visual::unset()));
+        }
         let node = cx.spawn();
         let mut live = Live {
             layers,
             call,
+            visual_layers,
+            visual_call,
             tween: element.tween(cx.theme()).or_else(|| {
                 Some(Tween {
                     curve: curve?,
@@ -217,10 +236,17 @@ impl<B: Backend, T: 'static, E: Element<B, T>> View<B, T> for E {
             }),
         };
         E::prepare(cx.world, node);
+        // Before the snapshot, which a state set on watching can
+        // change.
+        live.watch(cx.world, node);
         let snapshot =
             live.snapshot(&mut element, cx.world, node, cx.theme());
         E::write(&snapshot, cx.world, node);
-        if element.is_live() || !live.layers.is_empty() {
+        // One with a transition is kept too, so it can animate out.
+        if element.is_live()
+            || live.is_layered()
+            || live.tween.is_some()
+        {
             cx.mount(node, element, snapshot, live);
         }
         node

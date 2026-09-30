@@ -121,7 +121,7 @@ where
         if next == self.last {
             return;
         }
-        B::despawn(world, self.child);
+        mounted.leave(world, self.child);
         mounted.drop_group(id);
         let mut cx =
             Cx::seeded(world, theme, mounted, &self.capture, id);
@@ -212,6 +212,7 @@ where
                 key: self.key,
                 build: self.build,
                 container,
+                shown: rows.iter().map(|row| row.node).collect(),
                 rows,
                 capture,
             }),
@@ -226,7 +227,34 @@ struct EachEntry<B: Backend, T, I, K> {
     build: Box<BuildFn<B, T, I>>,
     container: B::Node,
     rows: Vec<Row<B, K>>,
+    /// The container's children as last ordered: the rows, and the
+    /// rows animating out where they were.
+    shown: Vec<B::Node>,
     capture: Vec<ScopeEntry<B>>,
+}
+
+/// `live` in its order, with each node of `before` that `leaving`
+/// holds for put back after the node it followed there.
+fn keep_leaving<N: Copy + PartialEq>(
+    before: &[N],
+    mut live: Vec<N>,
+    leaving: impl Fn(N) -> bool,
+) -> Vec<N> {
+    let mut anchor = None;
+    for &node in before {
+        if leaving(node) {
+            let at = anchor
+                .and_then(|anchor| {
+                    live.iter().position(|&shown| shown == anchor)
+                })
+                .map_or(0, |at| at + 1);
+            live.insert(at, node);
+            anchor = Some(node);
+        } else if live.contains(&node) {
+            anchor = Some(node);
+        }
+    }
+    live
 }
 
 impl<B, T, I, K> Structure<B, T> for EachEntry<B, T, I, K>
@@ -247,8 +275,12 @@ where
             return;
         }
         let items = self.items.get(world);
-        let before =
-            self.rows.iter().map(|row| row.node).collect::<Vec<_>>();
+        // Rows still animating out keep their place among the rest.
+        self.shown.retain(|&node| {
+            mounted.is_leaving(node)
+                || self.rows.iter().any(|row| row.node == node)
+        });
+        let before = self.shown.clone();
 
         // Keys may repeat, so each old row is matched at most once.
         let mut old = mem::take(&mut self.rows)
@@ -266,7 +298,7 @@ where
             })
             .collect::<Vec<_>>();
         for row in old.into_iter().flatten() {
-            B::despawn(world, row.node);
+            mounted.leave(world, row.node);
             mounted.drop_group(row.group);
         }
 
@@ -293,11 +325,15 @@ where
         }
         drop(cx);
 
-        let after =
+        let live =
             rows.iter().map(|row| row.node).collect::<Vec<_>>();
+        let after = keep_leaving(&before, live, |node| {
+            mounted.is_leaving(node)
+        });
         if after != before {
             B::reorder(world, self.container, &after);
         }
+        self.shown = after;
         self.rows = rows;
     }
 

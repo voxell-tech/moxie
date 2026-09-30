@@ -8,10 +8,12 @@ use bevy::ui::{Node, px};
 
 use motiongfx_interp::interpolation::{InterpFn, Interpolation};
 
+use crate::leave::Collapsing;
 use crate::prop::Prop;
 use crate::state::own_when;
 use crate::tokens::{TextTokens, Tone};
 use crate::transition::BevyMarker;
+use crate::visual::{faded, scaled, visual_access, visual_props};
 use crate::{Bevy, Element, Styled};
 
 /// A square image tinted by a text tone.
@@ -19,6 +21,8 @@ pub struct Icon {
     pub image: Prop<Handle<Image>>,
     pub size: Prop<f32>,
     pub tone: Prop<Tone>,
+    pub opacity: Prop<f32>,
+    pub scale: Prop<f32>,
 }
 
 pub fn icon(image: impl Into<Prop<Handle<Image>>>) -> Icon {
@@ -46,9 +50,17 @@ impl Icon {
         self.tone = tone.into();
         self
     }
+
+    visual_props!();
 }
 
-fynix_proto::styled!(Icon { image, size, tone });
+fynix_proto::styled!(Icon {
+    image,
+    size,
+    tone,
+    opacity,
+    scale
+});
 
 own_when!(Icon);
 
@@ -58,21 +70,26 @@ pub struct IconSnapshot {
     pub image: Handle<Image>,
     pub size: f32,
     pub color: Color,
+    pub opacity: f32,
+    pub scale: f32,
 }
 
-/// The size and tint blend, and the image takes the target.
+/// Everything but the image blends, and the image takes the target.
 impl Interpolation<BevyMarker> for IconSnapshot {
     fn interp(from: &Self, to: &Self, t: f32) -> Self {
+        let float = |from: &f32, to: &f32| {
+            <f32 as Interpolation<()>>::interp(from, to, t)
+        };
         Self {
             image: to.image.clone(),
-            size: <f32 as Interpolation<()>>::interp(
-                &from.size, &to.size, t,
-            ),
+            size: float(&from.size, &to.size),
             color: <Color as Interpolation<BevyMarker>>::interp(
                 &from.color,
                 &to.color,
                 t,
             ),
+            opacity: float(&from.opacity, &to.opacity),
+            scale: float(&from.scale, &to.scale),
         }
     }
 }
@@ -90,6 +107,8 @@ impl<T: TextTokens> Element<Bevy, T> for Icon {
             image: self.image.get(world).unwrap_or_default(),
             size: self.size.get(world).unwrap_or(theme.body_size()),
             color: theme.tone(tone),
+            opacity: self.opacity.get(world).unwrap_or(1.0),
+            scale: self.scale.get(world).unwrap_or(1.0),
         }
     }
 
@@ -99,31 +118,42 @@ impl<T: TextTokens> Element<Bevy, T> for Icon {
         node: Entity,
     ) {
         let mut entity = world.entity_mut(node);
-        if let Some(mut ui) = entity.get_mut::<Node>() {
+        // A collapsing node's size is the collapse's to write.
+        let sized = !entity.contains::<Collapsing>();
+        if let Some(mut ui) = entity.get_mut::<Node>()
+            && sized
+        {
             ui.width = px(snapshot.size);
             ui.height = px(snapshot.size);
         }
-        entity.insert(
+        entity.insert((
             ImageNode::new(snapshot.image.clone())
-                .with_color(snapshot.color),
-        );
+                .with_color(faded(snapshot.color, snapshot.opacity)),
+            scaled(snapshot.scale),
+        ));
     }
 
     fn is_live(&self) -> bool {
         self.image.is_bound()
             || self.size.is_bound()
             || self.tone.is_bound()
+            || self.opacity.is_bound()
+            || self.scale.is_bound()
     }
 
     fn changed(&mut self, world: &World) -> bool {
         self.image.changed(world)
             | self.size.changed(world)
             | self.tone.changed(world)
+            | self.opacity.changed(world)
+            | self.scale.changed(world)
     }
 
     fn interp() -> Option<InterpFn<IconSnapshot>> {
         Some(<IconSnapshot as Interpolation<BevyMarker>>::interp)
     }
+
+    visual_access!();
 }
 
 #[cfg(test)]
