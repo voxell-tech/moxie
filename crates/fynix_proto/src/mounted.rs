@@ -1,6 +1,7 @@
 //! Leaves whose props can change after they are built, kept in step
 //! with the world.
 
+use alloc::vec::Vec;
 use core::any::TypeId;
 use core::marker::PhantomData;
 use core::time::Duration;

@@ -1,10 +1,17 @@
 //! What a view is built with: the world, the theme, where it hangs,
 //! the rules in force there, and where live leaves are kept.
 
+use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
+
+use lenz::{Cursor, FieldId, FieldPath};
 use typarena::type_table::TypeTable;
 
 use crate::backend::Backend;
 use crate::mounted::Mounted;
+use crate::prop::Prop;
 use crate::view::{Styled, View};
 
 /// One rule restyling a `V`, with the theme in hand.
@@ -12,6 +19,22 @@ type Rule<V, T> = Box<dyn Fn(V, &T) -> V + Send + Sync>;
 
 /// The rules restyling a `V` that one scope adds, in the order set.
 type Rules<V, T> = Vec<Rule<V, T>>;
+
+/// The fields of a `V` that one scope's path rules set, in the order
+/// set.
+struct Targets<V>(Vec<FieldId>, PhantomData<fn() -> V>);
+
+/// Which set rules in force could decide a field, for telling where a
+/// value came from.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Trace {
+    /// The scope depth of each path rule naming the field, outermost
+    /// first. Unless the call site set it, the last one decided it.
+    pub named: Vec<usize>,
+    /// Closure rules in force for the same kind of view. Any of them
+    /// could have set it too, and nothing can tell which.
+    pub opaque: usize,
+}
 
 pub struct Cx<'a, B: Backend, T> {
     pub world: &'a mut B::World,
@@ -22,6 +45,8 @@ pub struct Cx<'a, B: Backend, T> {
     sets: TypeTable<usize>,
     /// Show rules, laid out like `sets`.
     shows: TypeTable<usize>,
+    /// What the path rules among `sets` name, laid out like `sets`.
+    targets: TypeTable<usize>,
     /// The innermost scope's depth. The root's is 0.
     depth: usize,
 }
@@ -39,6 +64,7 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
             parent: None,
             sets: TypeTable::new(),
             shows: TypeTable::new(),
+            targets: TypeTable::new(),
             depth: 0,
         }
     }
@@ -88,6 +114,7 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
         let built = build(self);
         self.sets.remove_row(&self.depth);
         self.shows.remove_row(&self.depth);
+        self.targets.remove_row(&self.depth);
         self.depth -= 1;
         built
     }
@@ -99,6 +126,73 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
         rule: impl Fn(V, &T) -> V + Send + Sync + 'static,
     ) {
         push::<V, T>(&mut self.sets, self.depth, Box::new(rule));
+    }
+
+    /// Sets the field `path` names to `value`, on every view `path`
+    /// starts from, from here to the end of the scope. A set rule
+    /// like [`set`](Self::set), but one that says which field it sets.
+    ///
+    /// The path may reach into a composite's own parts:
+    /// `Card::cursor().title().size()` sets the size of a card's
+    /// title, and of nothing else.
+    pub fn set_field<P, X>(&mut self, path: Cursor<P>, value: X)
+    where
+        P: FieldPath<Target = Prop<B::World, X>>,
+        P::Source: Styled,
+        X: Clone + Send + Sync + 'static,
+    {
+        self.set_field_with(path, move |_| value.clone());
+    }
+
+    /// As [`set_field`](Self::set_field), with the value read from the
+    /// theme.
+    pub fn set_field_with<P, X>(
+        &mut self,
+        path: Cursor<P>,
+        read: impl Fn(&T) -> X + Send + Sync + 'static,
+    ) where
+        P: FieldPath<Target = Prop<B::World, X>>,
+        P::Source: Styled,
+        X: Send + Sync + 'static,
+    {
+        let field = path.key();
+        let accessor = path.accessor();
+        self.set::<P::Source>(move |mut view, theme| {
+            if let Some(prop) = accessor.get_mut(&mut view) {
+                *prop = Prop::Value(read(theme));
+            }
+            view
+        });
+        match self.targets.get_mut::<Targets<P::Source>>(&self.depth)
+        {
+            Some(targets) => targets.0.push(field),
+            None => {
+                self.targets.insert(
+                    self.depth,
+                    Targets::<P::Source>(vec![field], PhantomData),
+                );
+            }
+        }
+    }
+
+    /// Which set rules in force for a `V` could decide `field`.
+    pub fn trace<V: Styled>(&self, field: FieldId) -> Trace {
+        let mut trace = Trace::default();
+        for depth in 0..=self.depth {
+            let named = self
+                .targets
+                .get::<Targets<V>>(&depth)
+                .map_or(&[][..], |targets| &targets.0[..]);
+            let rules = self
+                .sets
+                .get::<Rules<V, T>>(&depth)
+                .map_or(0, Vec::len);
+            trace.opaque += rules - named.len();
+            if named.contains(&field) {
+                trace.named.push(depth);
+            }
+        }
+        trace
     }
 
     /// Transforms every `V` built from here to the end of the scope,

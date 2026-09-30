@@ -2,17 +2,21 @@
 //! text at a size, and one number the text can be bound to.
 
 use core::time::Duration;
+use std::string::{String, ToString};
+use std::vec::Vec;
+use std::{panic, vec};
 
+use lenz::Lenz;
 use motiongfx_interp::ease;
 use motiongfx_interp::interpolation::Interpolation;
 
 use crate::{
     AnyView, Backend, Curve, Cx, Leaf, Motion, MotionTokens, Mounted,
-    Prop, Styled, Tick, Tween, View, derived,
+    Prop, Styled, Tick, Trace, Tween, View, derived,
 };
 
 #[derive(Default)]
-struct World {
+pub struct World {
     nodes: Vec<Option<Node>>,
     count: i32,
 }
@@ -65,9 +69,11 @@ trait Sizes {
 }
 
 /// A run of text.
-struct Text {
+#[derive(Lenz)]
+pub struct Text {
     text: Prop<World, String>,
     size: Prop<World, f32>,
+    #[lenz(ignore)]
     motion: Option<Motion>,
 }
 
@@ -428,4 +434,141 @@ fn a_zero_length_curve_snaps() {
     ui.update(Duration::from_millis(1), false);
 
     assert_eq!(ui.world.node(node).size, 20.0);
+}
+
+/// A composite: a title over a body, both texts of its own.
+#[derive(Lenz)]
+pub struct Card {
+    title: Text,
+    body: Text,
+}
+
+fn card(title: &str, body: &str) -> Card {
+    Card {
+        title: text(title),
+        body: text(body),
+    }
+}
+
+impl Styled for Card {
+    fn unset() -> Self {
+        Self {
+            title: Text::unset(),
+            body: Text::unset(),
+        }
+    }
+
+    fn over(self, below: Self) -> Self {
+        Self {
+            title: self.title.over(below.title),
+            body: self.body.over(below.body),
+        }
+    }
+}
+
+// For one theme only: generic over `T`, it would overlap the core's
+// `View` for every `Leaf`, since another crate could make `Card` a
+// `Leaf<Fake, ItsTheme>`.
+impl View<Fake, Warm> for Card {
+    fn build(self, cx: &mut Cx<'_, Fake, Warm>) -> usize {
+        let card = cx.resolve(self);
+        let root = cx.spawn();
+        cx.under(root, |cx| {
+            cx.build(card.title);
+            cx.build(card.body);
+        });
+        root
+    }
+}
+
+#[test]
+fn a_field_rule_fills_only_what_the_call_site_left_unset() {
+    let mut ui = Ui::new(Warm);
+    let [ruled, explicit] = ui.under(|cx| {
+        cx.set_field(Text::cursor().size(), 20.0);
+        cx.build(text("ruled"));
+        cx.build(text("explicit").size(9.0));
+    })[..] else {
+        panic!("two nodes");
+    };
+
+    assert_eq!(ui.world.node(ruled).size, 20.0);
+    assert_eq!(ui.world.node(explicit).size, 9.0, "call site wins");
+}
+
+#[test]
+fn a_field_rule_can_read_the_theme() {
+    let mut ui = Ui::new(Warm);
+    let nodes = ui.under(|cx| {
+        cx.set_field_with(Text::cursor().size(), |theme: &Warm| {
+            theme.body() * 2.0
+        });
+        cx.build(text("big"));
+    });
+
+    assert_eq!(ui.world.node(nodes[0]).size, 28.0);
+}
+
+#[test]
+fn a_path_reaches_one_part_of_a_composite() {
+    let mut ui = Ui::new(Warm);
+    let [card, loose] = ui.under(|cx| {
+        cx.set_field(Card::cursor().title().size(), 30.0);
+        cx.build(card("Title", "Body"));
+        cx.build(text("loose"));
+    })[..] else {
+        panic!("a card and a text");
+    };
+    let [title, body] = ui.world.children(card)[..] else {
+        panic!("a title and a body");
+    };
+
+    assert_eq!(ui.world.node(title).size, 30.0);
+    assert_eq!(
+        ui.world.node(body).size,
+        14.0,
+        "the body is untouched"
+    );
+    assert_eq!(ui.world.node(loose).size, 14.0, "so is a lone text");
+}
+
+#[test]
+fn a_composite_part_rule_beats_a_rule_for_the_part_s_kind() {
+    let mut ui = Ui::new(Warm);
+    let [card] = ui.under(|cx| {
+        cx.set_field(Card::cursor().title().size(), 30.0);
+        cx.set_field(Text::cursor().size(), 10.0);
+        cx.build(card("Title", "Body"));
+    })[..] else {
+        panic!("a card");
+    };
+    let [title, body] = ui.world.children(card)[..] else {
+        panic!("a title and a body");
+    };
+
+    // The card's rule reaches its title as if its call site set it.
+    assert_eq!(ui.world.node(title).size, 30.0);
+    assert_eq!(ui.world.node(body).size, 10.0);
+}
+
+#[test]
+fn a_trace_names_the_path_rules_and_counts_the_rest() {
+    let mut ui = Ui::new(Warm);
+    ui.under(|cx| {
+        cx.set_field(Text::cursor().size(), 20.0);
+        cx.set::<Text>(|t, _| t.size(21.0));
+        cx.scope(|cx| {
+            cx.set_field(Text::cursor().text(), "x".to_string());
+            cx.set_field(Text::cursor().size(), 22.0);
+
+            let size = Text::cursor().size().key();
+            assert_eq!(
+                cx.trace::<Text>(size),
+                Trace {
+                    named: vec![0, 1],
+                    opaque: 1,
+                }
+            );
+        });
+    });
 }

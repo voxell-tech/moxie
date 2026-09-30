@@ -2924,6 +2924,7 @@ name = "fynix_proto"
 version = "0.1.0"
 dependencies = [
  "hashbrown 0.17.1",
+ "lenz",
  "motiongfx_interp",
  "typarena",
 ]

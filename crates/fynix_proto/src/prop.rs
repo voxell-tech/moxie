@@ -1,5 +1,8 @@
 //! A value a view is handed.
 
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+
 /// A prop: set at the call site, bound to the world `W`, or left for
 /// set rules and then the theme to decide.
 #[derive(Default)]

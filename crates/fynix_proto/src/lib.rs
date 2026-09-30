@@ -10,6 +10,13 @@
 //! Nothing here names an engine. A [`Backend`] says what a world and a
 //! node are, and a backend crate writes the leaves.
 
+#![no_std]
+
+extern crate alloc;
+
+#[cfg(test)]
+extern crate std;
+
 pub mod backend;
 pub mod cx;
 pub mod mounted;
@@ -21,7 +28,8 @@ pub mod view;
 mod tests;
 
 pub use backend::Backend;
-pub use cx::Cx;
+pub use cx::{Cx, Trace};
+pub use lenz;
 pub use mounted::{Mounted, Tick};
 pub use prop::{Prop, Signal, derived};
 pub use transition::{Curve, Motion, MotionTokens, Tween};

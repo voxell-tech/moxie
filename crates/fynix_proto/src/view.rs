@@ -1,6 +1,10 @@
 //! What a view is, and the kinds there are: leaves, composites built
 //! out of other views, and wrappers around any view.
 
+use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
+
 use crate::backend::Backend;
 use crate::cx::Cx;
 use crate::transition::Tween;

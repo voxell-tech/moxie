@@ -9,8 +9,8 @@ publish = false
 
 [dependencies]
 typarena = { version = "0.1.2", features = ["send", "sync"] }
-# `std`: its integer interpolation does not build without it.
-motiongfx_interp = { version = "0.3.1" }
+lenz = { version = "0.1.0", default-features = false }
+motiongfx_interp = { version = "0.3.1", default-features = false }
 hashbrown = { version = "0.17", default-features = false, features = [
     "default-hasher",
 ] }
