@@ -1,8 +1,8 @@
 //! The prototype's views in a window, one section per idea in
 //! `docs/fynix_rewrite.md`: a theme implemented through token traits,
 //! an app-wide set rule, bound labels, hover rules with transitions, a
-//! scoped rule, a folding section, field rows, and a reduced-motion
-//! switch.
+//! scoped rule, a folding section, field rows, a screen switch and a
+//! keyed list that rebuild structure, and a reduced-motion switch.
 //!
 //! `cargo run -p bevy_fynix_proto --example gallery`
 
@@ -28,7 +28,7 @@ use bevy_fynix_proto::views::{
 };
 use bevy_fynix_proto::{
     AnyView, Bevy, Cx, FynixProtoPlugin, Hovered, ReducedMotion,
-    StateExt, Theme, View, mount, resource,
+    StateExt, Theme, View, ViewExt, each, keyed, mount, resource,
 };
 
 /// What a view is built with, in this app.
@@ -42,6 +42,11 @@ fn main() {
         ))
         .insert_resource(Theme(Monokai))
         .insert_resource(Clicks(0))
+        .insert_resource(Screen::Overview)
+        .insert_resource(Rows {
+            ids: vec![1, 2, 3],
+            next: 4,
+        })
         .add_systems(Startup, setup)
         .run();
 }
@@ -138,6 +143,8 @@ fn gallery() -> AnyView<Bevy, Monokai> {
                 section("A scoped rule", scoped()),
                 section("Folding", folding()),
                 section("Field rows", fields()),
+                section("Switching", switching()),
+                section("A keyed list", keyed_list()),
                 section("Motion", motion_switch()),
             ))
             .width(percent(100.0))
@@ -184,7 +191,7 @@ fn bound_values() -> impl View<Bevy, Monokai> {
 
 /// A label that turns accent under the pointer, over the theme's
 /// curve.
-fn line(text: &str) -> impl View<Bevy, Monokai> {
+fn line(text: &str) -> impl View<Bevy, Monokai> + use<> {
     label(text)
         .when::<Hovered>(
             |shown: &mut LabelSnapshot, theme: &Monokai| {
@@ -280,6 +287,108 @@ fn toggle_keyframes(world: &mut World) {
             field.insert(HasAction);
         }
     }
+}
+
+/// The screen shown by the switching section.
+#[derive(Resource, Clone, Copy, PartialEq)]
+enum Screen {
+    Overview,
+    Details,
+}
+
+/// A button that changes the world, padded like the others.
+fn action(
+    text: &'static str,
+    run: fn(&mut World),
+) -> impl View<Bevy, Monokai> {
+    button(label(text))
+        .padding(UiRect::axes(px(10.0), px(4.0)))
+        .on_activate(run)
+}
+
+/// A `keyed` on the screen resource. Each screen is built when it is
+/// shown, under the app's preamble.
+fn switching() -> impl View<Bevy, Monokai> {
+    column((
+        row((
+            action("Switch screen", |world| {
+                let mut screen = world.resource_mut::<Screen>();
+                *screen = match *screen {
+                    Screen::Overview => Screen::Details,
+                    Screen::Details => Screen::Overview,
+                };
+            }),
+            label(resource::<Screen, _>(|screen| {
+                match screen {
+                    Screen::Overview => "Showing: overview",
+                    Screen::Details => "Showing: details",
+                }
+                .to_string()
+            }))
+            .tone(Tone::Dim),
+        ))
+        .gap(8.0)
+        .align(AlignItems::Center),
+        keyed(resource::<Screen, _>(|screen| *screen), |screen| {
+            match screen {
+                Screen::Overview => column((
+                    label("Overview"),
+                    label("Three things happened today")
+                        .tone(Tone::Dim),
+                ))
+                .gap(2.0)
+                .boxed(),
+                Screen::Details => column((
+                    label("Details").tone(Tone::Accent),
+                    label("Nothing else to see").tone(Tone::Dim),
+                    label(resource::<Clicks, _>(|clicks| {
+                        format!("Counter reads {}", clicks.0)
+                    })),
+                ))
+                .gap(2.0)
+                .boxed(),
+            }
+        }),
+    ))
+    .gap(6.0)
+}
+
+/// The ids of the rows in the keyed list, and the next id to hand out.
+#[derive(Resource)]
+struct Rows {
+    ids: Vec<u32>,
+    next: u32,
+}
+
+/// An `each` keyed by row id. A row that stays keeps its entity, so
+/// its hover transition survives a reorder.
+fn keyed_list() -> impl View<Bevy, Monokai> {
+    column((
+        row((
+            action("Add row", |world| {
+                let mut rows = world.resource_mut::<Rows>();
+                let id = rows.next;
+                rows.ids.push(id);
+                rows.next += 1;
+            }),
+            action("Remove first", |world| {
+                let mut rows = world.resource_mut::<Rows>();
+                if !rows.ids.is_empty() {
+                    rows.ids.remove(0);
+                }
+            }),
+            action("Reverse", |world| {
+                world.resource_mut::<Rows>().ids.reverse();
+            }),
+        ))
+        .gap(8.0),
+        each(
+            resource::<Rows, _>(|rows| rows.ids.clone()),
+            |id| *id,
+            |id| line(&format!("Row {id}")).boxed(),
+        ),
+    ))
+    .gap(6.0)
 }
 
 fn motion_switch() -> impl View<Bevy, Monokai> {
