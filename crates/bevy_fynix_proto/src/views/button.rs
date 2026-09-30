@@ -12,7 +12,9 @@ use bevy::ui::{
     AlignItems, FlexDirection, JustifyContent, UiRect, Val,
 };
 use bevy::ui_widgets::Button as ButtonBehavior;
+use bevy::window::SystemCursorIcon;
 
+use crate::cursor::EntityCursor;
 use crate::prop::Prop;
 use crate::tokens::{SpacingTokens, SurfaceTokens};
 use crate::views::frame::{Frame, forward_all_frame_props};
@@ -58,7 +60,10 @@ where
             });
             cx.build(self.frame)
         });
-        cx.world.entity_mut(node).insert(ButtonBehavior);
+        cx.world.entity_mut(node).insert((
+            ButtonBehavior,
+            EntityCursor(SystemCursorIcon::Pointer),
+        ));
         cx.under(node, |cx| cx.build(self.content));
         node
     }

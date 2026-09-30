@@ -6,6 +6,7 @@
 //! the world.
 
 pub mod backend;
+pub mod cursor;
 pub mod demo;
 pub mod modifier;
 pub mod mounted;
@@ -29,6 +30,7 @@ pub use fynix_proto::{
 };
 
 pub use backend::{Bevy, Unmounted};
+pub use cursor::{CursorPlugin, EntityCursor};
 pub use modifier::ModifierExt;
 pub use mounted::Mounts;
 pub use prop::{
@@ -54,7 +56,8 @@ impl<T> Default for FynixProtoPlugin<T> {
 
 impl<T: Send + Sync + 'static> Plugin for FynixProtoPlugin<T> {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Mounts<T>>()
+        app.add_plugins(CursorPlugin)
+            .init_resource::<Mounts<T>>()
             .init_resource::<Unmounted>()
             .init_resource::<DirtyNodes>()
             .init_resource::<ReducedMotion>()
