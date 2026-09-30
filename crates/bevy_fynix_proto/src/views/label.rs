@@ -10,7 +10,7 @@ use motiongfx_interp::interpolation::Interpolation;
 use crate::prop::Prop;
 use crate::tokens::{TextTokens, Tone};
 use crate::transition::BevyMarker;
-use crate::{Bevy, Leaf, Styled};
+use crate::{Bevy, Element, Styled};
 
 /// A run of text.
 pub struct Label {
@@ -95,7 +95,7 @@ impl Interpolation<BevyMarker> for LabelSnapshot {
     }
 }
 
-impl<T: TextTokens> Leaf<Bevy, T> for Label {
+impl<T: TextTokens> Element<Bevy, T> for Label {
     type Snapshot = LabelSnapshot;
 
     fn prepare(world: &mut World, node: Entity) {

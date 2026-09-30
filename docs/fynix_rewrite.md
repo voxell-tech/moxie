@@ -65,7 +65,7 @@ and Xilem's current type erasure are worth reading before building.
 
 ## Backend boundary
 
-Generic above the leaves; the backend owns leaves, layout, input and
+Generic above the elements; the backend owns elements, layout, input and
 state access. This is the line fynix's `Host` already draws.
 
 ```rust
@@ -85,7 +85,7 @@ tokens from it through a trait bound (see [Theming](#theming)), and
 `T` is inferred everywhere a `Cx` is in hand.
 
 A composite only arranges other views, so it works on every backend
-unchanged. A leaf is written once per backend. On Bevy that leaves
+unchanged. An element is written once per backend. On Bevy that leaves
 layout, picking, text and focus to `bevy_ui`, taffy and bevy's picking.
 
 The heavier alternative, iced's, is for the framework to own layout,
@@ -99,7 +99,7 @@ Bevy.
 Everything is a struct. Functions are only short constructors:
 `label("Open")` and `Label::new("Open")` are the same thing.
 
-### Leaf views
+### Elements
 
 Own fields and a build hook, and nothing else:
 
@@ -385,7 +385,7 @@ impl TextTokens for EditorTheme {
 
 ### Where tokens are read
 
-- **View defaults.** A leaf bounded on `TextTokens` falls back to
+- **View defaults.** An element bounded on `TextTokens` falls back to
   `theme.body_size()` for a size nobody set, so it looks right with no
   rules at all. A view that needs nothing from the theme takes no
   bound, and any theme can use it.
@@ -577,8 +577,8 @@ What to prove in the prototype first, most likely to fail first:
    [Props and reactivity](#props-and-reactivity).
 6. **Exits against rebuilds**, under [Transitions](#transitions).
 7. **Escape hatches.** The number field's scrub and the timeline's
-   drag previews still need direct ECS access, as custom leaf views
-   with a build hook, roughly how fynix elements work today.
+   drag previews still need direct ECS access, as custom elements
+   with a build hook, roughly how today's fynix elements work.
 
 ## Prototype findings
 
@@ -590,11 +590,11 @@ The prototype is split the way fynix is:
   target (`thumbv7em-none-eabihf`).
   Rules live in typarena tables, one row per scope depth and one
   column per view kind, so leaving a scope is one `remove_row`. Live
-  leaves get one column per leaf kind, each walked by an update
+  elements get one column per element kind, each walked by an update
   registered the first time that kind mounts, as fynix's `AnimTable`
   does. Transitions use `motiongfx_interp`'s `EaseFn` and `InterpFn`.
   18 tests run it against a fake backend that is only a list of nodes.
-- `crates/bevy_fynix_proto` is the Bevy backend: the leaves,
+- `crates/bevy_fynix_proto` is the Bevy backend: the elements,
   composites, states, modifiers, the three call sites and the two
   measurement examples, with 59 tests. It depends on eleven Bevy
   sub-crates instead of the whole engine, which halves its dependency
@@ -624,30 +624,30 @@ What did not, each needing a decision before the real rewrite:
    `row(..).padding(4.0)` hits the row's own frame padding, not the
    generic padding modifier. Either composites drop their forwarding
    methods and rely on modifiers, or modifiers get distinct names.
-3. **Two writers on one node.** A leaf rewrites its components when a
+3. **Two writers on one node.** An element rewrites its components when a
    bound prop changes, and can overwrite what a modifier set. The
    prototype only writes props that were set, by convention. Modifiers
    also run once, at build, so they cannot be bound.
-4. **Composites are only as generic as their leaves.** `Button` holds a
-   `Frame`, a Bevy leaf, so `Button` is Bevy-only. The `FieldRow<B>`
+4. **Composites are only as generic as their elements.** `Button` holds a
+   `Frame`, a Bevy element, so `Button` is Bevy-only. The `FieldRow<B>`
    example above overstates this: backend-generic composites need
    backend-generic building blocks, or are simply Bevy composites.
-5. **State rules act on resolved values.** They edit the leaf's
+5. **State rules act on resolved values.** They edit the element's
    snapshot (`s.color = theme.tone(Accent)`), because a `Prop` holding
    a boxed closure cannot be cloned per frame. So a rule cannot say
-   `l.tone(Accent)` and have the leaf resolve it. Acting on props needs
+   `l.tone(Accent)` and have the element resolve it. Acting on props needs
    cloneable props, which means shared ownership of bound closures.
-6. **Transitions are whole-snapshot.** A leaf cannot animate its colour
+6. **Transitions are whole-snapshot.** An element cannot animate its colour
    and snap its size. Per-field transitions need per-field keys and a
    field-by-field diff.
 7. **A continuously changing target never settles.** A bound value
    that moves every frame restarts its transition every frame, lags,
    then snaps. Driven values need a follow mode, or no transition.
-8. **Everything live is polled.** Each frame, every leaf with a bound
+8. **Everything live is polled.** Each frame, every element with a bound
    prop or a state rule re-reads its snapshot and compares it, and a
-   leaf with a state rule stays live forever. Change detection on the
+   element with a state rule stays live forever. Change detection on the
    sources would replace the poll.
-9. **Rules for stateful leaves name the theme type.** Adding state
+9. **Rules for stateful elements name the theme type.** Adding state
    rules through a set rule means
    `set::<Stateful<Label, Theme>>(..)`, and rule closures often need
    their `&Theme` parameter annotated.
@@ -661,13 +661,13 @@ turned up five more problems:
 10. **A composite's inner parts cannot take state rules.** `Button`
     holds a bare `Frame`, so a hover or selection fill cannot be added
     from a call site, and the `ghost()` bundle above is not expressible.
-    State rules need to reach a composite's own leaves.
+    State rules need to reach a composite's own elements.
 11. **Bound values cannot read the theme.** A signal only gets
     `&World`, and the theme is out of the world while views update. A
     selection fill had to be passed in as a colour. Signals need the
-    theme too, or should return tokens (`Tone::Accent`) the leaf
+    theme too, or should return tokens (`Tone::Accent`) the element
     resolves.
-12. **State rules only watch the leaf's own node.** `.when::<S>` takes a
+12. **State rules only watch the element's own node.** `.when::<S>` takes a
     component on that node, not a signal, so the doc's
     `.when(unnamed, ..)` became a bound tone instead. Conditions from
     elsewhere in the world need signal-driven states.
@@ -679,7 +679,7 @@ turned up five more problems:
     component. Tests also need a frame for handlers queued through
     `Commands` to run.
 
-Composites and custom leaves (`Foldable`, its private `Reveal` leaf)
+Composites and custom elements (`Foldable`, its private `Reveal` element)
 needed no core changes, which suggests the escape hatch for custom
 views works.
 
@@ -730,7 +730,7 @@ rename, but four things were awkward:
 - **Snapshot interpolation is written by hand.** Each snapshot needs an
   `Interpolation` impl calling each field's own, with a turbofish per
   field since `f32` and `Color` use different markers. It is verbose,
-  and two leaves skip it entirely. A derive, or a helper for "blend
+  and two elements skip it entirely. A derive, or a helper for "blend
   these fields, snap the rest", would fix it.
 - **`Mounted` needs a newtype to be a Bevy resource**, by the orphan
   rule, with `Deref` and `Default` boilerplate.
@@ -779,13 +779,13 @@ What it costs, or showed:
 - **Values must be `Clone`,** since a rule applies once per view built.
   A bound prop cannot be set through a path, for the same reason a
   bound prop cannot be shared: finding 5 again.
-- **Composites generic over the theme can clash with leaves.** In the
+- **Composites generic over the theme can clash with elements.** In the
   core's tests, `impl<T> View<Fake, T> for Card` overlaps the core's
-  `View` for every `Leaf`, because another crate could make `Card` a
-  `Leaf<Fake, ItsTheme>`. `Card` had to name one theme. The Bevy
+  `View` for every `Element`, because another crate could make `Card` an
+  `Element<Fake, ItsTheme>`. `Card` had to name one theme. The Bevy
   backend's composites are generic over the theme and do not hit it,
   so the exact rule needs working out before the real rewrite; one
-  way out is for leaves to get `View` from a derive rather than a
+  way out is for elements to get `View` from a derive rather than a
   blanket impl.
 
 Still unmeasured: pointer-driven states against a real pointer (the
@@ -806,13 +806,13 @@ tests toggle them directly), and the heap cost of boxing.
    | `bind`, `watch` | Bound props, `when`, `each` |
    | Tags and `anim(on(..))` | State rules and transitions |
    | `lenz` field paths | Set-rule targets |
-   | `Build` hooks | Custom leaf views |
+   | `Build` hooks | Custom elements |
    | `Host`, with the theme as its associated type | `Backend`, with the theme on `Cx<B, T>` |
    | Element defaults reading `EditorTheme` fields | Defaults through token-trait bounds |
    | `#[elem(child)]` | Views passed in |
    | `Style`, `Style::finish` | Rule bundles |
    | Composers returning handles | Composites returning nothing, plus `NodeRef` |
 
-4. **Port moxie_ui leaf by leaf**, then the composites, then the
+4. **Port moxie_ui one element at a time**, then the composites, then the
    editor's call sites, keeping CI green at each step. `EditorTheme`
    implements the token traits as the first step of the port.

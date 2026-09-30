@@ -4,11 +4,11 @@
 //! Views are structs that own their own props and hold other views
 //! whole. Set rules restyle every view of a kind within a scope, a
 //! call-site value beats any rule, and whatever is left unset falls
-//! back to the theme. Leaves whose props can change stay mounted, and
+//! back to the theme. Elements whose props can change stay mounted, and
 //! travel to new values over a transition when asked to.
 //!
 //! Nothing here names an engine. A [`Backend`] says what a world and a
-//! node are, and a backend crate writes the leaves.
+//! node are, and a backend crate writes the elements.
 
 #![no_std]
 
@@ -33,4 +33,4 @@ pub use lenz;
 pub use mounted::{Mounted, Tick};
 pub use prop::{Derived, Prop, Signal, derived};
 pub use transition::{Curve, Motion, MotionTokens, Tween};
-pub use view::{AnyView, Leaf, Styled, View, ViewExt, ViewSeq};
+pub use view::{AnyView, Element, Styled, View, ViewExt, ViewSeq};

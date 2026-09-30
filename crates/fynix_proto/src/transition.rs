@@ -1,4 +1,4 @@
-//! How a leaf's written values travel to new ones.
+//! How an element's written values travel to new ones.
 
 use core::time::Duration;
 
@@ -26,7 +26,7 @@ pub trait MotionTokens {
     fn motion(&self, motion: Motion) -> Curve;
 }
 
-/// How a leaf's snapshot `S` travels: over `curve`, blended by
+/// How an element's snapshot `S` travels: over `curve`, blended by
 /// `interp`.
 pub struct Tween<S> {
     pub curve: Curve,

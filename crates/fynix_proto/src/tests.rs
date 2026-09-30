@@ -12,8 +12,8 @@ use motiongfx_interp::ease;
 use motiongfx_interp::interpolation::Interpolation;
 
 use crate::{
-    AnyView, Backend, Curve, Cx, Leaf, Motion, MotionTokens, Mounted,
-    Prop, Signal, Styled, Tick, Trace, Tween, View, derived,
+    AnyView, Backend, Curve, Cx, Element, Motion, MotionTokens,
+    Mounted, Prop, Signal, Styled, Tick, Trace, Tween, View, derived,
 };
 
 #[derive(Default)]
@@ -79,7 +79,7 @@ impl World {
     }
 }
 
-/// What the fake backend's one leaf reads from a theme.
+/// What the fake backend's one element reads from a theme.
 trait Sizes {
     fn body(&self) -> f32;
 }
@@ -147,7 +147,7 @@ impl Shown {
     }
 }
 
-impl<T: Sizes + MotionTokens> Leaf<Fake, T> for Text {
+impl<T: Sizes + MotionTokens> Element<Fake, T> for Text {
     type Snapshot = Shown;
 
     fn prepare(_: &mut World, _: usize) {}
@@ -220,7 +220,7 @@ impl MotionTokens for Cold {
     }
 }
 
-/// A world, a theme and its mounted leaves, built into together.
+/// A world, a theme and its mounted elements, built into together.
 struct Ui<T> {
     world: World,
     theme: T,
@@ -386,7 +386,7 @@ fn an_unmounted_node_is_dropped() {
 }
 
 #[test]
-fn a_leaf_whose_source_did_not_change_is_not_re_read() {
+fn an_element_whose_source_did_not_change_is_not_re_read() {
     static READS: AtomicUsize = AtomicUsize::new(0);
     let mut ui = Ui::new(Warm);
     ui.build(read_counted(&READS));
@@ -399,7 +399,7 @@ fn a_leaf_whose_source_did_not_change_is_not_re_read() {
 }
 
 #[test]
-fn a_leaf_whose_source_changed_is_re_read_and_written() {
+fn an_element_whose_source_changed_is_re_read_and_written() {
     static READS: AtomicUsize = AtomicUsize::new(0);
     let mut ui = Ui::new(Warm);
     let node = ui.build(read_counted(&READS));
@@ -580,8 +580,8 @@ impl Styled for Card {
 }
 
 // For one theme only: generic over `T`, it would overlap the core's
-// `View` for every `Leaf`, since another crate could make `Card` a
-// `Leaf<Fake, ItsTheme>`.
+// `View` for every `Element`, since another crate could make `Card` an
+// `Element<Fake, ItsTheme>`.
 impl View<Fake, Warm> for Card {
     fn build(self, cx: &mut Cx<'_, Fake, Warm>) -> usize {
         let card = cx.resolve(self);

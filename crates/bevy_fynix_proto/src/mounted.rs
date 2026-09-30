@@ -1,4 +1,4 @@
-//! The core's mounted leaves, kept as a resource and updated each
+//! The core's mounted elements, kept as a resource and updated each
 //! frame.
 
 use core::ops::{Deref, DerefMut};
@@ -12,7 +12,7 @@ use crate::state::DirtyNodes;
 use crate::transition::ReducedMotion;
 use crate::{Bevy, Theme};
 
-/// Every mounted leaf built with the theme `T`.
+/// Every mounted element built with the theme `T`.
 #[derive(Resource)]
 pub struct Mounts<T: 'static>(pub fynix_proto::Mounted<Bevy, T>);
 
@@ -36,7 +36,7 @@ impl<T: 'static> DerefMut for Mounts<T> {
     }
 }
 
-/// Brings every mounted leaf up to date.
+/// Brings every mounted element up to date.
 pub(crate) fn update<T: Send + Sync + 'static>(world: &mut World) {
     let tick = fynix_proto::Tick {
         delta: world.resource::<Time>().delta(),

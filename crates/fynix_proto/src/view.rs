@@ -1,4 +1,4 @@
-//! What a view is, and the kinds there are: leaves, composites built
+//! What a view is, and the kinds there are: elements, composites built
 //! out of other views, and wrappers around any view.
 
 use alloc::boxed::Box;
@@ -28,9 +28,9 @@ pub trait Styled: Sized + Send + Sync + 'static {
 ///
 /// Its props are resolved against the rules in force, read into a
 /// [`Snapshot`](Self::Snapshot) of plain values, and written onto the
-/// node. A live leaf stays mounted, and is read and written again
+/// node. A live element stays mounted, and is read and written again
 /// whenever it reports a change.
-pub trait Leaf<B: Backend, T>: Styled {
+pub trait Element<B: Backend, T>: Styled {
     /// Every prop's value at one moment, with the theme's defaults
     /// filled in.
     type Snapshot: Clone + PartialEq + Send + Sync + 'static;
@@ -56,7 +56,7 @@ pub trait Leaf<B: Backend, T>: Styled {
     /// its own memory of the last.
     fn changed(&mut self, world: &B::World) -> bool;
 
-    /// A hook run right after the leaf is mounted on `node`.
+    /// A hook run right after the element is mounted on `node`.
     fn on_mounted(&self, _world: &mut B::World, _node: B::Node) {}
 
     /// This, with the rules in force applied.
@@ -84,16 +84,16 @@ pub trait Leaf<B: Backend, T>: Styled {
     }
 }
 
-impl<B: Backend, T: 'static, L: Leaf<B, T>> View<B, T> for L {
+impl<B: Backend, T: 'static, E: Element<B, T>> View<B, T> for E {
     fn build(self, cx: &mut Cx<'_, B, T>) -> B::Node {
-        let leaf = L::resolve(self, cx);
+        let element = E::resolve(self, cx);
         let node = cx.spawn();
-        L::prepare(cx.world, node);
-        let mut snapshot = leaf.snapshot(cx.world, cx.theme());
-        leaf.adjust(&mut snapshot, cx.world, node, cx.theme());
-        L::write(&snapshot, cx.world, node);
-        if leaf.is_live() {
-            cx.mount(node, leaf, snapshot);
+        E::prepare(cx.world, node);
+        let mut snapshot = element.snapshot(cx.world, cx.theme());
+        element.adjust(&mut snapshot, cx.world, node, cx.theme());
+        E::write(&snapshot, cx.world, node);
+        if element.is_live() {
+            cx.mount(node, element, snapshot);
         }
         node
     }

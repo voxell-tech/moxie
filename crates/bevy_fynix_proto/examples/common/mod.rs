@@ -181,15 +181,15 @@ macro_rules! shapes {
     };
 }
 
-/// Columns nested one level per literal, ending in `$leaf`.
+/// Columns nested one level per literal, ending in `$element`.
 macro_rules! nest {
-    ($wrap:ident; $leaf:expr;) => {
-        $leaf
+    ($wrap:ident; $element:expr;) => {
+        $element
     };
-    ($wrap:ident; $leaf:expr; $first:literal $($rest:literal)*) => {
+    ($wrap:ident; $element:expr; $first:literal $($rest:literal)*) => {
         $wrap!(column((
             line($first.to_string()),
-            nest!($wrap; $leaf; $($rest)*)
+            nest!($wrap; $element; $($rest)*)
         ))
         .gap(2.0))
     };

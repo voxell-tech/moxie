@@ -1,5 +1,5 @@
 //! Interaction states as components on a node, and the rules and
-//! transitions a leaf attaches to them.
+//! transitions an element attaches to them.
 
 use bevy_ecs::component::Component;
 use bevy_ecs::entity::Entity;
@@ -14,7 +14,7 @@ use fynix_proto::{Curve, Motion, MotionTokens, Tween};
 use motiongfx_interp::interpolation::{InterpFn, Interpolation};
 
 use crate::transition::BevyMarker;
-use crate::{Bevy, Cx, Leaf, Styled};
+use crate::{Bevy, Cx, Element, Styled};
 
 /// The pointer is over the node.
 #[derive(Component, Clone, Copy, Debug, Default)]
@@ -95,21 +95,21 @@ impl<S, T> Clone for Move<S, T> {
 
 impl<S, T> Copy for Move<S, T> {}
 
-/// A leaf with state rules and a transition attached.
+/// An element with state rules and a transition attached.
 ///
-/// It is a [`Leaf`] itself, so it mounts like any other, and it is
-/// [`Styled`], so set rules for `Stateful<L, T>` can add rules to
-/// every such leaf in a scope.
-pub struct Stateful<L: Leaf<Bevy, T>, T> {
-    leaf: L,
-    rules: Vec<StateRule<L::Snapshot, T>>,
-    motion: Option<Move<L::Snapshot, T>>,
+/// It is an [`Element`] itself, so it mounts like any other, and it is
+/// [`Styled`], so set rules for `Stateful<E, T>` can add rules to
+/// every such element in a scope.
+pub struct Stateful<E: Element<Bevy, T>, T> {
+    element: E,
+    rules: Vec<StateRule<E::Snapshot, T>>,
+    motion: Option<Move<E::Snapshot, T>>,
 }
 
-impl<L: Leaf<Bevy, T>, T: Send + Sync + 'static> Stateful<L, T> {
-    fn new(leaf: L) -> Self {
+impl<E: Element<Bevy, T>, T: Send + Sync + 'static> Stateful<E, T> {
+    fn new(element: E) -> Self {
         Self {
-            leaf,
+            element,
             rules: Vec::new(),
             motion: None,
         }
@@ -120,7 +120,7 @@ impl<L: Leaf<Bevy, T>, T: Send + Sync + 'static> Stateful<L, T> {
     /// call-site values and any bound props.
     pub fn when<S: Component>(
         mut self,
-        rule: impl Fn(&mut L::Snapshot, &T) + Send + Sync + 'static,
+        rule: impl Fn(&mut E::Snapshot, &T) + Send + Sync + 'static,
     ) -> Self {
         self.rules.push(StateRule {
             holds: |world, node| world.entity(node).contains::<S>(),
@@ -135,21 +135,23 @@ impl<L: Leaf<Bevy, T>, T: Send + Sync + 'static> Stateful<L, T> {
     pub fn transition(mut self, motion: Motion) -> Self
     where
         T: MotionTokens,
-        L::Snapshot: Interpolation<BevyMarker>,
+        E::Snapshot: Interpolation<BevyMarker>,
     {
         self.motion = Some(Move {
             motion,
             curve: T::motion,
             interp:
-                <L::Snapshot as Interpolation<BevyMarker>>::interp,
+                <E::Snapshot as Interpolation<BevyMarker>>::interp,
         });
         self
     }
 }
 
-/// What any leaf can be given state rules and a transition with.
-pub trait StateExt<T: Send + Sync + 'static>: Leaf<Bevy, T> {
-    /// This leaf with a rule for the state `S`.
+/// What any element can be given state rules and a transition with.
+pub trait StateExt<T: Send + Sync + 'static>:
+    Element<Bevy, T>
+{
+    /// This element with a rule for the state `S`.
     fn when<S: Component>(
         self,
         rule: impl Fn(&mut Self::Snapshot, &T) + Send + Sync + 'static,
@@ -157,7 +159,7 @@ pub trait StateExt<T: Send + Sync + 'static>: Leaf<Bevy, T> {
         Stateful::new(self).when::<S>(rule)
     }
 
-    /// This leaf with a transition.
+    /// This element with a transition.
     fn transition(self, motion: Motion) -> Stateful<Self, T>
     where
         T: MotionTokens,
@@ -167,33 +169,36 @@ pub trait StateExt<T: Send + Sync + 'static>: Leaf<Bevy, T> {
     }
 }
 
-impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> StateExt<T> for L {}
+impl<T: Send + Sync + 'static, E: Element<Bevy, T>> StateExt<T>
+    for E
+{
+}
 
-impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> Styled
-    for Stateful<L, T>
+impl<T: Send + Sync + 'static, E: Element<Bevy, T>> Styled
+    for Stateful<E, T>
 {
     fn unset() -> Self {
-        Self::new(L::unset())
+        Self::new(E::unset())
     }
 
     fn over(mut self, below: Self) -> Self {
         let mut rules = below.rules;
         rules.append(&mut self.rules);
         Self {
-            leaf: self.leaf.over(below.leaf),
+            element: self.element.over(below.element),
             rules,
             motion: self.motion.or(below.motion),
         }
     }
 }
 
-impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> Leaf<Bevy, T>
-    for Stateful<L, T>
+impl<T: Send + Sync + 'static, E: Element<Bevy, T>> Element<Bevy, T>
+    for Stateful<E, T>
 {
-    type Snapshot = L::Snapshot;
+    type Snapshot = E::Snapshot;
 
     fn prepare(world: &mut World, node: Entity) {
-        L::prepare(world, node);
+        E::prepare(world, node);
         world
             .entity_mut(node)
             .observe(over)
@@ -202,28 +207,28 @@ impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> Leaf<Bevy, T>
             .observe(release);
     }
 
-    fn snapshot(&self, world: &World, theme: &T) -> L::Snapshot {
-        self.leaf.snapshot(world, theme)
+    fn snapshot(&self, world: &World, theme: &T) -> E::Snapshot {
+        self.element.snapshot(world, theme)
     }
 
     fn write(
-        snapshot: &L::Snapshot,
+        snapshot: &E::Snapshot,
         world: &mut World,
         node: Entity,
     ) {
-        L::write(snapshot, world, node);
+        E::write(snapshot, world, node);
     }
 
     fn is_live(&self) -> bool {
-        self.leaf.is_live() || !self.rules.is_empty()
+        self.element.is_live() || !self.rules.is_empty()
     }
 
     fn changed(&mut self, world: &World) -> bool {
-        self.leaf.changed(world)
+        self.element.changed(world)
     }
 
     fn on_mounted(&self, world: &mut World, node: Entity) {
-        self.leaf.on_mounted(world, node);
+        self.element.on_mounted(world, node);
         for rule in &self.rules {
             (rule.watch)(world, node);
         }
@@ -231,14 +236,14 @@ impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> Leaf<Bevy, T>
 
     fn resolve(self, cx: &Cx<'_, Bevy, T>) -> Self {
         let Self {
-            leaf,
+            element,
             rules,
             motion,
         } = self;
-        // Rules for the bare leaf, then rules for the wrapped one.
-        let leaf = L::resolve(leaf, cx);
+        // Rules for the bare element, then rules for the wrapped one.
+        let element = E::resolve(element, cx);
         cx.resolve(Self {
-            leaf,
+            element,
             rules,
             motion,
         })
@@ -246,12 +251,12 @@ impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> Leaf<Bevy, T>
 
     fn adjust(
         &self,
-        snapshot: &mut L::Snapshot,
+        snapshot: &mut E::Snapshot,
         world: &World,
         node: Entity,
         theme: &T,
     ) {
-        self.leaf.adjust(snapshot, world, node, theme);
+        self.element.adjust(snapshot, world, node, theme);
         for rule in &self.rules {
             if (rule.holds)(world, node) {
                 (rule.apply)(snapshot, theme);
@@ -259,13 +264,13 @@ impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> Leaf<Bevy, T>
         }
     }
 
-    fn tween(&self, theme: &T) -> Option<Tween<L::Snapshot>> {
+    fn tween(&self, theme: &T) -> Option<Tween<E::Snapshot>> {
         match self.motion {
             Some(motion) => Some(Tween {
                 curve: (motion.curve)(theme, motion.motion),
                 interp: motion.interp,
             }),
-            None => self.leaf.tween(theme),
+            None => self.element.tween(theme),
         }
     }
 }
@@ -445,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn a_leaf_with_a_state_rule_stays_mounted() {
+    fn an_element_with_a_state_rule_stays_mounted() {
         let mut app = app();
         mount::<Test>(
             app.world_mut(),
@@ -457,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn set_rules_reach_the_stateful_leaf_and_its_bare_leaf() {
+    fn set_rules_reach_the_stateful_element_and_its_bare_element() {
         let mut app = app();
         let root = mount::<Test>(
             app.world_mut(),
@@ -677,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn a_state_the_leaf_has_no_rule_for_does_not_queue_it() {
+    fn a_state_the_element_has_no_rule_for_does_not_queue_it() {
         let mut app = app();
         let node = mount::<Test>(
             app.world_mut(),
@@ -690,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn a_despawned_stateful_leaf_is_dropped() {
+    fn a_despawned_stateful_element_is_dropped() {
         let mut app = app();
         let node = mount::<Test>(
             app.world_mut(),

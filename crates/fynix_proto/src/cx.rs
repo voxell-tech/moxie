@@ -1,5 +1,5 @@
 //! What a view is built with: the world, the theme, where it hangs,
-//! the rules in force there, and where live leaves are kept.
+//! the rules in force there, and where live elements are kept.
 
 use alloc::boxed::Box;
 use alloc::vec;
@@ -12,7 +12,7 @@ use typarena::type_table::TypeTable;
 use crate::backend::Backend;
 use crate::mounted::Mounted;
 use crate::prop::Prop;
-use crate::view::{Leaf, Styled, View};
+use crate::view::{Element, Styled, View};
 
 /// One rule restyling a `V`, with the theme in hand.
 type Rule<V, T> = Box<dyn Fn(V, &T) -> V + Send + Sync>;
@@ -73,14 +73,14 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
         self.theme
     }
 
-    /// Keeps `leaf` in step with the world, as the one on `node`.
-    pub fn mount<L: Leaf<B, T>>(
+    /// Keeps `element` in step with the world, as the one on `node`.
+    pub fn mount<E: Element<B, T>>(
         &mut self,
         node: B::Node,
-        leaf: L,
-        snapshot: L::Snapshot,
+        element: E,
+        snapshot: E::Snapshot,
     ) {
-        self.mounted.mount(self.world, node, leaf, snapshot);
+        self.mounted.mount(self.world, node, element, snapshot);
     }
 
     /// Where a view built now hangs. `None` at the root.

@@ -1,4 +1,4 @@
-//! Leaves whose props can change after they are built, kept in step
+//! Elements whose props can change after they are built, kept in step
 //! with the world.
 
 use alloc::vec::Vec;
@@ -11,7 +11,7 @@ use typarena::type_table::TypeTable;
 
 use crate::backend::Backend;
 use crate::transition::Run;
-use crate::view::Leaf;
+use crate::view::Element;
 
 /// What one update runs with.
 #[derive(Clone, Copy, Debug, Default)]
@@ -22,7 +22,7 @@ pub struct Tick {
     pub reduced_motion: bool,
 }
 
-/// Brings every mounted leaf of one kind up to date.
+/// Brings every mounted element of one kind up to date.
 type UpdateFn<B, T> = fn(
     &mut TypeTable<<B as Backend>::Node>,
     &mut <B as Backend>::World,
@@ -30,15 +30,15 @@ type UpdateFn<B, T> = fn(
     Tick,
 );
 
-/// How many leaves of one kind are mounted.
+/// How many elements of one kind are mounted.
 type CountFn<B> = fn(&TypeTable<<B as Backend>::Node>) -> usize;
 
-/// Acts on the mounted leaf of one kind on a node, without naming
+/// Acts on the mounted element of one kind on a node, without naming
 /// the kind.
 type NodeFn<B> =
     fn(&mut TypeTable<<B as Backend>::Node>, <B as Backend>::Node);
 
-/// What [`Mounted`] does to a node's leaf, for the leaf's kind.
+/// What [`Mounted`] does to a node's element, for the element's kind.
 struct Hooks<B: Backend> {
     mark: NodeFn<B>,
     remove: NodeFn<B>,
@@ -52,8 +52,8 @@ impl<B: Backend> Clone for Hooks<B> {
 
 impl<B: Backend> Copy for Hooks<B> {}
 
-/// Every mounted leaf built with the theme `T`: one column per kind of
-/// leaf, keyed by its node, and one update per kind to walk it.
+/// Every mounted element built with the theme `T`: one column per kind of
+/// element, keyed by its node, and one update per kind to walk it.
 pub struct Mounted<B: Backend, T> {
     table: TypeTable<B::Node>,
     updates: Vec<UpdateFn<B, T>>,
@@ -75,34 +75,34 @@ impl<B: Backend, T> Default for Mounted<B, T> {
 }
 
 impl<B: Backend, T: 'static> Mounted<B, T> {
-    /// Keeps `leaf` in step with the world as the one on `node`.
-    pub fn mount<L: Leaf<B, T>>(
+    /// Keeps `element` in step with the world as the one on `node`.
+    pub fn mount<E: Element<B, T>>(
         &mut self,
         world: &mut B::World,
         node: B::Node,
-        mut leaf: L,
-        snapshot: L::Snapshot,
+        mut element: E,
+        snapshot: E::Snapshot,
     ) {
-        if self.kinds.insert(TypeId::of::<L>()) {
-            self.updates.push(update_kind::<B, T, L>);
-            self.counts.push(|table| table.len::<Mount<B, T, L>>());
+        if self.kinds.insert(TypeId::of::<E>()) {
+            self.updates.push(update_kind::<B, T, E>);
+            self.counts.push(|table| table.len::<Mount<B, T, E>>());
         }
         self.hooks.insert(
             node,
             Hooks {
-                mark: mark::<B, T, L>,
-                remove: remove::<B, T, L>,
+                mark: mark::<B, T, E>,
+                remove: remove::<B, T, E>,
             },
         );
         // Checks often fire on their first call, which the snapshot
         // just taken already covers.
-        leaf.changed(world);
+        element.changed(world);
         B::on_mount(world, node);
-        leaf.on_mounted(world, node);
+        element.on_mounted(world, node);
         self.table.insert(
             node,
-            Mount::<B, T, L> {
-                leaf,
+            Mount::<B, T, E> {
+                element,
                 target: snapshot.clone(),
                 shown: snapshot,
                 run: None,
@@ -112,7 +112,7 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
         );
     }
 
-    /// Makes the leaf on `node` re-read at the next update, whatever
+    /// Makes the element on `node` re-read at the next update, whatever
     /// its checks say.
     pub fn mark_dirty(&mut self, node: B::Node) {
         if let Some(hooks) = self.hooks.get(&node) {
@@ -120,14 +120,14 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
         }
     }
 
-    /// Drops the leaf on `node`.
+    /// Drops the element on `node`.
     pub fn unmount(&mut self, node: B::Node) {
         if let Some(hooks) = self.hooks.remove(&node) {
             (hooks.remove)(&mut self.table, node);
         }
     }
 
-    /// Writes what changed to every mounted leaf that reports a
+    /// Writes what changed to every mounted element that reports a
     /// change or is marked dirty, and keeps every transition under
     /// way advancing.
     pub fn update(
@@ -150,46 +150,46 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
     }
 }
 
-struct Mount<B: Backend, T, L: Leaf<B, T>> {
-    leaf: L,
+struct Mount<B: Backend, T, E: Element<B, T>> {
+    element: E,
     /// Where the written values are heading.
-    target: L::Snapshot,
+    target: E::Snapshot,
     /// What is written on the node.
-    shown: L::Snapshot,
-    run: Option<Run<L::Snapshot>>,
+    shown: E::Snapshot,
+    run: Option<Run<E::Snapshot>>,
     /// Whether to re-read at the next update whatever the checks say.
     dirty: bool,
     marker: PhantomData<fn() -> (B, T)>,
 }
 
-fn update_kind<B: Backend, T: 'static, L: Leaf<B, T>>(
+fn update_kind<B: Backend, T: 'static, E: Element<B, T>>(
     table: &mut TypeTable<B::Node>,
     world: &mut B::World,
     theme: &T,
     tick: Tick,
 ) {
-    for (&node, mount) in table.iter_mut::<Mount<B, T, L>>() {
+    for (&node, mount) in table.iter_mut::<Mount<B, T, E>>() {
         mount.update(world, node, theme, tick);
     }
 }
 
-fn mark<B: Backend, T: 'static, L: Leaf<B, T>>(
+fn mark<B: Backend, T: 'static, E: Element<B, T>>(
     table: &mut TypeTable<B::Node>,
     node: B::Node,
 ) {
-    if let Some(mount) = table.get_mut::<Mount<B, T, L>>(&node) {
+    if let Some(mount) = table.get_mut::<Mount<B, T, E>>(&node) {
         mount.dirty = true;
     }
 }
 
-fn remove<B: Backend, T: 'static, L: Leaf<B, T>>(
+fn remove<B: Backend, T: 'static, E: Element<B, T>>(
     table: &mut TypeTable<B::Node>,
     node: B::Node,
 ) {
-    table.remove::<Mount<B, T, L>>(&node);
+    table.remove::<Mount<B, T, E>>(&node);
 }
 
-impl<B: Backend, T, L: Leaf<B, T>> Mount<B, T, L> {
+impl<B: Backend, T, E: Element<B, T>> Mount<B, T, E> {
     fn update(
         &mut self,
         world: &mut B::World,
@@ -198,20 +198,20 @@ impl<B: Backend, T, L: Leaf<B, T>> Mount<B, T, L> {
         tick: Tick,
     ) {
         // Not `||`: every check must run, each keeps its own memory.
-        let stale = self.leaf.changed(world) | self.dirty;
+        let stale = self.element.changed(world) | self.dirty;
         self.dirty = false;
         if !stale && self.run.is_none() {
             return;
         }
 
         if stale {
-            let mut now = self.leaf.snapshot(world, theme);
-            self.leaf.adjust(&mut now, world, node, theme);
+            let mut now = self.element.snapshot(world, theme);
+            self.element.adjust(&mut now, world, node, theme);
 
             if now != self.target {
                 self.target = now;
                 self.run = self
-                    .leaf
+                    .element
                     .tween(theme)
                     .filter(|tween| {
                         !tick.reduced_motion
@@ -237,7 +237,7 @@ impl<B: Backend, T, L: Leaf<B, T>> Mount<B, T, L> {
             None => self.target.clone(),
         };
         if next != self.shown {
-            L::write(&next, world, node);
+            E::write(&next, world, node);
             self.shown = next;
         }
     }

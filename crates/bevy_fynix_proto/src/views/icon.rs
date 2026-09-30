@@ -8,7 +8,7 @@ use bevy_ui::{Node, px};
 
 use crate::prop::Prop;
 use crate::tokens::{TextTokens, Tone};
-use crate::{Bevy, Leaf, Styled};
+use crate::{Bevy, Element, Styled};
 
 /// A square image tinted by a text tone.
 pub struct Icon {
@@ -70,7 +70,7 @@ pub struct IconSnapshot {
     pub color: Color,
 }
 
-impl<T: TextTokens> Leaf<Bevy, T> for Icon {
+impl<T: TextTokens> Element<Bevy, T> for Icon {
     type Snapshot = IconSnapshot;
 
     fn prepare(world: &mut World, node: Entity) {

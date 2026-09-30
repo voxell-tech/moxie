@@ -1,8 +1,8 @@
 //! The Bevy backend of `fynix_proto`, see `docs/fynix_rewrite.md`.
 //!
 //! The core owns views, set rules, props and transitions. This crate
-//! says what a world and a node are in Bevy, writes the leaves and
-//! composites against `bevy_ui`, and keeps mounted leaves in step with
+//! says what a world and a node are in Bevy, writes the elements and
+//! composites against `bevy_ui`, and keeps mounted elements in step with
 //! the world.
 
 pub mod backend;
@@ -25,7 +25,7 @@ use bevy_ecs::entity::Entity;
 use bevy_ecs::resource::Resource;
 use bevy_ecs::world::World;
 pub use fynix_proto::{
-    AnyView, Cx, Leaf, Styled, View, ViewExt, ViewSeq,
+    AnyView, Cx, Element, Styled, View, ViewExt, ViewSeq,
 };
 
 pub use backend::{Bevy, Unmounted};

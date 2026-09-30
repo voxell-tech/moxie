@@ -9,7 +9,7 @@ use bevy_ui::{AlignItems, Display, FlexDirection, Node, percent};
 use crate::prop::{Prop, component};
 use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens};
 use crate::views::{BehaviorExt, button, frame, label, row};
-use crate::{Bevy, Cx, Leaf, Styled, View};
+use crate::{Bevy, Cx, Element, Styled, View};
 
 /// On a [`Foldable`]'s root node while its body is shown.
 #[derive(Component, Clone, Copy, Debug, Default)]
@@ -67,7 +67,7 @@ impl Styled for Reveal {
     }
 }
 
-impl<T> Leaf<Bevy, T> for Reveal {
+impl<T> Element<Bevy, T> for Reveal {
     type Snapshot = bool;
 
     fn prepare(world: &mut World, node: Entity) {

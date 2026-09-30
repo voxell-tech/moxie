@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn modifiers_edit_a_leafs_node() {
+    fn modifiers_edit_an_elements_node() {
         let mut app = app();
         let node = mount::<Plain>(
             app.world_mut(),

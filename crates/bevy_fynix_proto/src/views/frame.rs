@@ -11,7 +11,7 @@ use bevy_ui::{
 
 use crate::prop::Prop;
 use crate::tokens::SpacingTokens;
-use crate::{Bevy, Leaf, Styled};
+use crate::{Bevy, Element, Styled};
 
 /// A bevy_ui [`Node`] with a fill, holding no views of its own.
 ///
@@ -140,7 +140,7 @@ pub struct FrameSnapshot {
     pub radius: f32,
 }
 
-impl<T: SpacingTokens> Leaf<Bevy, T> for Frame {
+impl<T: SpacingTokens> Element<Bevy, T> for Frame {
     type Snapshot = FrameSnapshot;
 
     fn prepare(world: &mut World, node: Entity) {
