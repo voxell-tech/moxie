@@ -209,6 +209,19 @@ impl<T: SpacingTokens> Leaf<Bevy, T> for Frame {
             || self.fill.is_bound()
             || self.radius.is_bound()
     }
+
+    fn changed(&mut self, world: &World) -> bool {
+        self.direction.changed(world)
+            | self.gap.changed(world)
+            | self.padding.changed(world)
+            | self.width.changed(world)
+            | self.height.changed(world)
+            | self.grow.changed(world)
+            | self.justify.changed(world)
+            | self.align.changed(world)
+            | self.fill.changed(world)
+            | self.radius.changed(world)
+    }
 }
 
 #[cfg(test)]
@@ -349,9 +362,8 @@ mod tests {
         app.insert_resource(Wide(10.0));
         let node = mount::<Plain>(
             app.world_mut(),
-            frame().width(crate::derived(|world| {
-                px(world.resource::<Wide>().0)
-            })),
+            frame()
+                .width(crate::resource::<Wide, _>(|wide| px(wide.0))),
         );
         app.world_mut().get_mut::<Node>(node).unwrap().padding =
             UiRect::all(px(7.0));

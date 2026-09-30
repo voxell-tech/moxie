@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn the_callers_tone_stays_bound_beside_the_state_rule() {
-        use crate::derived;
+        use crate::resource;
         use crate::tokens::Tone;
 
         #[derive(Resource)]
@@ -164,12 +164,8 @@ mod tests {
             app.world_mut(),
             field_row(
                 label("t")
-                    .tone(derived(|world| {
-                        if world.resource::<Muted>().0 {
-                            Tone::Dim
-                        } else {
-                            Tone::Body
-                        }
+                    .tone(resource::<Muted, _>(|muted| {
+                        if muted.0 { Tone::Dim } else { Tone::Body }
                     }))
                     .animatable("t"),
                 label("0"),

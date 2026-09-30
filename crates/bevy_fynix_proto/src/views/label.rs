@@ -147,6 +147,13 @@ impl<T: TextTokens> Leaf<Bevy, T> for Label {
             || self.tone.is_bound()
             || self.wrap.is_bound()
     }
+
+    fn changed(&mut self, world: &World) -> bool {
+        self.text.changed(world)
+            | self.size.changed(world)
+            | self.tone.changed(world)
+            | self.wrap.changed(world)
+    }
 }
 
 #[cfg(test)]

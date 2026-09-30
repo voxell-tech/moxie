@@ -28,7 +28,7 @@ use bevy_fynix_proto::views::{
 };
 use bevy_fynix_proto::{
     AnyView, Bevy, Cx, FynixProtoPlugin, Hovered, ReducedMotion,
-    StateExt, Theme, View, derived, mount,
+    StateExt, Theme, View, mount, resource,
 };
 
 /// What a view is built with, in this app.
@@ -162,11 +162,8 @@ fn bound_values() -> impl View<Bevy, Monokai> {
     let padding = UiRect::axes(px(10.0), px(4.0));
     column((
         row((
-            label(derived(|world: &World| {
-                format!(
-                    "Clicked {} times",
-                    world.resource::<Clicks>().0
-                )
+            label(resource::<Clicks, _>(|clicks| {
+                format!("Clicked {} times", clicks.0)
             })),
             button(label("+1")).padding(padding).on_activate(
                 |world| world.resource_mut::<Clicks>().0 += 1,
@@ -177,11 +174,8 @@ fn bound_values() -> impl View<Bevy, Monokai> {
         ))
         .gap(8.0)
         .align(AlignItems::Center),
-        label(derived(|world: &World| {
-            format!(
-                "{:.1}s since start",
-                world.resource::<Time>().elapsed_secs()
-            )
+        label(resource::<Time, _>(|time| {
+            format!("{:.1}s since start", time.elapsed_secs())
         }))
         .tone(Tone::Dim),
     ))
@@ -290,11 +284,10 @@ fn toggle_keyframes(world: &mut World) {
 
 fn motion_switch() -> impl View<Bevy, Monokai> {
     row((
-        button(label(derived(|world: &World| {
-            let on = world.resource::<ReducedMotion>().0;
+        button(label(resource::<ReducedMotion, _>(|reduced| {
             format!(
                 "Reduced motion: {}",
-                if on { "on" } else { "off" }
+                if reduced.0 { "on" } else { "off" }
             )
         })))
         .padding(UiRect::axes(px(10.0), px(4.0)))

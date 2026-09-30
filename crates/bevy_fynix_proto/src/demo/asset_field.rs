@@ -7,16 +7,16 @@ use bevy_ecs::world::World;
 use bevy_image::Image;
 use bevy_ui::{JustifyContent, percent};
 
-use crate::prop::derived;
+use crate::prop::Signal;
 use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens, Tone};
 use crate::views::{BehaviorExt, button, icon, label, row};
 use crate::{Bevy, View};
 
-/// A dimmed button showing `image` and the text `read` returns,
+/// A dimmed button showing `image` and the text `name` follows,
 /// running `open` when activated.
 pub fn asset_field_button<T>(
     image: Handle<Image>,
-    read: impl Fn(&World) -> String + Send + Sync + 'static,
+    name: Signal<String>,
     open: impl Fn(&mut World) + Send + Sync + 'static,
 ) -> impl View<Bevy, T>
 where
@@ -28,7 +28,7 @@ where
         + 'static,
 {
     button(
-        row((icon(image), label(derived(read)).wrap(false)))
+        row((icon(image), label(name).wrap(false)))
             .width(percent(100.0))
             .justify(JustifyContent::SpaceBetween),
     )
@@ -52,7 +52,7 @@ mod tests {
     use crate::demo::testing::{
         DIM, Demo, app, color, kids, text, ui,
     };
-    use crate::mount;
+    use crate::{mount, resource};
 
     #[derive(Resource)]
     struct Held(String);
@@ -67,7 +67,7 @@ mod tests {
             app.world_mut(),
             asset_field_button::<Demo>(
                 Handle::default(),
-                |world| world.resource::<Held>().0.clone(),
+                resource::<Held, _>(|held| held.0.clone()),
                 |world| world.resource_mut::<Opened>().0 += 1,
             ),
         )

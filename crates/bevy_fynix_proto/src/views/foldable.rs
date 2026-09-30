@@ -6,7 +6,7 @@ use bevy_ecs::entity::Entity;
 use bevy_ecs::world::World;
 use bevy_ui::{AlignItems, Display, FlexDirection, Node, percent};
 
-use crate::prop::{Prop, derived};
+use crate::prop::{Prop, component};
 use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens};
 use crate::views::{BehaviorExt, button, frame, label, row};
 use crate::{Bevy, Cx, Leaf, Styled, View};
@@ -37,12 +37,6 @@ impl<H, B> Foldable<H, B> {
         self.open = open;
         self
     }
-}
-
-fn is_open(world: &World, root: Entity) -> bool {
-    world
-        .get_entity(root)
-        .is_ok_and(|entity| entity.contains::<Open>())
 }
 
 fn toggle(world: &mut World, root: Entity) {
@@ -97,6 +91,10 @@ impl<T> Leaf<Bevy, T> for Reveal {
     fn is_live(&self) -> bool {
         self.shown.is_bound()
     }
+
+    fn changed(&mut self, world: &World) -> bool {
+        self.shown.changed(world)
+    }
 }
 
 impl<T, H, B> View<Bevy, T> for Foldable<H, B>
@@ -116,18 +114,20 @@ where
             cx.world.entity_mut(root).insert(Open);
         }
         cx.under(root, |cx| {
-            let chevron = button(label(derived(move |world| {
-                if is_open(world, root) { "v" } else { ">" }
-                    .to_string()
-            })))
-            .fill(Color::NONE)
-            .on_activate(move |world| toggle(world, root));
+            let chevron =
+                button(label(component::<Open, _>(root, |open| {
+                    if open.is_some() { "v" } else { ">" }.to_string()
+                })))
+                .fill(Color::NONE)
+                .on_activate(move |world| toggle(world, root));
             cx.build(
                 row((chevron, self.header)).align(AlignItems::Center),
             );
             let body = cx.build(Reveal {
-                shown: derived(move |world| is_open(world, root))
-                    .into(),
+                shown: component::<Open, _>(root, |open| {
+                    open.is_some()
+                })
+                .into(),
             });
             cx.under(body, |cx| self.body.build(cx));
         });

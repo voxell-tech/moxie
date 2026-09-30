@@ -107,6 +107,12 @@ impl<T: TextTokens> Leaf<Bevy, T> for Icon {
             || self.size.is_bound()
             || self.tone.is_bound()
     }
+
+    fn changed(&mut self, world: &World) -> bool {
+        self.image.changed(world)
+            | self.size.changed(world)
+            | self.tone.changed(world)
+    }
 }
 
 #[cfg(test)]

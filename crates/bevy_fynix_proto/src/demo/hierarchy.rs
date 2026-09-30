@@ -9,7 +9,7 @@ use bevy_ecs::resource::Resource;
 use bevy_ecs::world::World;
 use bevy_ui::{JustifyContent, percent, px};
 
-use crate::prop::derived;
+use crate::prop::{component, resource};
 use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens, Tone};
 use crate::views::{BehaviorExt, Tagged, button, foldable, label};
 use crate::{Bevy, View};
@@ -46,15 +46,15 @@ impl<V> RowExt for V {}
 
 const UNNAMED: &str = "(unnamed)";
 
-fn name_of(world: &World, entity: Entity) -> String {
-    match world.get::<Name>(entity) {
+fn name_of(name: Option<&Name>) -> String {
+    match name {
         Some(name) if !name.is_empty() => name.to_string(),
         _ => UNNAMED.to_string(),
     }
 }
 
-fn is_unnamed(world: &World, entity: Entity) -> bool {
-    world.get::<Name>(entity).is_none_or(|name| name.is_empty())
+fn is_unnamed(name: Option<&Name>) -> bool {
+    name.is_none_or(|name| name.is_empty())
 }
 
 fn select(world: &mut World, entity: Entity) {
@@ -77,10 +77,10 @@ where
         + 'static,
 {
     let header = button(
-        label(derived(move |world| name_of(world, entity)))
+        label(component::<Name, _>(entity, name_of))
             .wrap(false)
-            .tone(derived(move |world| {
-                if is_unnamed(world, entity) {
+            .tone(component::<Name, _>(entity, |name| {
+                if is_unnamed(name) {
                     Tone::Dim
                 } else {
                     Tone::Body
@@ -90,10 +90,10 @@ where
     .width(percent(100.0))
     .height(px(18.0))
     .justify(JustifyContent::FlexStart)
-    .fill(derived(move |world| {
+    .fill(resource::<Selected, _>(move |current| {
         // A signal cannot read the theme: `Theme<T>` is out of the
         // world while bound props are re-read.
-        if world.resource::<Selected>().0 == Some(entity) {
+        if current.0 == Some(entity) {
             selected
         } else {
             Color::NONE

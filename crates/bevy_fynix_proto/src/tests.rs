@@ -1,9 +1,12 @@
 //! A headless app per test, and two unrelated themes to build under.
 
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 use bevy_app::App;
 use bevy_color::Color;
 use bevy_ecs::entity::Entity;
 use bevy_ecs::hierarchy::Children;
+use bevy_ecs::name::Name;
 use bevy_ecs::relationship::RelationshipTarget;
 use bevy_ecs::resource::Resource;
 use bevy_text::{
@@ -15,7 +18,10 @@ use bevy_ui::widget::Text;
 use crate::mounted::Mounts;
 use crate::tokens::{TextTokens, Tone};
 use crate::views::label;
-use crate::{AnyView, Bevy, FynixProtoPlugin, Theme, derived, mount};
+use crate::{
+    AnyView, Bevy, FynixProtoPlugin, Theme, component, derived,
+    every_frame, mount, resource,
+};
 
 /// One app's theme.
 struct Warm;
@@ -221,9 +227,7 @@ fn a_bound_prop_follows_the_world() {
     app.insert_resource(Count(1));
     let bound = mount::<Warm>(
         app.world_mut(),
-        label(derived(|world| {
-            world.resource::<Count>().0.to_string()
-        })),
+        label(resource::<Count, _>(|count| count.0.to_string())),
     );
     let fixed = mount::<Warm>(app.world_mut(), label("fixed"));
     assert_eq!(text(&app, bound), "1");
@@ -241,17 +245,114 @@ fn a_bound_prop_follows_the_world() {
 }
 
 #[test]
-fn a_despawned_view_is_dropped() {
+fn a_despawned_view_is_dropped_after_one_update() {
     let mut app = app(Warm);
     app.insert_resource(Count(1));
     let node = mount::<Warm>(
         app.world_mut(),
-        label(derived(|world| {
-            world.resource::<Count>().0.to_string()
-        })),
+        label(resource::<Count, _>(|count| count.0.to_string())),
     );
+    let kept = mount::<Warm>(
+        app.world_mut(),
+        label(resource::<Count, _>(|count| count.0.to_string())),
+    );
+    assert_eq!(app.world().resource::<Mounts<Warm>>().len(), 2);
+
     app.world_mut().despawn(node);
     app.update();
 
-    assert!(app.world().resource::<Mounts<Warm>>().is_empty());
+    assert_eq!(app.world().resource::<Mounts<Warm>>().len(), 1);
+    assert!(app.world().get_entity(kept).is_ok());
+}
+
+#[test]
+fn a_resource_signal_is_read_only_after_the_resource_changes() {
+    static READS: AtomicUsize = AtomicUsize::new(0);
+    let mut app = app(Warm);
+    app.insert_resource(Count(1));
+    let node = mount::<Warm>(
+        app.world_mut(),
+        label(resource::<Count, _>(|count| {
+            READS.fetch_add(1, Ordering::Relaxed);
+            count.0.to_string()
+        })),
+    );
+    // The first update re-reads once: nothing ran since the resource
+    // was inserted, so the mount could not tell a later write apart.
+    app.update();
+    let settled = READS.load(Ordering::Relaxed);
+
+    app.update();
+    app.update();
+    assert_eq!(READS.load(Ordering::Relaxed), settled);
+
+    app.world_mut().resource_mut::<Count>().0 = 2;
+    app.update();
+    assert_eq!(READS.load(Ordering::Relaxed), settled + 1);
+    assert_eq!(text(&app, node), "2");
+
+    app.update();
+    assert_eq!(READS.load(Ordering::Relaxed), settled + 1);
+}
+
+#[test]
+fn a_change_made_right_after_mounting_is_not_missed() {
+    let mut app = app(Warm);
+    app.insert_resource(Count(1));
+    let node = mount::<Warm>(
+        app.world_mut(),
+        label(resource::<Count, _>(|count| count.0.to_string())),
+    );
+
+    // No system has run since the resource was inserted, so the write
+    // lands on the tick the mount saw.
+    app.world_mut().resource_mut::<Count>().0 = 2;
+    app.update();
+
+    assert_eq!(text(&app, node), "2");
+}
+
+#[test]
+fn a_component_signal_follows_the_component() {
+    let mut app = app(Warm);
+    let entity = app.world_mut().spawn(Name::new("Cube")).id();
+    let node = mount::<Warm>(
+        app.world_mut(),
+        label(component::<Name, _>(entity, |name| {
+            name.map_or("(none)".to_string(), ToString::to_string)
+        })),
+    );
+    assert_eq!(text(&app, node), "Cube");
+
+    app.world_mut()
+        .entity_mut(entity)
+        .insert(Name::new("Sphere"));
+    app.update();
+    assert_eq!(text(&app, node), "Sphere");
+
+    app.world_mut().entity_mut(entity).remove::<Name>();
+    app.update();
+    assert_eq!(text(&app, node), "(none)");
+
+    app.world_mut().entity_mut(entity).insert(Name::new("Cone"));
+    app.update();
+    assert_eq!(text(&app, node), "Cone");
+}
+
+#[test]
+fn a_derived_signal_reads_every_frame_when_asked() {
+    let mut app = app(Warm);
+    app.insert_resource(Count(1));
+    let node = mount::<Warm>(
+        app.world_mut(),
+        label(
+            derived(|world| world.resource::<Count>().0.to_string())
+                .when(every_frame()),
+        ),
+    );
+
+    app.world_mut().resource_mut::<Count>().0 = 7;
+    app.update();
+
+    assert_eq!(text(&app, node), "7");
 }
