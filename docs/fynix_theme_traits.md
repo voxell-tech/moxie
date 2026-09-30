@@ -1,8 +1,9 @@
 # Theme traits for fynix elements
 
-Status: proposed. Work happens on `nixon/theme-traits`, with fynix
-vendored as a submodule at `vendor/fynix` (on a local branch, not
-pushed upstream until decided).
+Status: on hold. `fynix_rewrite.md` may make per-element theme bounds
+unnecessary: with scoped set rules, a theme can be a preamble of rules
+instead. This design applies if views keep their theme bounds; see
+"Theming" there. fynix is vendored as a submodule at `vendor/fynix`.
 
 ## Problem
 
