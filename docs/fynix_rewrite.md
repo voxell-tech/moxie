@@ -321,6 +321,67 @@ This replaces today's anim `read` fields: `hover_color`,
 `dragged_color`, `Label::lit()` and `Label::dragged()` all go, along
 with the backlog item about letting `read` return an `Option`.
 
+#### State rules are scoped set rules
+
+A state rule is a block of set rules that holds while a node is in a
+state, and reaches everything built under that node:
+
+```rust
+button(row((icon(save), label("Save"))))
+    .when::<Hovered>(|cx| {
+        cx.set::<Frame>(|f, t| f.fill(t.hover()));
+        cx.set::<Label>(|l, _| l.tone(Tone::Accent));
+        cx.set::<Icon>(|i, t| i.tint(t.tone(Tone::Accent)));
+    })
+    .transition(Motion::Interact)
+```
+
+This is CSS's `.button:hover .label`, or a Typst `set` with a condition.
+A composite's parts are ordinary views, so a rule reaches them without
+the composite forwarding anything, even when a part is a generic `C`
+the composite knows nothing about. Rules for one part among several of
+the same type go through `lenz` paths
+(`cx.set_field(Card::cursor().title().tone(), ..)`).
+
+The one-element form is sugar for the same thing, a rule on the node
+itself:
+
+```rust
+label(name).when::<Hovered>(|l| l.tone(Tone::Accent))
+```
+
+So `Button` is only a frame, its content and two behaviours, and its
+defaults, hover included, are a rule bundle a theme can replace:
+
+```rust
+pub fn button<C>(content: C) -> impl View {
+    row((content,))
+        .with(ButtonBehavior)
+        .with(EntityCursor(SystemCursorIcon::Pointer))
+        .rules(button_style())
+}
+```
+
+Underneath:
+
+1. `.when::<S>(block)` runs the block into the rule arena like any
+   scope. Each rule carries a condition: a `holds` function for `S` and
+   the node it is checked on, filled in at build with the node `.when`
+   was written on.
+2. While that node's subtree builds, every element a conditional rule
+   applies to records the rule's key. The refcount that keeps rules
+   alive across `keyed` rebuilds keeps these alive too, and a rebuilt
+   child inside the node picks them up through its capture.
+3. When `S` is inserted on or removed from the node, the state
+   observer marks every element that recorded one of its rules dirty,
+   not just the node.
+4. A dirty element resolves its props with the active conditional
+   rules applied, diffs the result per field and animates the fields
+   that changed, if it has a transition.
+
+A rule acts on props, not on the resolved snapshot, so the element
+resolves `l.tone(Accent)` through the theme like any other value.
+
 ### Precedence
 
 From weakest to strongest, for every value:
@@ -330,7 +391,12 @@ From weakest to strongest, for every value:
 | View default | A neutral constant |
 | Set rules, outer scope then inner | `ui.set(Label::size(12.0))` |
 | Call-site argument | `label("x").size(20.0)` |
-| State rules | `.when(Hovered, ..)` |
+| State rules on the node itself | `.when(Hovered, ..)` |
+
+A state rule that reaches into descendants ranks as a set rule of its
+scope, not above the call site. `label("Save").tone(Tone::Dim)` inside a
+hovered button stays dim: an explicit value is how a part opts out,
+the same as with set rules.
 
 This settles the "composite constraints" question: a composite's needs
 are set rules in its own scope, and a caller's explicit argument still
@@ -700,6 +766,14 @@ own frame while building it, with a `hover_fill` prop and a transition
 from the theme, so a composite can put state rules on its own parts. A
 call site still cannot add one, and `hover_fill` is read once at
 build, so it cannot be bound.
+
+`hover_fill` is the wrong shape: a hover colour is a transition
+between two rule sets, not a prop. Scoped state rules (see "State rules
+are scoped set rules" above) answer findings 5, 9 and 10: rules act on
+props, need no `Stateful` wrapper that names the theme, and reach a
+composite's parts from the call site. Findings 6 and 15 remain: the
+per-field diff gives per-field transitions a key, but properties every
+element shares still need a home.
 
 The hover source changed too. The `Hovered` marker used to be set by
 `Pointer<Over>` and `Pointer<Out>` observers on the node. Both events
