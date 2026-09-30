@@ -55,7 +55,10 @@ impl RuleArena {
         key
     }
 
-    pub(crate) fn get<R: 'static>(&self, key: &PoolKey) -> Option<&R> {
+    pub(crate) fn get<R: 'static>(
+        &self,
+        key: &PoolKey,
+    ) -> Option<&R> {
         self.pool.get::<R>(key)
     }
 

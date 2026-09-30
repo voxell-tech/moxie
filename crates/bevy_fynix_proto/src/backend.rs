@@ -42,7 +42,11 @@ impl fynix_proto::Backend for Bevy {
         }
     }
 
-    fn reorder(world: &mut World, parent: Entity, children: &[Entity]) {
+    fn reorder(
+        world: &mut World,
+        parent: Entity,
+        children: &[Entity],
+    ) {
         world.entity_mut(parent).replace_children(children);
     }
 }

@@ -153,7 +153,10 @@ fn rapid_switches_never_touch_a_despawned_node() {
     };
     assert_eq!(text(&app, children(&app, home)[0]), "home");
     assert_eq!(mounts(&app), 2);
-    assert_eq!(app.world().resource::<Mounts<Plain>>().structure_len(), 1);
+    assert_eq!(
+        app.world().resource::<Mounts<Plain>>().structure_len(),
+        1
+    );
 }
 
 #[test]
@@ -172,7 +175,10 @@ fn a_switch_inside_a_switch_is_dropped_with_its_outer() {
             .boxed()
         }),
     );
-    assert_eq!(app.world().resource::<Mounts<Plain>>().structure_len(), 2);
+    assert_eq!(
+        app.world().resource::<Mounts<Plain>>().structure_len(),
+        2
+    );
 
     // The outer rebuilds, and drops the inner it built before.
     set_screen(&mut app, Screen::Settings);
@@ -181,7 +187,10 @@ fn a_switch_inside_a_switch_is_dropped_with_its_outer() {
     app.world_mut().resource_mut::<Inner>().0 = 2;
     app.update();
 
-    assert_eq!(app.world().resource::<Mounts<Plain>>().structure_len(), 2);
+    assert_eq!(
+        app.world().resource::<Mounts<Plain>>().structure_len(),
+        2
+    );
 }
 
 #[derive(Resource)]
@@ -225,7 +234,9 @@ fn inspector() -> AnyView<Bevy, Plain> {
         |&selected| match selected {
             None => label("nothing selected").boxed(),
             Some(entity) => each(
-                resource::<ComponentNames, _>(|names| names.0.clone()),
+                resource::<ComponentNames, _>(|names| {
+                    names.0.clone()
+                }),
                 |name| *name,
                 move |&name| component_row(entity, name),
             )
@@ -245,10 +256,8 @@ struct Inspected {
 
 fn inspected() -> Inspected {
     let mut app = app(Plain);
-    let first = app
-        .world_mut()
-        .spawn((Health(10), Mana(5), Armor(2)))
-        .id();
+    let first =
+        app.world_mut().spawn((Health(10), Mana(5), Armor(2))).id();
     let second = app.world_mut().spawn(Health(99)).id();
     app.insert_resource(SelectedEntity(Some(first)))
         .insert_resource(ComponentNames(vec!["Health", "Mana"]));
@@ -275,7 +284,8 @@ impl Inspected {
         self.rows()
             .into_iter()
             .map(|row| {
-                let [name, value] = children(&self.app, row)[..] else {
+                let [name, value] = children(&self.app, row)[..]
+                else {
                     panic!("a name and a value");
                 };
                 (text(&self.app, name), text(&self.app, value))
@@ -369,9 +379,11 @@ fn a_new_selection_rebuilds_the_inspector() {
         [pair("Health", "99"), pair("Mana", "-")]
     );
 
-    inspected.app.world_mut().resource_mut::<SelectedEntity>().0 = None;
+    inspected.app.world_mut().resource_mut::<SelectedEntity>().0 =
+        None;
     inspected.app.update();
-    let [nothing] = children(&inspected.app, inspected.root)[..] else {
+    let [nothing] = children(&inspected.app, inspected.root)[..]
+    else {
         panic!("one label");
     };
     assert_eq!(text(&inspected.app, nothing), "nothing selected");

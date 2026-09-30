@@ -26,7 +26,8 @@ fn build_in<B: Backend, T: 'static>(
 ) -> B::Node {
     let outer = cx.owner();
     cx.set_owner(Some(group));
-    let built = cx.scope(|cx| cx.under(container, |cx| view.build(cx)));
+    let built =
+        cx.scope(|cx| cx.under(container, |cx| view.build(cx)));
     cx.set_owner(outer);
     built
 }
@@ -246,11 +247,8 @@ where
             return;
         }
         let items = self.items.get(world);
-        let before = self
-            .rows
-            .iter()
-            .map(|row| row.node)
-            .collect::<Vec<_>>();
+        let before =
+            self.rows.iter().map(|row| row.node).collect::<Vec<_>>();
 
         // Keys may repeat, so each old row is matched at most once.
         let mut old = mem::take(&mut self.rows)
@@ -272,10 +270,9 @@ where
             mounted.drop_group(row.group);
         }
 
-        let mut cx = kept
-            .iter()
-            .any(Option::is_none)
-            .then(|| Cx::seeded(world, theme, mounted, &self.capture, id));
+        let mut cx = kept.iter().any(Option::is_none).then(|| {
+            Cx::seeded(world, theme, mounted, &self.capture, id)
+        });
         let mut rows = Vec::with_capacity(items.len());
         for (item, kept) in items.iter().zip(kept) {
             rows.push(match (kept, cx.as_mut()) {
@@ -296,7 +293,8 @@ where
         }
         drop(cx);
 
-        let after = rows.iter().map(|row| row.node).collect::<Vec<_>>();
+        let after =
+            rows.iter().map(|row| row.node).collect::<Vec<_>>();
         if after != before {
             B::reorder(world, self.container, &after);
         }

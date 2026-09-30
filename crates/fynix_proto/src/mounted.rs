@@ -22,7 +22,9 @@ pub(crate) type Group = u32;
 
 /// A view that builds and drops parts of the tree as the world
 /// changes.
-pub(crate) trait Structure<B: Backend, T>: Send + Sync {
+pub(crate) trait Structure<B: Backend, T>:
+    Send + Sync
+{
     /// Rebuilds what the world's changes call for.
     fn update(
         &mut self,
@@ -231,7 +233,11 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
     /// Rebuilds what the world's changes call for, in every `keyed`
     /// and `each` view. Views they build are checked from the next
     /// update on.
-    pub fn update_structure(&mut self, world: &mut B::World, theme: &T) {
+    pub fn update_structure(
+        &mut self,
+        world: &mut B::World,
+        theme: &T,
+    ) {
         let ids = self.slots.keys().copied().collect::<Vec<_>>();
         for id in ids {
             // Gone when the rebuild of a view before it dropped it.

@@ -6,9 +6,7 @@ use std::string::{String, ToString};
 use std::vec::Vec;
 
 use super::{Fake, Text, TextCursor, Ui, Warm, World, text, watch};
-use crate::{
-    AnyView, Cx, Each, Keyed, View, ViewExt, each, keyed,
-};
+use crate::{AnyView, Cx, Each, Keyed, View, ViewExt, each, keyed};
 
 impl World {
     fn pick(&mut self, pick: u32) {
