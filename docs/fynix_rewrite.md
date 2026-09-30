@@ -634,9 +634,40 @@ What did not, each needing a decision before the real rewrite:
    `set::<Stateful<Label, Theme>>(..)`, and rule closures often need
    their `&Theme` parameter annotated.
 
+The three call sites are built in `src/demo/`. Each got shorter than
+today's code: the asset button from about 45 lines to 17, and the
+hierarchy row loses its `on_header` callback and change predicates
+entirely. `FieldRow` no longer copies `Label`'s fields. They also
+turned up five more problems:
+
+10. **A composite's inner parts cannot take state rules.** `Button`
+    holds a bare `Frame`, so a hover or selection fill cannot be added
+    from a call site, and the `ghost()` bundle above is not expressible.
+    State rules need to reach a composite's own leaves.
+11. **Bound values cannot read the theme.** A signal only gets
+    `&World`, and the theme is out of the world while views update. A
+    selection fill had to be passed in as a colour. Signals need the
+    theme too, or should return tokens (`Tone::Accent`) the leaf
+    resolves.
+12. **State rules only watch the leaf's own node.** `.when::<S>` takes a
+    component on that node, not a signal, so the doc's
+    `.when(unnamed, ..)` became a bound tone instead. Conditions from
+    elsewhere in the world need signal-driven states.
+13. **Structure is eager.** `foldable`'s body is built up front and
+    hidden, not built when first opened, and its open state cannot be
+    one prop shared by the chevron, the body and the caller.
+14. **Handlers are awkward to own.** An activate handler is not
+    `Clone`, so stacking several on one node needs bookkeeping in a
+    component. Tests also need a frame for handlers queued through
+    `Commands` to run.
+
+Composites and custom leaves (`Foldable`, its private `Reveal` leaf)
+needed no core changes, which suggests the escape hatch for custom
+views works.
+
 Still unmeasured: compile time and type size with nested generic views
-against `AnyView`, the three real call sites, and pointer-driven
-states against a real pointer (the tests toggle them directly).
+against `AnyView`, and pointer-driven states against a real pointer
+(the tests toggle them directly).
 
 ## Migration
 
