@@ -12,7 +12,7 @@ use typarena::type_table::TypeTable;
 use crate::backend::Backend;
 use crate::mounted::Mounted;
 use crate::prop::Prop;
-use crate::view::{Styled, View};
+use crate::view::{Leaf, Styled, View};
 
 /// One rule restyling a `V`, with the theme in hand.
 type Rule<V, T> = Box<dyn Fn(V, &T) -> V + Send + Sync>;
@@ -73,9 +73,14 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
         self.theme
     }
 
-    /// Where live leaves are kept, to mount one.
-    pub fn mounted(&mut self) -> &mut Mounted<B, T> {
-        self.mounted
+    /// Keeps `leaf` in step with the world, as the one on `node`.
+    pub fn mount<L: Leaf<B, T>>(
+        &mut self,
+        node: B::Node,
+        leaf: L,
+        snapshot: L::Snapshot,
+    ) {
+        self.mounted.mount(self.world, node, leaf, snapshot);
     }
 
     /// Where a view built now hangs. `None` at the root.

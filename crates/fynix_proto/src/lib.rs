@@ -31,6 +31,6 @@ pub use backend::Backend;
 pub use cx::{Cx, Trace};
 pub use lenz;
 pub use mounted::{Mounted, Tick};
-pub use prop::{Prop, Signal, derived};
+pub use prop::{Derived, Prop, Signal, derived};
 pub use transition::{Curve, Motion, MotionTokens, Tween};
 pub use view::{AnyView, Leaf, Styled, View, ViewExt, ViewSeq};

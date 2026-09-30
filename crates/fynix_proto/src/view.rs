@@ -29,7 +29,7 @@ pub trait Styled: Sized + Send + Sync + 'static {
 /// Its props are resolved against the rules in force, read into a
 /// [`Snapshot`](Self::Snapshot) of plain values, and written onto the
 /// node. A live leaf stays mounted, and is read and written again
-/// whenever its snapshot changes.
+/// whenever it reports a change.
 pub trait Leaf<B: Backend, T>: Styled {
     /// Every prop's value at one moment, with the theme's defaults
     /// filled in.
@@ -50,6 +50,14 @@ pub trait Leaf<B: Backend, T>: Styled {
 
     /// Whether anything it holds can change after the build.
     fn is_live(&self) -> bool;
+
+    /// Whether anything it holds may have changed since the last
+    /// call. Every prop's check runs each call, as each one keeps
+    /// its own memory of the last.
+    fn changed(&mut self, world: &B::World) -> bool;
+
+    /// A hook run right after the leaf is mounted on `node`.
+    fn on_mounted(&self, _world: &mut B::World, _node: B::Node) {}
 
     /// This, with the rules in force applied.
     fn resolve(self, cx: &Cx<'_, B, T>) -> Self
@@ -85,7 +93,7 @@ impl<B: Backend, T: 'static, L: Leaf<B, T>> View<B, T> for L {
         leaf.adjust(&mut snapshot, cx.world, node, cx.theme());
         L::write(&snapshot, cx.world, node);
         if leaf.is_live() {
-            cx.mounted().mount(node, leaf, snapshot);
+            cx.mount(node, leaf, snapshot);
         }
         node
     }

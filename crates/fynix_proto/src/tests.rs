@@ -1,6 +1,7 @@
 //! The core against a fake backend: a flat list of nodes holding some
 //! text at a size, and one number the text can be bound to.
 
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 use std::string::{String, ToString};
 use std::vec::Vec;
@@ -12,13 +13,15 @@ use motiongfx_interp::interpolation::Interpolation;
 
 use crate::{
     AnyView, Backend, Curve, Cx, Leaf, Motion, MotionTokens, Mounted,
-    Prop, Styled, Tick, Trace, Tween, View, derived,
+    Prop, Signal, Styled, Tick, Trace, Tween, View, derived,
 };
 
 #[derive(Default)]
 pub struct World {
     nodes: Vec<Option<Node>>,
     count: i32,
+    /// Bumped by every change to `count`.
+    version: u32,
 }
 
 #[derive(Default)]
@@ -41,13 +44,26 @@ impl Backend for Fake {
         }));
         world.nodes.len() - 1
     }
+}
 
-    fn exists(world: &World, node: usize) -> bool {
-        world.nodes.get(node).is_some_and(Option::is_some)
-    }
+/// A signal reading `read`, checked against the world's version.
+fn watch<T>(
+    read: impl Fn(&World) -> T + Send + Sync + 'static,
+) -> Signal<World, T> {
+    let mut seen = None;
+    derived(read).when(move |world: &World| {
+        let changed = seen != Some(world.version);
+        seen = Some(world.version);
+        changed
+    })
 }
 
 impl World {
+    fn set(&mut self, count: i32) {
+        self.count = count;
+        self.version += 1;
+    }
+
     fn node(&self, node: usize) -> &Node {
         self.nodes[node].as_ref().expect("a live node")
     }
@@ -151,6 +167,10 @@ impl<T: Sizes + MotionTokens> Leaf<Fake, T> for Text {
 
     fn is_live(&self) -> bool {
         self.text.is_bound() || self.size.is_bound()
+    }
+
+    fn changed(&mut self, world: &World) -> bool {
+        self.text.changed(world) | self.size.changed(world)
     }
 
     fn tween(&self, theme: &T) -> Option<Tween<Shown>> {
@@ -326,14 +346,13 @@ fn a_show_rule_wins_over_the_call_site() {
 #[test]
 fn a_bound_prop_follows_the_world() {
     let mut ui = Ui::new(Warm);
-    ui.world.count = 1;
-    let bound = ui.build(text(derived(|world: &World| {
-        world.count.to_string()
-    })));
+    ui.world.set(1);
+    let bound = ui
+        .build(text(watch(|world: &World| world.count.to_string())));
     let fixed = ui.build(text("fixed"));
     assert_eq!(ui.world.node(bound).text, "1");
 
-    ui.world.count = 2;
+    ui.world.set(2);
     ui.update(Duration::ZERO, false);
 
     assert_eq!(ui.world.node(bound).text, "2");
@@ -345,22 +364,116 @@ fn a_bound_prop_follows_the_world() {
     );
 }
 
-#[test]
-fn a_gone_node_is_dropped() {
-    let mut ui = Ui::new(Warm);
-    let node = ui.build(text(derived(|world: &World| {
+/// A text bound to `world.count`, counting its reads in `reads`.
+fn read_counted(reads: &'static AtomicUsize) -> Text {
+    text(watch(move |world: &World| {
+        reads.fetch_add(1, Ordering::Relaxed);
         world.count.to_string()
-    })));
-    ui.world.nodes[node] = None;
-    ui.update(Duration::ZERO, false);
+    }))
+}
+
+#[test]
+fn an_unmounted_node_is_dropped() {
+    let mut ui = Ui::new(Warm);
+    let node = ui
+        .build(text(watch(|world: &World| world.count.to_string())));
+    ui.mounted.unmount(node);
 
     assert!(ui.mounted.is_empty());
+    ui.world.set(1);
+    ui.update(Duration::ZERO, false);
+    assert_eq!(ui.world.node(node).text, "0", "no longer written");
+}
+
+#[test]
+fn a_leaf_whose_source_did_not_change_is_not_re_read() {
+    static READS: AtomicUsize = AtomicUsize::new(0);
+    let mut ui = Ui::new(Warm);
+    ui.build(read_counted(&READS));
+    let built = READS.load(Ordering::Relaxed);
+
+    ui.update(Duration::ZERO, false);
+    ui.update(Duration::ZERO, false);
+
+    assert_eq!(READS.load(Ordering::Relaxed), built);
+}
+
+#[test]
+fn a_leaf_whose_source_changed_is_re_read_and_written() {
+    static READS: AtomicUsize = AtomicUsize::new(0);
+    let mut ui = Ui::new(Warm);
+    let node = ui.build(read_counted(&READS));
+    let built = READS.load(Ordering::Relaxed);
+
+    ui.world.set(5);
+    ui.update(Duration::ZERO, false);
+
+    assert_eq!(READS.load(Ordering::Relaxed), built + 1);
+    assert_eq!(ui.world.node(node).text, "5");
+}
+
+#[test]
+fn the_first_update_after_mounting_does_not_re_read() {
+    static READS: AtomicUsize = AtomicUsize::new(0);
+    let mut ui = Ui::new(Warm);
+    ui.build(read_counted(&READS));
+
+    // Built once, and the check fired on its first call at mount.
+    assert_eq!(READS.load(Ordering::Relaxed), 1);
+    ui.update(Duration::ZERO, false);
+
+    assert_eq!(READS.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn mark_dirty_forces_one_re_read() {
+    static READS: AtomicUsize = AtomicUsize::new(0);
+    let mut ui = Ui::new(Warm);
+    let node = ui.build(read_counted(&READS));
+
+    ui.mounted.mark_dirty(node);
+    ui.update(Duration::ZERO, false);
+    assert_eq!(READS.load(Ordering::Relaxed), 2);
+
+    ui.update(Duration::ZERO, false);
+    assert_eq!(READS.load(Ordering::Relaxed), 2, "only once");
+}
+
+#[test]
+fn a_running_transition_advances_without_a_source_change() {
+    static READS: AtomicUsize = AtomicUsize::new(0);
+    let mut ui = Ui::new(Warm);
+    let node = ui.build(
+        text("x")
+            .size(watch(|world: &World| {
+                READS.fetch_add(1, Ordering::Relaxed);
+                world.count as f32
+            }))
+            .transition(Motion::Interact),
+    );
+
+    ui.world.set(10);
+    ui.update(Duration::ZERO, false);
+    ui.update(Duration::from_millis(500), false);
+    let reads = READS.load(Ordering::Relaxed);
+    let halfway = ui.world.node(node).size;
+    assert!(halfway > 0.0 && halfway < 10.0);
+
+    ui.update(Duration::from_millis(250), false);
+    assert!(ui.world.node(node).size > halfway, "still travelling");
+    ui.update(Duration::from_millis(500), false);
+    assert_eq!(ui.world.node(node).size, 10.0);
+    assert_eq!(
+        READS.load(Ordering::Relaxed),
+        reads,
+        "and never re-read for it"
+    );
 }
 
 /// A text whose size follows `world.count`, travelling when asked.
 fn counted(motion: Option<Motion>) -> Text {
     let text =
-        text("x").size(derived(|world: &World| world.count as f32));
+        text("x").size(watch(|world: &World| world.count as f32));
     match motion {
         Some(motion) => text.transition(motion),
         None => text,
@@ -370,10 +483,10 @@ fn counted(motion: Option<Motion>) -> Text {
 #[test]
 fn nothing_travels_unless_asked() {
     let mut ui = Ui::new(Warm);
-    ui.world.count = 10;
+    ui.world.set(10);
     let node = ui.build(counted(None));
 
-    ui.world.count = 20;
+    ui.world.set(20);
     ui.update(Duration::from_millis(100), false);
 
     assert_eq!(ui.world.node(node).size, 20.0);
@@ -382,10 +495,10 @@ fn nothing_travels_unless_asked() {
 #[test]
 fn a_transition_reaches_its_target_over_the_curve() {
     let mut ui = Ui::new(Warm);
-    ui.world.count = 10;
+    ui.world.set(10);
     let node = ui.build(counted(Some(Motion::Interact)));
 
-    ui.world.count = 20;
+    ui.world.set(20);
     ui.update(Duration::ZERO, false);
     ui.update(Duration::from_millis(500), false);
     assert_eq!(ui.world.node(node).size, 15.0);
@@ -397,16 +510,16 @@ fn a_transition_reaches_its_target_over_the_curve() {
 #[test]
 fn an_interrupted_transition_starts_from_where_it_got_to() {
     let mut ui = Ui::new(Warm);
-    ui.world.count = 0;
+    ui.world.set(0);
     let node = ui.build(counted(Some(Motion::Interact)));
 
-    ui.world.count = 100;
+    ui.world.set(100);
     ui.update(Duration::ZERO, false);
     ui.update(Duration::from_millis(500), false);
     assert_eq!(ui.world.node(node).size, 50.0);
 
     // Heads back to 0 from 50, not from 100.
-    ui.world.count = 0;
+    ui.world.set(0);
     ui.update(Duration::ZERO, false);
     ui.update(Duration::from_millis(500), false);
     assert_eq!(ui.world.node(node).size, 25.0);
@@ -415,10 +528,10 @@ fn an_interrupted_transition_starts_from_where_it_got_to() {
 #[test]
 fn reduced_motion_snaps() {
     let mut ui = Ui::new(Warm);
-    ui.world.count = 10;
+    ui.world.set(10);
     let node = ui.build(counted(Some(Motion::Interact)));
 
-    ui.world.count = 20;
+    ui.world.set(20);
     ui.update(Duration::from_millis(100), true);
 
     assert_eq!(ui.world.node(node).size, 20.0);
@@ -427,10 +540,10 @@ fn reduced_motion_snaps() {
 #[test]
 fn a_zero_length_curve_snaps() {
     let mut ui = Ui::new(Cold { sizes: [12.0] });
-    ui.world.count = 10;
+    ui.world.set(10);
     let node = ui.build(counted(Some(Motion::Interact)));
 
-    ui.world.count = 20;
+    ui.world.set(20);
     ui.update(Duration::from_millis(1), false);
 
     assert_eq!(ui.world.node(node).size, 20.0);

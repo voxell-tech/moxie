@@ -13,14 +13,52 @@ pub enum Prop<W, T> {
     Bound(Signal<W, T>),
 }
 
-/// A value read from the world `W`, re-read while its view is mounted.
-pub struct Signal<W, T>(Box<dyn Fn(&W) -> T + Send + Sync>);
+/// A value read from the world `W`, and a check for whether it may
+/// have changed since the check last ran.
+pub struct Signal<W, T> {
+    read: Box<dyn Fn(&W) -> T + Send + Sync>,
+    changed: Box<dyn FnMut(&W) -> bool + Send + Sync>,
+}
 
-/// A prop that follows whatever `read` returns.
+impl<W, T> Signal<W, T> {
+    /// A signal reading with `read`, whose `changed` says whether that
+    /// read may differ from the one before.
+    pub fn new(
+        read: impl Fn(&W) -> T + Send + Sync + 'static,
+        changed: impl FnMut(&W) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            read: Box::new(read),
+            changed: Box::new(changed),
+        }
+    }
+}
+
+/// A read from the world `W` still waiting for its change check.
+pub struct Derived<W, T> {
+    read: Box<dyn Fn(&W) -> T + Send + Sync>,
+}
+
+impl<W, T> Derived<W, T> {
+    /// The [`Signal`] of this read, re-read when `changed` says so.
+    pub fn when(
+        self,
+        changed: impl FnMut(&W) -> bool + Send + Sync + 'static,
+    ) -> Signal<W, T> {
+        Signal {
+            read: self.read,
+            changed: Box::new(changed),
+        }
+    }
+}
+
+/// A read of whatever `read` returns, to be given its change check.
 pub fn derived<W, T>(
     read: impl Fn(&W) -> T + Send + Sync + 'static,
-) -> Signal<W, T> {
-    Signal(Box::new(read))
+) -> Derived<W, T> {
+    Derived {
+        read: Box::new(read),
+    }
 }
 
 impl<W, T> Prop<W, T> {
@@ -48,7 +86,16 @@ impl<W, T> Prop<W, T> {
         match self {
             Self::Unset => None,
             Self::Value(value) => Some(value.clone()),
-            Self::Bound(signal) => Some((signal.0)(world)),
+            Self::Bound(signal) => Some((signal.read)(world)),
+        }
+    }
+
+    /// Whether what this holds may have changed since the last call.
+    /// Only a bound prop can.
+    pub fn changed(&mut self, world: &W) -> bool {
+        match self {
+            Self::Bound(signal) => (signal.changed)(world),
+            Self::Unset | Self::Value(_) => false,
         }
     }
 }

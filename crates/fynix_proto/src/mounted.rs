@@ -6,7 +6,7 @@ use core::any::TypeId;
 use core::marker::PhantomData;
 use core::time::Duration;
 
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 use typarena::type_table::TypeTable;
 
 use crate::backend::Backend;
@@ -33,6 +33,25 @@ type UpdateFn<B, T> = fn(
 /// How many leaves of one kind are mounted.
 type CountFn<B> = fn(&TypeTable<<B as Backend>::Node>) -> usize;
 
+/// Acts on the mounted leaf of one kind on a node, without naming
+/// the kind.
+type NodeFn<B> =
+    fn(&mut TypeTable<<B as Backend>::Node>, <B as Backend>::Node);
+
+/// What [`Mounted`] does to a node's leaf, for the leaf's kind.
+struct Hooks<B: Backend> {
+    mark: NodeFn<B>,
+    remove: NodeFn<B>,
+}
+
+impl<B: Backend> Clone for Hooks<B> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<B: Backend> Copy for Hooks<B> {}
+
 /// Every mounted leaf built with the theme `T`: one column per kind of
 /// leaf, keyed by its node, and one update per kind to walk it.
 pub struct Mounted<B: Backend, T> {
@@ -40,6 +59,7 @@ pub struct Mounted<B: Backend, T> {
     updates: Vec<UpdateFn<B, T>>,
     counts: Vec<CountFn<B>>,
     kinds: HashSet<TypeId>,
+    hooks: HashMap<B::Node, Hooks<B>>,
 }
 
 impl<B: Backend, T> Default for Mounted<B, T> {
@@ -49,21 +69,36 @@ impl<B: Backend, T> Default for Mounted<B, T> {
             updates: Vec::new(),
             counts: Vec::new(),
             kinds: HashSet::new(),
+            hooks: HashMap::new(),
         }
     }
 }
 
 impl<B: Backend, T: 'static> Mounted<B, T> {
+    /// Keeps `leaf` in step with the world as the one on `node`.
     pub fn mount<L: Leaf<B, T>>(
         &mut self,
+        world: &mut B::World,
         node: B::Node,
-        leaf: L,
+        mut leaf: L,
         snapshot: L::Snapshot,
     ) {
         if self.kinds.insert(TypeId::of::<L>()) {
             self.updates.push(update_kind::<B, T, L>);
             self.counts.push(|table| table.len::<Mount<B, T, L>>());
         }
+        self.hooks.insert(
+            node,
+            Hooks {
+                mark: mark::<B, T, L>,
+                remove: remove::<B, T, L>,
+            },
+        );
+        // Checks often fire on their first call, which the snapshot
+        // just taken already covers.
+        leaf.changed(world);
+        B::on_mount(world, node);
+        leaf.on_mounted(world, node);
         self.table.insert(
             node,
             Mount::<B, T, L> {
@@ -71,13 +106,30 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
                 target: snapshot.clone(),
                 shown: snapshot,
                 run: None,
+                dirty: false,
                 marker: PhantomData,
             },
         );
     }
 
-    /// Re-reads every mounted leaf and writes what changed, dropping
-    /// any whose node is gone.
+    /// Makes the leaf on `node` re-read at the next update, whatever
+    /// its checks say.
+    pub fn mark_dirty(&mut self, node: B::Node) {
+        if let Some(hooks) = self.hooks.get(&node) {
+            (hooks.mark)(&mut self.table, node);
+        }
+    }
+
+    /// Drops the leaf on `node`.
+    pub fn unmount(&mut self, node: B::Node) {
+        if let Some(hooks) = self.hooks.remove(&node) {
+            (hooks.remove)(&mut self.table, node);
+        }
+    }
+
+    /// Writes what changed to every mounted leaf that reports a
+    /// change or is marked dirty, and keeps every transition under
+    /// way advancing.
     pub fn update(
         &mut self,
         world: &mut B::World,
@@ -105,6 +157,8 @@ struct Mount<B: Backend, T, L: Leaf<B, T>> {
     /// What is written on the node.
     shown: L::Snapshot,
     run: Option<Run<L::Snapshot>>,
+    /// Whether to re-read at the next update whatever the checks say.
+    dirty: bool,
     marker: PhantomData<fn() -> (B, T)>,
 }
 
@@ -114,17 +168,25 @@ fn update_kind<B: Backend, T: 'static, L: Leaf<B, T>>(
     theme: &T,
     tick: Tick,
 ) {
-    let mut gone = Vec::new();
     for (&node, mount) in table.iter_mut::<Mount<B, T, L>>() {
-        if B::exists(world, node) {
-            mount.update(world, node, theme, tick);
-        } else {
-            gone.push(node);
-        }
+        mount.update(world, node, theme, tick);
     }
-    for node in gone {
-        table.remove::<Mount<B, T, L>>(&node);
+}
+
+fn mark<B: Backend, T: 'static, L: Leaf<B, T>>(
+    table: &mut TypeTable<B::Node>,
+    node: B::Node,
+) {
+    if let Some(mount) = table.get_mut::<Mount<B, T, L>>(&node) {
+        mount.dirty = true;
     }
+}
+
+fn remove<B: Backend, T: 'static, L: Leaf<B, T>>(
+    table: &mut TypeTable<B::Node>,
+    node: B::Node,
+) {
+    table.remove::<Mount<B, T, L>>(&node);
 }
 
 impl<B: Backend, T, L: Leaf<B, T>> Mount<B, T, L> {
@@ -135,19 +197,28 @@ impl<B: Backend, T, L: Leaf<B, T>> Mount<B, T, L> {
         theme: &T,
         tick: Tick,
     ) {
-        let mut now = self.leaf.snapshot(world, theme);
-        self.leaf.adjust(&mut now, world, node, theme);
+        // Not `||`: every check must run, each keeps its own memory.
+        let stale = self.leaf.changed(world) | self.dirty;
+        self.dirty = false;
+        if !stale && self.run.is_none() {
+            return;
+        }
 
-        if now != self.target {
-            self.target = now;
-            self.run = self
-                .leaf
-                .tween(theme)
-                .filter(|tween| {
-                    !tick.reduced_motion
-                        && !tween.curve.duration.is_zero()
-                })
-                .map(|tween| Run::new(self.shown.clone(), tween));
+        if stale {
+            let mut now = self.leaf.snapshot(world, theme);
+            self.leaf.adjust(&mut now, world, node, theme);
+
+            if now != self.target {
+                self.target = now;
+                self.run = self
+                    .leaf
+                    .tween(theme)
+                    .filter(|tween| {
+                        !tick.reduced_motion
+                            && !tween.curve.duration.is_zero()
+                    })
+                    .map(|tween| Run::new(self.shown.clone(), tween));
+            }
         }
         if tick.reduced_motion {
             self.run = None;

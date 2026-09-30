@@ -14,6 +14,7 @@ pub trait Backend: 'static {
         parent: Option<Self::Node>,
     ) -> Self::Node;
 
-    /// Whether `node` is still alive.
-    fn exists(world: &Self::World, node: Self::Node) -> bool;
+    /// A hook run when a leaf is mounted on `node`, for telling
+    /// [`Mounted::unmount`](crate::Mounted::unmount) once it is gone.
+    fn on_mount(_world: &mut Self::World, _node: Self::Node) {}
 }
