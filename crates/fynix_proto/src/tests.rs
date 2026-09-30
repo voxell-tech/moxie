@@ -12,6 +12,8 @@ use lenz::Lenz;
 use motiongfx_interp::ease;
 use motiongfx_interp::interpolation::Interpolation;
 
+mod structure;
+
 use crate::{
     AnyView, Backend, Curve, Cx, Element, Motion, MotionTokens,
     Mounted, Prop, Signal, Styled, Tick, Trace, Tween, View, derived,
