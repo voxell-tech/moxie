@@ -582,7 +582,23 @@ What to prove in the prototype first, most likely to fail first:
 
 ## Prototype findings
 
-`crates/fynix_proto` builds the core, `Label`, `Frame`, `row`,
+The prototype is split the way fynix is:
+
+- `crates/fynix_proto` is the core, with no Bevy anywhere in its
+  dependency tree: `typarena`, `motiongfx_interp` and `hashbrown`.
+  Rules live in typarena tables, one row per scope depth and one
+  column per view kind, so leaving a scope is one `remove_row`. Live
+  leaves get one column per leaf kind, each walked by an update
+  registered the first time that kind mounts, as fynix's `AnimTable`
+  does. Transitions use `motiongfx_interp`'s `EaseFn` and `InterpFn`.
+  13 tests run it against a fake backend that is only a list of nodes.
+- `crates/bevy_fynix_proto` is the Bevy backend: the leaves,
+  composites, states, modifiers, the three call sites and the two
+  measurement examples, with 59 tests. It depends on eleven Bevy
+  sub-crates instead of the whole engine, which halves its dependency
+  tree (1436 lines of `cargo tree` to 694).
+
+It started as one crate building the core, `Label`, `Frame`, `row`,
 `column`, `Icon`, `Button`, generic modifiers, state rules and opt-in
 transitions, with 40 headless tests. What held up:
 
@@ -667,7 +683,7 @@ views works.
 
 ### Generic against boxed views
 
-`examples/screen_generic.rs` and `examples/screen_boxed.rs` build the
+`bevy_fynix_proto/examples/screen_generic.rs` and `screen_boxed.rs` build the
 same editor-like screen: 405 nodes, depth 10, 4 panels, 24 distinct
 sibling types, a stateful label with a transition in most rows. The
 boxed one erases each row, button and panel with `AnyView`. A 6x copy
@@ -698,7 +714,31 @@ What it says:
 Two smaller things turned up. `.boxed()` often needs its backend and
 theme spelled out (`<_ as ViewExt<Bevy, Editor>>::boxed(..)`), and six
 children per tuple forces real screens to nest tuples, so `ViewSeq`
-needs more arities.
+needs more arities. The split core takes tuples of up to twelve.
+
+### What the split found
+
+Porting the Bevy side onto the core needed no core changes beyond a
+rename, but four things were awkward:
+
+- **`derived` cannot infer its world.** The core's `derived` is generic
+  over the world type, so a closure reading `world.resource::<X>()`
+  does not type-check without it. Each backend needs its own thin
+  `derived`. Worth documenting as part of writing a backend.
+- **Snapshot interpolation is written by hand.** Each snapshot needs an
+  `Interpolation` impl calling each field's own, with a turbofish per
+  field since `f32` and `Color` use different markers. It is verbose,
+  and two leaves skip it entirely. A derive, or a helper for "blend
+  these fields, snap the rest", would fix it.
+- **`Mounted` needs a newtype to be a Bevy resource**, by the orphan
+  rule, with `Deref` and `Default` boilerplate.
+- **The core's per-update settings were called `Frame`**, clashing with
+  the `Frame` view. Renamed to `Tick`.
+
+It also turned up a bug outside the prototype: vendored
+`motiongfx_interp` does not build without `std`, since its integer
+interpolation calls `f64::round`. The rest of the workspace never sees
+it because `bevy_motiongfx` turns `std` on.
 
 Still unmeasured: pointer-driven states against a real pointer (the
 tests toggle them directly), and the heap cost of boxing.
