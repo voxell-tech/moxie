@@ -584,14 +584,16 @@ What to prove in the prototype first, most likely to fail first:
 
 The prototype is split the way fynix is:
 
-- `crates/fynix_proto` is the core, with no Bevy anywhere in its
-  dependency tree: `typarena`, `motiongfx_interp` and `hashbrown`.
+- `crates/fynix_proto` is the core, `no_std` like fynix, with no Bevy
+  anywhere in its dependency tree: `typarena`, `lenz`,
+  `motiongfx_interp` and `hashbrown`. It builds for a bare-metal
+  target (`thumbv7em-none-eabihf`).
   Rules live in typarena tables, one row per scope depth and one
   column per view kind, so leaving a scope is one `remove_row`. Live
   leaves get one column per leaf kind, each walked by an update
   registered the first time that kind mounts, as fynix's `AnimTable`
   does. Transitions use `motiongfx_interp`'s `EaseFn` and `InterpFn`.
-  13 tests run it against a fake backend that is only a list of nodes.
+  18 tests run it against a fake backend that is only a list of nodes.
 - `crates/bevy_fynix_proto` is the Bevy backend: the leaves,
   composites, states, modifiers, the three call sites and the two
   measurement examples, with 59 tests. It depends on eleven Bevy
@@ -736,9 +738,55 @@ rename, but four things were awkward:
   the `Frame` view. Renamed to `Tick`.
 
 It also turned up a bug outside the prototype: vendored
-`motiongfx_interp` does not build without `std`, since its integer
-interpolation calls `f64::round`. The rest of the workspace never sees
-it because `bevy_motiongfx` turns `std` on.
+`motiongfx_interp` did not build without `std`, since its integer
+interpolation called `f64::round`. The rest of the workspace never saw
+it because `bevy_motiongfx` turns `std` on. It is fixed through `libm`
+on the local submodule branch `nixon/no-std-round`, which is not yet
+pushed, so the superproject still points at the old commit.
+
+### Set rules through `lenz` paths
+
+`cx.set_field(Text::cursor().size(), 20.0)` sets one field by its
+`#[derive(Lenz)]` path, and `set_field_with` reads the value from the
+theme. It sits beside the closure form, `cx.set::<Text>(|t, _|
+t.size(20.0))`, and resolves the same way: a path rule becomes a
+closure over the path's accessor, so precedence does not change.
+
+What a path gives that a closure cannot:
+
+- **It reaches a composite's own parts.**
+  `set_field(Card::cursor().title().size(), 30.0)` sizes every card's
+  title, and not its body or a loose `Text`. This answers finding 10
+  for set rules. State rules still cannot reach parts.
+- **It says which field it sets**, so a value can be traced. A path
+  rule records its field and scope; `cx.trace::<Text>(field)` returns
+  the depth of every path rule naming that field, and counts the
+  closure rules that might also have set it, since nothing can see
+  inside one. That is strain point 4. It is also an argument for
+  making paths the main way to write a rule, with closures as the
+  escape hatch.
+
+What it costs, or showed:
+
+- **A composite part rule acts like the part's call site.** The card
+  sets its title's size before building it, so a `Text` rule no
+  longer reaches that title. That is consistent (the card is the
+  title's call site), but it means the more specific rule wins by
+  structure, not by being set later.
+- **The derive needs public types.** `#[derive(Lenz)]` emits public
+  cursor traits, so a view and every type in its fields must be
+  `pub`, and fields that are not props need `#[lenz(ignore)]`.
+- **Values must be `Clone`,** since a rule applies once per view built.
+  A bound prop cannot be set through a path, for the same reason a
+  bound prop cannot be shared: finding 5 again.
+- **Composites generic over the theme can clash with leaves.** In the
+  core's tests, `impl<T> View<Fake, T> for Card` overlaps the core's
+  `View` for every `Leaf`, because another crate could make `Card` a
+  `Leaf<Fake, ItsTheme>`. `Card` had to name one theme. The Bevy
+  backend's composites are generic over the theme and do not hit it,
+  so the exact rule needs working out before the real rewrite; one
+  way out is for leaves to get `View` from a derive rather than a
+  blanket impl.
 
 Still unmeasured: pointer-driven states against a real pointer (the
 tests toggle them directly), and the heap cost of boxing.
