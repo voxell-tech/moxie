@@ -1,18 +1,18 @@
 # A fynix rewrite
 
 Status: design. Nothing here is built yet. The plan is to prove it in a
-throwaway prototype crate before touching `vendor/fynix`.
-
-This supersedes parts of `fynix_theme_traits.md`; see
-[Theming](#theming).
+throwaway prototype crate before touching `vendor/fynix`, which is
+vendored as a submodule for when that time comes.
 
 ## Why
 
 Today's fynix has three problems that keep coming back:
 
-1. **Elements are tied to one theme.** Every element implements
-   `Element<BevyHost<EditorTheme>>` and reads `EditorTheme`'s fields
-   directly, so no other app can reuse them.
+1. **Elements are tied to one theme.** The theme is part of the host
+   type (`BevyHost<EditorTheme>`), `#[element]` writes impls for that
+   one host, every `Style` and `field_patch!` names it, and element
+   defaults read `EditorTheme`'s fields directly (about 90 reads across
+   16 of the 23 element files). No other app can reuse them.
 2. **Child elements bake structure into types.** `Button` can only
    hold an `icon` and a `label`. Reaching them takes machinery that
    exists for nothing else: child records, patch and despawn walking,
@@ -75,10 +75,14 @@ pub trait Backend {
     fn spawn(world: &mut Self::World, parent: Self::Node) -> Self::Node;
 }
 
-pub trait View<B: Backend> {
-    fn build(self, cx: &mut Cx<B>) -> B::Node;
+pub trait View<B: Backend, T> {
+    fn build(self, cx: &mut Cx<B, T>) -> B::Node;
 }
 ```
+
+`T` is the app's theme. `Cx` carries it, so a view or a rule can read
+tokens from it through a trait bound (see [Theming](#theming)), and
+`T` is inferred everywhere a `Cx` is in hand.
 
 A composite only arranges other views, so it works on every backend
 unchanged. A leaf is written once per backend. On Bevy that leaves
@@ -107,9 +111,11 @@ pub struct Label {
     pub wrap: Prop<bool>,
 }
 
-impl View<Bevy> for Label {
-    fn build(self, cx: &mut Cx<Bevy>) -> Entity {
-        // spawn Text, then bind each prop
+// Any theme that can answer for text and motion.
+impl<T: TextTokens + MotionTokens> View<Bevy, T> for Label {
+    fn build(self, cx: &mut Cx<Bevy, T>) -> Entity {
+        // spawn Text, then bind each prop; an unset one falls back to
+        // cx.theme().body_size() and friends
     }
 }
 
@@ -135,8 +141,13 @@ pub struct FieldRow<L, V> {
     pub depth: u32,  // FieldRow's own prop
 }
 
-impl<B: Backend, L: View<B>, V: View<B>> View<B> for FieldRow<L, V> {
-    fn build(self, cx: &mut Cx<B>) -> B::Node {
+impl<B, T, L, V> View<B, T> for FieldRow<L, V>
+where
+    B: Backend,
+    L: View<B, T>,
+    V: View<B, T>,
+{
+    fn build(self, cx: &mut Cx<B, T>) -> B::Node {
         cx.scope(|cx| {
             // Its layout needs the label on one line. A caller's own
             // explicit `.wrap(true)` still wins.
@@ -164,7 +175,7 @@ Two forms:
 ```rust
 pub struct Padded<V> { inner: V, padding: UiRect }
 
-pub trait ViewExt<B: Backend>: View<B> + Sized {
+pub trait ViewExt<B: Backend, T>: View<B, T> + Sized {
     fn padding(self, padding: UiRect) -> Padded<Self> {
         Padded { inner: self, padding }
     }
@@ -277,11 +288,11 @@ Named styles such as `GhostButton` become bundles of rules, applied to
 one view or to a whole scope:
 
 ```rust
-fn ghost() -> Rules<Button> {
+fn ghost<T: SurfaceTokens>() -> Rules<Button, T> {
     Rules::new()
         .set(Button::fill(Color::NONE))
         .set(Button::transition(Button::FILL, Motion::Interact))
-        .when(Hovered, Button::fill_with(|tokens| tokens.hover()))
+        .when(Hovered, Button::fill_with(|theme: &T| theme.hover()))
 }
 
 button(content).rules(ghost());
@@ -327,30 +338,107 @@ wins. That is Typst's behaviour too.
 
 ## Theming
 
-With scoped set rules, views barely need to read a theme. They can
-have neutral defaults, and a theme becomes a preamble of set rules:
+A view states what it needs from a theme as a trait bound, and works
+under any theme that satisfies it. Set rules then style on top. Both
+read the same tokens, so they are one mechanism, not two.
+
+### Token traits
+
+Small traits, each covering one concern, read through methods so a
+theme can compute or store its values however it likes:
 
 ```rust
-pub fn monokai(ui: &mut Ui, tokens: &EditorTokens) {
-    ui.set(Label::tone_color(Tone::Body, tokens.text));
-    ui.set(Label::size(tokens.body));
-    ui.set(Button::fill(tokens.fill));
-    ui.set(Button::transition(Button::FILL, Motion::Interact));
-    // ...
+pub trait TextTokens {
+    fn text(&self) -> Color;
+    fn text_dim(&self) -> Color;
+    fn body_size(&self) -> f32;
+    fn small_size(&self) -> f32;
+}
+
+pub trait MotionTokens {
+    fn motion(&self, kind: Motion) -> Curve; // Interact, Expand, ...
 }
 ```
 
-Open decision, recorded rather than assumed:
+From what moxie_ui's elements read today, roughly six cover them all:
 
-- **Views carry no theme bound.** Any app shares them with nothing to
-  implement. Tokens and the theme traits only matter to whoever writes
-  a preamble.
-- **Or views keep the trait bounds from `fynix_theme_traits.md`**, so a
-  view looks right with no preamble at all.
+| Trait | Covers | Read by |
+|---|---|---|
+| `TextTokens` | text colours, text sizes | labels, icons, buttons |
+| `MotionTokens` | named motions, reduced motion | every transition |
+| `SurfaceTokens` | fill, hover, panel, hairline, accent, critical | buttons, frames, panels, tabs |
+| `SpacingTokens` | `xs` to `xl`, radius, row, touch, hairline | layout defaults |
+| `MenuTokens` | menu radius, padding, item radius, layer | dropdowns, menu surfaces |
+| `TimelineTokens` | clip colours, playhead | timeline views |
 
-The first is close to "option B" rejected earlier. Its real downside
-was that every call site needed a style to look right. Scoped set rules
-remove that, since one preamble styles the whole app.
+The exact split is settled while porting, keeping each trait to what
+several views share. An app implements them once for its own theme:
+
+```rust
+impl TextTokens for EditorTheme {
+    fn text(&self) -> Color { self.color.text }
+    fn text_dim(&self) -> Color { self.color.text_dim }
+    fn body_size(&self) -> f32 { self.text.body }
+    fn small_size(&self) -> f32 { self.text.small }
+}
+```
+
+### Where tokens are read
+
+- **View defaults.** A leaf bounded on `TextTokens` falls back to
+  `theme.body_size()` for a size nobody set, so it looks right with no
+  rules at all. A view that needs nothing from the theme takes no
+  bound, and any theme can use it.
+- **Rule bundles and preambles.** `ghost::<T: SurfaceTokens>()` above
+  reads `theme.hover()`. A preamble is a function of the theme that
+  sets rules for a whole app:
+
+```rust
+pub fn compact<T: SpacingTokens>(ui: &mut Ui<T>) {
+    ui.set(Button::height_with(|theme: &T| theme.row()));
+    ui.set(Label::size(11.0));
+}
+```
+
+A view's bound only names what its defaults read. Rules may read any
+token the theme has, since they are written by the app that owns the
+theme.
+
+### Why the theme rides on `Cx`, not on the backend
+
+Today the theme is part of the host type, `BevyHost<EditorTheme>`, and
+`Style` names its host as an associated type. Two things go wrong
+there, and both shape this design:
+
+- `impl<T: SurfaceTokens> Style for GhostButton` cannot compile: `T`
+  appears nowhere Rust can pin it down (E0207). Styles have to be
+  generic over the theme themselves.
+- Keying a style by host (`Style<H>`) fails one step later. Deferred
+  element values like `elem!(!GhostButton)` are only handed `&Theme`,
+  and Rust cannot infer a host from its theme type, since many hosts
+  could share one.
+
+Here the theme is its own parameter, `Cx<B, T>`, and rules are
+`Rules<V, T>`. `T` is always known from the `Cx` a view is built with,
+so nothing has to infer it backwards.
+
+### What stays tied to the app
+
+`FynixBuild`, `BevyUi`, `BevyFynix`, the reactive predicates and the
+editor's own composites name `EditorTheme` directly. They are the
+app's plumbing. Only shared views, their rules and their tokens are
+generic.
+
+Feathers' `UiTheme`, which still colours `NumberField`'s input and the
+dropdown popup, is separate; see "Unify theming onto `EditorTheme`" in
+`backlog.md`.
+
+### Open questions
+
+- Where the token traits live: beside the views, or in a small crate
+  other view libraries can depend on.
+- Whether a token trait may have default methods built from others
+  (`text_dim` from `text`), so a small theme implements less.
 
 ## Transitions
 
@@ -366,13 +454,9 @@ button(content).fill(highlight).transition(Button::FILL, Motion::Expand);
   same way: a state rule, a binding, a set rule, a new call-site
   value. Today only tag changes do; a bound selection highlight
   snaps.
-- **Named motions come from the tokens**, not repeated per field:
-
-```rust
-pub trait MotionTokens {
-    fn motion(&self, kind: Motion) -> Curve; // Interact, Expand, ...
-}
-```
+- **Named motions come from the theme's `MotionTokens`**, not repeated
+  per field: `Motion::Interact` resolves to one curve for the whole
+  app.
 
 - **Only interpolable types can transition.** Colours, opacity and
   sizes can; text, numbers being typed, enums and `Val::Auto` snap.
@@ -501,7 +585,7 @@ What to prove in the prototype first, most likely to fail first:
 1. **Prototype.** A throwaway crate with `View`, `Prop`, `Cx`, set and
    show rules, state rules and one transition, on Bevy. It builds the
    three call sites above and measures strain points 1 to 3.
-2. **Decide** the theming question and whether `AnyView` erasure is
+2. **Decide** the token-trait split and whether `AnyView` erasure is
    acceptable, from what the prototype shows.
 3. **Rewrite fynix** on its own branch in `vendor/fynix`, keeping the
    parts that carry over:
@@ -512,13 +596,12 @@ What to prove in the prototype first, most likely to fail first:
    | Tags and `anim(on(..))` | State rules and transitions |
    | `lenz` field paths | Set-rule targets |
    | `Build` hooks | Custom leaf views |
-   | `Host` | `Backend` |
+   | `Host`, with the theme as its associated type | `Backend`, with the theme on `Cx<B, T>` |
+   | Element defaults reading `EditorTheme` fields | Defaults through token-trait bounds |
    | `#[elem(child)]` | Views passed in |
    | `Style`, `Style::finish` | Rule bundles |
    | Composers returning handles | Composites returning nothing, plus `NodeRef` |
 
 4. **Port moxie_ui leaf by leaf**, then the composites, then the
-   editor's call sites, keeping CI green at each step.
-
-`fynix_theme_traits.md` stays useful for step 2: if views keep theme
-bounds, its trait list and macro changes still apply.
+   editor's call sites, keeping CI green at each step. `EditorTheme`
+   implements the token traits as the first step of the port.
