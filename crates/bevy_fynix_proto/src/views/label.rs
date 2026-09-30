@@ -1,9 +1,11 @@
 use bevy::color::Color;
 use bevy::ecs::entity::Entity;
 use bevy::ecs::world::World;
+use bevy::math::Vec2;
 use bevy::text::{
     FontSize, LineBreak, TextColor, TextFont, TextLayout,
 };
+use bevy::ui::UiTransform;
 use bevy::ui::widget::Text;
 use motiongfx_interp::interpolation::Interpolation;
 
@@ -18,6 +20,9 @@ pub struct Label {
     pub size: Prop<f32>,
     pub tone: Prop<Tone>,
     pub wrap: Prop<bool>,
+    /// The factor the node is scaled by around its centre after
+    /// layout, 1.0 when unset.
+    pub scale: Prop<f32>,
 }
 
 pub fn label(text: impl Into<Prop<String>>) -> Label {
@@ -47,6 +52,11 @@ impl Label {
         self.wrap = wrap.into();
         self
     }
+
+    pub fn scale(mut self, scale: impl Into<Prop<f32>>) -> Self {
+        self.scale = scale.into();
+        self
+    }
 }
 
 impl Styled for Label {
@@ -56,6 +66,7 @@ impl Styled for Label {
             size: Prop::Unset,
             tone: Prop::Unset,
             wrap: Prop::Unset,
+            scale: Prop::Unset,
         }
     }
 
@@ -65,6 +76,7 @@ impl Styled for Label {
             size: self.size.or(below.size),
             tone: self.tone.or(below.tone),
             wrap: self.wrap.or(below.wrap),
+            scale: self.scale.or(below.scale),
         }
     }
 }
@@ -76,6 +88,7 @@ pub struct LabelSnapshot {
     pub size: f32,
     pub color: Color,
     pub wrap: bool,
+    pub scale: f32,
 }
 
 impl Interpolation<BevyMarker> for LabelSnapshot {
@@ -91,6 +104,11 @@ impl Interpolation<BevyMarker> for LabelSnapshot {
                 t,
             ),
             wrap: to.wrap,
+            scale: <f32 as Interpolation<()>>::interp(
+                &from.scale,
+                &to.scale,
+                t,
+            ),
         }
     }
 }
@@ -114,6 +132,7 @@ impl<T: TextTokens> Element<Bevy, T> for Label {
             size: self.size.get(world).unwrap_or(theme.body_size()),
             color: theme.tone(tone),
             wrap: self.wrap.get(world).unwrap_or(true),
+            scale: self.scale.get(world).unwrap_or(1.0),
         }
     }
 
@@ -138,6 +157,7 @@ impl<T: TextTokens> Element<Bevy, T> for Label {
                 linebreak,
                 ..Default::default()
             },
+            UiTransform::from_scale(Vec2::splat(snapshot.scale)),
         ));
     }
 
@@ -146,6 +166,7 @@ impl<T: TextTokens> Element<Bevy, T> for Label {
             || self.size.is_bound()
             || self.tone.is_bound()
             || self.wrap.is_bound()
+            || self.scale.is_bound()
     }
 
     fn changed(&mut self, world: &World) -> bool {
@@ -153,26 +174,151 @@ impl<T: TextTokens> Element<Bevy, T> for Label {
             | self.size.changed(world)
             | self.tone.changed(world)
             | self.wrap.changed(world)
+            | self.scale.changed(world)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use core::time::Duration;
+
+    use bevy::app::App;
+    use bevy::time::{TimePlugin, TimeUpdateStrategy};
+
     use super::*;
+    use crate::tokens::{Curve, Motion, MotionTokens};
+    use crate::transition::ReducedMotion;
+    use crate::{FynixProtoPlugin, Hovered, StateExt, Theme, mount};
+
+    struct Plain;
+
+    impl TextTokens for Plain {
+        fn tone(&self, _: Tone) -> Color {
+            Color::WHITE
+        }
+
+        fn body_size(&self) -> f32 {
+            14.0
+        }
+
+        fn small_size(&self) -> f32 {
+            11.0
+        }
+    }
+
+    impl MotionTokens for Plain {
+        fn motion(&self, _: Motion) -> Curve {
+            Curve {
+                duration: Duration::from_millis(100),
+                ease: |t| t,
+            }
+        }
+    }
+
+    fn app() -> App {
+        let mut app = App::new();
+        app.add_plugins((
+            TimePlugin,
+            FynixProtoPlugin::<Plain>::default(),
+        ))
+        .insert_resource(Theme(Plain))
+        .insert_resource(
+            TimeUpdateStrategy::ManualDuration(
+                Duration::from_millis(50),
+            ),
+        );
+        // The first update only starts the clock.
+        app.update();
+        app
+    }
+
+    fn scale(app: &App, node: Entity) -> Vec2 {
+        app.world().get::<UiTransform>(node).unwrap().scale
+    }
+
+    fn grow(shown: &mut LabelSnapshot, _: &Plain) {
+        shown.scale = 2.0;
+    }
 
     #[test]
-    fn size_and_color_blend_while_text_and_wrap_snap() {
+    fn an_unset_scale_is_the_identity_transform() {
+        let mut app = app();
+        let node = mount::<Plain>(app.world_mut(), label("x"));
+
+        assert_eq!(
+            app.world().get::<UiTransform>(node),
+            Some(&UiTransform::IDENTITY)
+        );
+    }
+
+    #[test]
+    fn a_scale_is_written_to_both_axes_and_nothing_else() {
+        let mut app = app();
+        let node =
+            mount::<Plain>(app.world_mut(), label("x").scale(1.2));
+
+        assert_eq!(
+            app.world().get::<UiTransform>(node),
+            Some(&UiTransform::from_scale(Vec2::splat(1.2)))
+        );
+    }
+
+    #[test]
+    fn a_hover_rule_moves_the_scale_over_the_curve_not_the_size() {
+        let mut app = app();
+        let node = mount::<Plain>(
+            app.world_mut(),
+            label("x")
+                .when::<Hovered>(grow)
+                .transition(Motion::Interact),
+        );
+
+        app.world_mut().entity_mut(node).insert(Hovered);
+        app.update();
+        assert_eq!(
+            scale(&app, node),
+            Vec2::splat(1.5),
+            "50ms of 100ms"
+        );
+        let font = app.world().get::<TextFont>(node).unwrap();
+        assert_eq!(font.font_size, FontSize::Px(14.0));
+
+        app.update();
+        assert_eq!(scale(&app, node), Vec2::splat(2.0));
+    }
+
+    #[test]
+    fn reduced_motion_snaps_the_scale() {
+        let mut app = app();
+        app.insert_resource(ReducedMotion(true));
+        let node = mount::<Plain>(
+            app.world_mut(),
+            label("x")
+                .when::<Hovered>(grow)
+                .transition(Motion::Interact),
+        );
+
+        app.world_mut().entity_mut(node).insert(Hovered);
+        app.update();
+
+        assert_eq!(scale(&app, node), Vec2::splat(2.0));
+    }
+
+    #[test]
+    fn size_color_and_scale_blend_while_text_and_wrap_snap() {
         let from = LabelSnapshot {
             text: "a".into(),
             size: 10.0,
             color: Color::BLACK,
             wrap: true,
+            scale: 1.0,
         };
         let to = LabelSnapshot {
             text: "b".into(),
             size: 20.0,
             color: Color::WHITE,
             wrap: false,
+            scale: 2.0,
         };
 
         let mid =
@@ -182,6 +328,7 @@ mod tests {
 
         assert_eq!(mid.text, "b");
         assert_eq!(mid.size, 15.0);
+        assert_eq!(mid.scale, 1.5);
         assert_eq!(
             mid.color,
             <Color as Interpolation<BevyMarker>>::interp(
