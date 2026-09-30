@@ -8,6 +8,7 @@
 
 pub mod backend;
 pub mod cx;
+pub mod demo;
 pub mod modifier;
 pub mod mounted;
 pub mod prop;
