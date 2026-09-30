@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use crate::backend::{Backend, Bevy};
 use crate::cx::Cx;
 use crate::mounted::Mounted;
+use crate::transition::Tween;
 
 /// Something that can be built under a node, with the theme `T`.
 pub trait View<B: Backend, T> {
@@ -47,14 +48,39 @@ pub trait Leaf<T>: Styled {
 
     /// Whether anything it holds can change after the build.
     fn is_live(&self) -> bool;
+
+    /// This, with the rules in force applied.
+    fn resolve(self, cx: &Cx<'_, Bevy, T>) -> Self
+    where
+        T: 'static,
+    {
+        cx.resolve(self)
+    }
+
+    /// Edits a fresh snapshot of `node` before it is written.
+    fn adjust(
+        &self,
+        _snapshot: &mut Self::Snapshot,
+        _world: &World,
+        _node: Entity,
+        _theme: &T,
+    ) {
+    }
+
+    /// How the written values travel to a new snapshot. `None`
+    /// snaps.
+    fn tween(&self, _theme: &T) -> Option<Tween<Self::Snapshot>> {
+        None
+    }
 }
 
 impl<T: Send + Sync + 'static, L: Leaf<T>> View<Bevy, T> for L {
     fn build(self, cx: &mut Cx<'_, Bevy, T>) -> Entity {
-        let leaf = cx.resolve(self);
+        let leaf = L::resolve(self, cx);
         let node = cx.spawn();
         L::prepare(cx.world, node);
-        let snapshot = leaf.snapshot(cx.world, cx.theme());
+        let mut snapshot = leaf.snapshot(cx.world, cx.theme());
+        leaf.adjust(&mut snapshot, cx.world, node, cx.theme());
         L::write(&snapshot, cx.world, node);
         if leaf.is_live() {
             cx.world

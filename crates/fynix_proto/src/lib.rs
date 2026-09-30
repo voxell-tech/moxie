@@ -11,7 +11,9 @@ pub mod cx;
 pub mod modifier;
 pub mod mounted;
 pub mod prop;
+pub mod state;
 pub mod tokens;
+pub mod transition;
 pub mod view;
 pub mod views;
 
@@ -26,6 +28,8 @@ pub use backend::{Backend, Bevy};
 pub use cx::Cx;
 pub use modifier::ModifierExt;
 pub use prop::{Prop, Signal, derived};
+pub use state::{Hovered, Pressed, StateExt, Stateful};
+pub use transition::{Interpolate, ReducedMotion};
 pub use view::{AnyView, Leaf, Styled, View, ViewExt, ViewSeq};
 
 /// The theme views are built with, as a resource.
@@ -45,6 +49,7 @@ impl<T> Default for FynixProtoPlugin<T> {
 impl<T: Send + Sync + 'static> Plugin for FynixProtoPlugin<T> {
     fn build(&self, app: &mut App) {
         app.init_resource::<mounted::Mounted<T>>()
+            .init_resource::<ReducedMotion>()
             .add_systems(Update, mounted::update::<T>);
     }
 }

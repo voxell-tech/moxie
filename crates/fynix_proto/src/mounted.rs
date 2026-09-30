@@ -6,6 +6,7 @@ use core::marker::PhantomData;
 use bevy::prelude::*;
 
 use crate::Theme;
+use crate::transition::{ReducedMotion, Run};
 use crate::view::Leaf;
 
 /// One mounted leaf, its kind erased.
@@ -18,7 +19,11 @@ trait Live<T>: Send + Sync {
 struct Mount<L: Leaf<T>, T> {
     node: Entity,
     leaf: L,
-    last: L::Snapshot,
+    /// Where the values are heading.
+    target: L::Snapshot,
+    /// What is written on the node.
+    shown: L::Snapshot,
+    run: Option<Run<L::Snapshot>>,
     theme: PhantomData<fn() -> T>,
 }
 
@@ -30,10 +35,41 @@ where
         if world.get_entity(self.node).is_err() {
             return false;
         }
-        let now = self.leaf.snapshot(world, theme);
-        if now != self.last {
-            L::write(&now, world, self.node);
-            self.last = now;
+        let reduced = world
+            .get_resource::<ReducedMotion>()
+            .is_some_and(|reduced| reduced.0);
+        let mut now = self.leaf.snapshot(world, theme);
+        self.leaf.adjust(&mut now, world, self.node, theme);
+
+        if now != self.target {
+            self.target = now;
+            self.run = self
+                .leaf
+                .tween(theme)
+                .filter(|tween| {
+                    !reduced && !tween.curve.duration.is_zero()
+                })
+                .map(|tween| Run::new(self.shown.clone(), tween));
+            if self.run.is_none() {
+                self.shown = self.target.clone();
+                L::write(&self.shown, world, self.node);
+            }
+        }
+
+        if let Some(run) = &mut self.run {
+            let delta = world.resource::<Time>().delta();
+            let next = match run.advance(delta, &self.target, reduced)
+            {
+                Some(next) => next,
+                None => {
+                    self.run = None;
+                    self.target.clone()
+                }
+            };
+            if next != self.shown {
+                L::write(&next, world, self.node);
+                self.shown = next;
+            }
         }
         true
     }
@@ -54,12 +90,14 @@ impl<T: Send + Sync + 'static> Mounted<T> {
         &mut self,
         node: Entity,
         leaf: L,
-        last: L::Snapshot,
+        snapshot: L::Snapshot,
     ) {
         self.0.push(Box::new(Mount {
             node,
             leaf,
-            last,
+            target: snapshot.clone(),
+            shown: snapshot,
+            run: None,
             theme: PhantomData,
         }));
     }

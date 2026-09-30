@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::prop::Prop;
 use crate::tokens::{TextTokens, Tone};
+use crate::transition::Interpolate;
 use crate::view::{Leaf, Styled};
 
 /// A run of text.
@@ -70,6 +71,17 @@ pub struct LabelSnapshot {
     pub wrap: bool,
 }
 
+impl Interpolate for LabelSnapshot {
+    fn lerp(from: &Self, to: &Self, t: f32) -> Self {
+        Self {
+            text: to.text.clone(),
+            size: <f32 as Interpolate>::lerp(&from.size, &to.size, t),
+            color: Color::lerp(&from.color, &to.color, t),
+            wrap: to.wrap,
+        }
+    }
+}
+
 impl<T: TextTokens> Leaf<T> for Label {
     type Snapshot = LabelSnapshot;
 
@@ -121,5 +133,36 @@ impl<T: TextTokens> Leaf<T> for Label {
             || self.size.is_bound()
             || self.tone.is_bound()
             || self.wrap.is_bound()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn size_and_color_blend_while_text_and_wrap_snap() {
+        let from = LabelSnapshot {
+            text: "a".into(),
+            size: 10.0,
+            color: Color::BLACK,
+            wrap: true,
+        };
+        let to = LabelSnapshot {
+            text: "b".into(),
+            size: 20.0,
+            color: Color::WHITE,
+            wrap: false,
+        };
+
+        let mid = LabelSnapshot::lerp(&from, &to, 0.5);
+
+        assert_eq!(mid.text, "b");
+        assert_eq!(mid.size, 15.0);
+        assert_eq!(
+            mid.color,
+            Color::lerp(&from.color, &to.color, 0.5)
+        );
+        assert!(!mid.wrap);
     }
 }
