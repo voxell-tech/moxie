@@ -580,6 +580,64 @@ What to prove in the prototype first, most likely to fail first:
    drag previews still need direct ECS access, as custom leaf views
    with a build hook, roughly how fynix elements work today.
 
+## Prototype findings
+
+`crates/fynix_proto` builds the core, `Label`, `Frame`, `row`,
+`column`, `Icon`, `Button`, generic modifiers, state rules and opt-in
+transitions, with 40 headless tests. What held up:
+
+- Set rules as the view's own builder methods
+  (`cx.set::<Label>(|l, theme| l.size(theme.small_size()))`), merged
+  by a per-view `over` that fills only what the call site left unset.
+  Typst's precedence with no macro.
+- One `Label` built under two unrelated theme types through token
+  bounds.
+- Bound props, and state rules beating the call site.
+- Transitions that start from wherever an interrupted one had got to,
+  and a reduced-motion switch.
+
+What did not, each needing a decision before the real rewrite:
+
+1. **A composite's defaults beat the app's rules.** `Button` sets its
+   fill as a scoped set rule, and an inner rule wins, so an app-wide
+   `set::<Frame>(fill)` cannot restyle buttons. The precedence order
+   needs a "composite default" layer below every set rule.
+2. **Modifier names collide with styling methods.**
+   `row(..).padding(4.0)` hits the row's own frame padding, not the
+   generic padding modifier. Either composites drop their forwarding
+   methods and rely on modifiers, or modifiers get distinct names.
+3. **Two writers on one node.** A leaf rewrites its components when a
+   bound prop changes, and can overwrite what a modifier set. The
+   prototype only writes props that were set, by convention. Modifiers
+   also run once, at build, so they cannot be bound.
+4. **Composites are only as generic as their leaves.** `Button` holds a
+   `Frame`, a Bevy leaf, so `Button` is Bevy-only. The `FieldRow<B>`
+   example above overstates this: backend-generic composites need
+   backend-generic building blocks, or are simply Bevy composites.
+5. **State rules act on resolved values.** They edit the leaf's
+   snapshot (`s.color = theme.tone(Accent)`), because a `Prop` holding
+   a boxed closure cannot be cloned per frame. So a rule cannot say
+   `l.tone(Accent)` and have the leaf resolve it. Acting on props needs
+   cloneable props, which means shared ownership of bound closures.
+6. **Transitions are whole-snapshot.** A leaf cannot animate its colour
+   and snap its size. Per-field transitions need per-field keys and a
+   field-by-field diff.
+7. **A continuously changing target never settles.** A bound value
+   that moves every frame restarts its transition every frame, lags,
+   then snaps. Driven values need a follow mode, or no transition.
+8. **Everything live is polled.** Each frame, every leaf with a bound
+   prop or a state rule re-reads its snapshot and compares it, and a
+   leaf with a state rule stays live forever. Change detection on the
+   sources would replace the poll.
+9. **Rules for stateful leaves name the theme type.** Adding state
+   rules through a set rule means
+   `set::<Stateful<Label, Theme>>(..)`, and rule closures often need
+   their `&Theme` parameter annotated.
+
+Still unmeasured: compile time and type size with nested generic views
+against `AnyView`, the three real call sites, and pointer-driven
+states against a real pointer (the tests toggle them directly).
+
 ## Migration
 
 1. **Prototype.** A throwaway crate with `View`, `Prop`, `Cx`, set and
