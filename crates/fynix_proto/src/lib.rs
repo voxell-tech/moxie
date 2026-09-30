@@ -8,6 +8,7 @@
 
 pub mod backend;
 pub mod cx;
+pub mod modifier;
 pub mod mounted;
 pub mod prop;
 pub mod tokens;
@@ -23,6 +24,7 @@ use bevy::prelude::*;
 
 pub use backend::{Backend, Bevy};
 pub use cx::Cx;
+pub use modifier::ModifierExt;
 pub use prop::{Prop, Signal, derived};
 pub use view::{AnyView, Leaf, Styled, View, ViewExt, ViewSeq};
 
