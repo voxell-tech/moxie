@@ -8,7 +8,9 @@ use bevy::image::Image;
 use bevy::ui::{JustifyContent, percent};
 
 use crate::prop::Signal;
-use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens, Tone};
+use crate::tokens::{
+    MotionTokens, SpacingTokens, SurfaceTokens, TextTokens, Tone,
+};
 use crate::views::{BehaviorExt, button, icon, label, row};
 use crate::{Bevy, View};
 
@@ -23,6 +25,7 @@ where
     T: TextTokens
         + SurfaceTokens
         + SpacingTokens
+        + MotionTokens
         + Send
         + Sync
         + 'static,

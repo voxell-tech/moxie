@@ -7,16 +7,18 @@ use bevy::ecs::event::EntityEvent;
 use bevy::ecs::lifecycle::{Insert, Remove};
 use bevy::ecs::observer::On;
 use bevy::ecs::resource::Resource;
+use bevy::ecs::system::Query;
 use bevy::ecs::system::{Commands, ResMut};
 use bevy::ecs::world::World;
-use bevy::picking::events::{Out, Over, Pointer, Press, Release};
+use bevy::picking::events::{Pointer, Press, Release};
+use bevy::picking::hover::Hovered as PickingHovered;
 use fynix_proto::{Curve, Motion, MotionTokens, Tween};
 use motiongfx_interp::interpolation::{InterpFn, Interpolation};
 
 use crate::transition::BevyMarker;
 use crate::{Bevy, Cx, Element, Styled};
 
-/// The pointer is over the node.
+/// The pointer is over the node or one of its descendants.
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Hovered;
 
@@ -24,14 +26,23 @@ pub struct Hovered;
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Pressed;
 
-fn over(over: On<Pointer<Over>>, mut commands: Commands) {
-    commands.entity(over.event_target()).insert(Hovered);
-}
-
-fn out(out: On<Pointer<Out>>, mut commands: Commands) {
-    commands
-        .entity(out.event_target())
-        .remove::<(Hovered, Pressed)>();
+/// The copy of Bevy's own hover component onto [`Hovered`]. Bevy
+/// counts a hovered descendant as hovering its ancestors, so moving
+/// between a node and its children never lets go of it.
+fn sync_hover(
+    insert: On<Insert, PickingHovered>,
+    picked: Query<&PickingHovered>,
+    mut commands: Commands,
+) {
+    let node = insert.event_target();
+    let Ok(picked) = picked.get(node) else {
+        return;
+    };
+    if picked.get() {
+        commands.entity(node).insert(Hovered);
+    } else {
+        commands.entity(node).remove::<(Hovered, Pressed)>();
+    }
 }
 
 fn press(press: On<Pointer<Press>>, mut commands: Commands) {
@@ -201,8 +212,8 @@ impl<T: Send + Sync + 'static, E: Element<Bevy, T>> Element<Bevy, T>
         E::prepare(world, node);
         world
             .entity_mut(node)
-            .observe(over)
-            .observe(out)
+            .insert(PickingHovered::default())
+            .observe(sync_hover)
             .observe(press)
             .observe(release);
     }

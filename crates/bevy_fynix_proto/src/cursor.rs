@@ -76,6 +76,8 @@ fn cursor_for(
 
 #[cfg(test)]
 mod tests {
+    use core::time::Duration;
+
     use bevy::color::Color;
     use bevy::ecs::hierarchy::Children;
     use bevy::picking::backend::HitData;
@@ -83,7 +85,9 @@ mod tests {
     use bevy::window::Window;
 
     use super::*;
-    use crate::tokens::{SpacingTokens, SurfaceTokens};
+    use crate::tokens::{
+        Curve, Motion, MotionTokens, SpacingTokens, SurfaceTokens,
+    };
     use crate::views::{button, frame};
     use crate::{FynixProtoPlugin, Theme, mount};
 
@@ -114,6 +118,15 @@ mod tests {
 
         fn panel(&self) -> Color {
             Color::BLACK
+        }
+    }
+
+    impl MotionTokens for Plain {
+        fn motion(&self, _: Motion) -> Curve {
+            Curve {
+                duration: Duration::ZERO,
+                ease: |t| t,
+            }
         }
     }
 

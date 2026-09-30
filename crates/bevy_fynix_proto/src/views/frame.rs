@@ -9,8 +9,11 @@ use bevy::ui::{
     JustifyContent, Node, UiRect, Val, px,
 };
 
+use motiongfx_interp::interpolation::Interpolation;
+
 use crate::prop::Prop;
 use crate::tokens::SpacingTokens;
+use crate::transition::BevyMarker;
 use crate::{Bevy, Element, Styled};
 
 /// A bevy_ui [`Node`] with a fill, holding no views of its own.
@@ -140,6 +143,18 @@ pub struct FrameSnapshot {
     pub radius: f32,
 }
 
+/// The fill blends and everything else takes the target.
+impl Interpolation<BevyMarker> for FrameSnapshot {
+    fn interp(from: &Self, to: &Self, t: f32) -> Self {
+        Self {
+            fill: <Color as Interpolation<BevyMarker>>::interp(
+                &from.fill, &to.fill, t,
+            ),
+            ..to.clone()
+        }
+    }
+}
+
 impl<T: SpacingTokens> Element<Bevy, T> for Frame {
     type Snapshot = FrameSnapshot;
 
@@ -264,6 +279,50 @@ mod tests {
 
     fn ui(app: &App, node: Entity) -> &Node {
         app.world().get::<Node>(node).expect("a node")
+    }
+
+    #[test]
+    fn a_snapshot_blends_its_fill_and_takes_the_rest_from_the_target()
+    {
+        let from = FrameSnapshot {
+            direction: Some(FlexDirection::Row),
+            gap: 1.0,
+            padding: None,
+            width: Some(px(10.0)),
+            height: None,
+            grow: None,
+            justify: None,
+            align: None,
+            fill: Color::BLACK,
+            radius: 2.0,
+        };
+        let to = FrameSnapshot {
+            direction: Some(FlexDirection::Column),
+            gap: 5.0,
+            width: Some(px(20.0)),
+            fill: Color::WHITE,
+            radius: 6.0,
+            ..from.clone()
+        };
+
+        let mid =
+            <FrameSnapshot as Interpolation<BevyMarker>>::interp(
+                &from, &to, 0.5,
+            );
+
+        assert_eq!(
+            mid.fill,
+            <Color as Interpolation<BevyMarker>>::interp(
+                &from.fill, &to.fill, 0.5
+            )
+        );
+        assert_eq!(
+            FrameSnapshot {
+                fill: to.fill,
+                ..mid
+            },
+            to
+        );
     }
 
     #[test]

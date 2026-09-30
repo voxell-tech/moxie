@@ -7,7 +7,9 @@ use bevy::ecs::world::World;
 use bevy::ui::{AlignItems, Display, FlexDirection, Node, percent};
 
 use crate::prop::{Prop, component};
-use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens};
+use crate::tokens::{
+    MotionTokens, SpacingTokens, SurfaceTokens, TextTokens,
+};
 use crate::views::{BehaviorExt, button, frame, label, row};
 use crate::{Bevy, Cx, Element, Styled, View};
 
@@ -102,6 +104,7 @@ where
     T: TextTokens
         + SurfaceTokens
         + SpacingTokens
+        + MotionTokens
         + Send
         + Sync
         + 'static,

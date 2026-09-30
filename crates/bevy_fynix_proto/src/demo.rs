@@ -7,6 +7,8 @@ pub mod hierarchy;
 
 #[cfg(test)]
 mod testing {
+    use core::time::Duration;
+
     use bevy::app::App;
     use bevy::color::Color;
     use bevy::ecs::entity::Entity;
@@ -18,7 +20,8 @@ mod testing {
     use bevy::ui::{BackgroundColor, Node};
 
     use crate::tokens::{
-        SpacingTokens, SurfaceTokens, TextTokens, Tone,
+        Curve, Motion, MotionTokens, SpacingTokens, SurfaceTokens,
+        TextTokens, Tone,
     };
     use crate::{FynixProtoPlugin, Theme};
 
@@ -72,6 +75,16 @@ mod testing {
 
         fn radius(&self) -> f32 {
             3.0
+        }
+    }
+
+    /// Transitions finish at once, so a state reads as settled.
+    impl MotionTokens for Demo {
+        fn motion(&self, _: Motion) -> Curve {
+            Curve {
+                duration: Duration::ZERO,
+                ease: |t| t,
+            }
         }
     }
 
