@@ -596,9 +596,14 @@ The prototype is split the way fynix is:
   18 tests run it against a fake backend that is only a list of nodes.
 - `crates/bevy_fynix_proto` is the Bevy backend: the elements,
   composites, states, modifiers, the three call sites and the two
-  measurement examples, with 59 tests. It depends on eleven Bevy
-  sub-crates instead of the whole engine, which halves its dependency
-  tree (1436 lines of `cargo tree` to 694).
+  measurement examples, with 59 tests at the split. It depends on the
+  `bevy` crate with its defaults off and three features
+  (`bevy_picking`, `bevy_ui_widgets`, `bevy_window`), like the rest of
+  the workspace. That is about half the tree of `bevy` with its
+  defaults on (1436 lines of `cargo tree`). An earlier version listed
+  eleven Bevy sub-crates instead; the tree came out the same (701
+  lines against 720 now, the difference being `bevy_window`), so the
+  umbrella crate won on one version to pin and `bevy::` import paths.
 
 It started as one crate building the core, `Label`, `Frame`, `row`,
 `column`, `Icon`, `Button`, generic modifiers, state rules and opt-in
