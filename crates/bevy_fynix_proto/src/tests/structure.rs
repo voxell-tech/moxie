@@ -1,11 +1,11 @@
 //! `keyed` and `each` in a headless app, and the update order they
 //! need.
 
-use bevy_app::App;
-use bevy_color::Color;
-use bevy_ecs::component::Component;
-use bevy_ecs::entity::Entity;
-use bevy_ecs::resource::Resource;
+use bevy::app::App;
+use bevy::color::Color;
+use bevy::ecs::component::Component;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::resource::Resource;
 
 use super::{app, children, text};
 use crate::mounted::Mounts;
@@ -82,7 +82,7 @@ fn mounts(app: &App) -> usize {
     app.world().resource::<Mounts<Plain>>().len()
 }
 
-fn setup_screens() -> (App, bevy_ecs::entity::Entity) {
+fn setup_screens() -> (App, bevy::ecs::entity::Entity) {
     let mut app = app(Plain);
     app.insert_resource(Screen::Home).insert_resource(Count(1));
     let switch = mount::<Plain>(app.world_mut(), screens());

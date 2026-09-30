@@ -2,7 +2,7 @@
 //! A view bounds only the traits its defaults read, so it works under
 //! any theme that can answer for them.
 
-use bevy_color::Color;
+use bevy::color::Color;
 pub use fynix_proto::{Curve, Motion, MotionTokens};
 
 /// A text colour by role, so a view can ask for "dim" without knowing

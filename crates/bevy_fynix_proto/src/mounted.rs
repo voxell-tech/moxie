@@ -3,9 +3,9 @@
 
 use core::ops::{Deref, DerefMut};
 
-use bevy_ecs::resource::Resource;
-use bevy_ecs::world::World;
-use bevy_time::Time;
+use bevy::ecs::resource::Resource;
+use bevy::ecs::world::World;
+use bevy::time::Time;
 
 use crate::backend::Unmounted;
 use crate::state::DirtyNodes;

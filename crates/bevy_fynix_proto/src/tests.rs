@@ -2,18 +2,18 @@
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use bevy_app::App;
-use bevy_color::Color;
-use bevy_ecs::entity::Entity;
-use bevy_ecs::hierarchy::Children;
-use bevy_ecs::name::Name;
-use bevy_ecs::relationship::RelationshipTarget;
-use bevy_ecs::resource::Resource;
-use bevy_text::{
+use bevy::app::App;
+use bevy::color::Color;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::hierarchy::Children;
+use bevy::ecs::name::Name;
+use bevy::ecs::relationship::RelationshipTarget;
+use bevy::ecs::resource::Resource;
+use bevy::text::{
     FontSize, LineBreak, TextColor, TextFont, TextLayout,
 };
-use bevy_time::TimePlugin;
-use bevy_ui::widget::Text;
+use bevy::time::TimePlugin;
+use bevy::ui::widget::Text;
 
 mod structure;
 

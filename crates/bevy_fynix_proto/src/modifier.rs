@@ -5,8 +5,8 @@
 //! An edit is made once at build. A live prop of the inner frame on
 //! the same field rewrites it when that prop changes.
 
-use bevy_ecs::entity::Entity;
-use bevy_ui::{Node, UiRect, Val};
+use bevy::ecs::entity::Entity;
+use bevy::ui::{Node, UiRect, Val};
 
 use crate::{Bevy, Cx, View};
 
@@ -102,11 +102,11 @@ impl<V> ModifierExt for V {}
 
 #[cfg(test)]
 mod tests {
-    use bevy_app::App;
-    use bevy_color::Color;
-    use bevy_ecs::hierarchy::Children;
-    use bevy_time::TimePlugin;
-    use bevy_ui::{percent, px};
+    use bevy::app::App;
+    use bevy::color::Color;
+    use bevy::ecs::hierarchy::Children;
+    use bevy::time::TimePlugin;
+    use bevy::ui::{percent, px};
 
     use super::*;
     use crate::tokens::{SpacingTokens, TextTokens, Tone};

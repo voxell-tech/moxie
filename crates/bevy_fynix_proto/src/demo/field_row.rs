@@ -2,11 +2,11 @@
 
 #[cfg(test)]
 mod tests {
-    use bevy_app::App;
-    use bevy_ecs::entity::Entity;
-    use bevy_ecs::resource::Resource;
-    use bevy_text::{LineBreak, TextLayout};
-    use bevy_ui::Val;
+    use bevy::app::App;
+    use bevy::ecs::entity::Entity;
+    use bevy::ecs::resource::Resource;
+    use bevy::text::{LineBreak, TextLayout};
+    use bevy::ui::Val;
 
     use crate::demo::testing::{
         ACCENT, DIM, Demo, app, color, kids, text, ui,

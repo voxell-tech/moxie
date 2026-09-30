@@ -1,12 +1,12 @@
 //! The Bevy backend of the core.
 
-use bevy_ecs::entity::Entity;
-use bevy_ecs::lifecycle::Despawn;
-use bevy_ecs::observer::On;
-use bevy_ecs::resource::Resource;
-use bevy_ecs::system::ResMut;
-use bevy_ecs::world::World;
-use bevy_ui::Node;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::lifecycle::Despawn;
+use bevy::ecs::observer::On;
+use bevy::ecs::resource::Resource;
+use bevy::ecs::system::ResMut;
+use bevy::ecs::world::World;
+use bevy::ui::Node;
 
 /// Bevy's ECS, with `bevy_ui` doing layout, text and picking.
 pub struct Bevy;

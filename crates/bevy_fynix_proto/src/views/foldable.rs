@@ -1,10 +1,10 @@
 //! A header with a body that can be folded away.
 
-use bevy_color::Color;
-use bevy_ecs::component::Component;
-use bevy_ecs::entity::Entity;
-use bevy_ecs::world::World;
-use bevy_ui::{AlignItems, Display, FlexDirection, Node, percent};
+use bevy::color::Color;
+use bevy::ecs::component::Component;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::world::World;
+use bevy::ui::{AlignItems, Display, FlexDirection, Node, percent};
 
 use crate::prop::{Prop, component};
 use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens};

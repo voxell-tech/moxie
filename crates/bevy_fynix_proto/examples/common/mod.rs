@@ -5,13 +5,16 @@
 
 use core::time::Duration;
 
-pub use bevy_app::App;
-pub use bevy_asset::Handle;
-pub use bevy_color::Color;
-pub use bevy_ecs::entity::Entity;
-pub use bevy_ecs::hierarchy::Children;
-pub use bevy_ecs::relationship::RelationshipTarget;
-pub use bevy_ecs::world::World;
+pub use bevy::app::App;
+pub use bevy::asset::Handle;
+pub use bevy::color::Color;
+pub use bevy::ecs::entity::Entity;
+pub use bevy::ecs::hierarchy::Children;
+pub use bevy::ecs::relationship::RelationshipTarget;
+pub use bevy::ecs::world::World;
+pub use bevy::image::Image;
+pub use bevy::time::TimePlugin;
+pub use bevy::ui::{Node, UiRect, px};
 #[allow(unused_imports)]
 pub use bevy_fynix_proto::ViewExt;
 pub use bevy_fynix_proto::modifier::ModifierExt;
@@ -26,9 +29,6 @@ pub use bevy_fynix_proto::{
     Bevy, FynixProtoPlugin, Hovered, StateExt, Stateful, Theme, View,
     mount,
 };
-pub use bevy_image::Image;
-pub use bevy_time::TimePlugin;
-pub use bevy_ui::{Node, UiRect, px};
 
 /// The theme the screens are built under.
 pub struct Editor;

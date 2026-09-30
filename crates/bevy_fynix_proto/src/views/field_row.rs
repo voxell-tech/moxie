@@ -1,8 +1,8 @@
 //! A label column and a value column.
 
-use bevy_ecs::component::Component;
-use bevy_ecs::entity::Entity;
-use bevy_ui::{AlignItems, UiRect, percent, px};
+use bevy::ecs::component::Component;
+use bevy::ecs::entity::Entity;
+use bevy::ui::{AlignItems, UiRect, percent, px};
 
 use crate::modifier::ModifierExt;
 use crate::state::{StateExt, Stateful};

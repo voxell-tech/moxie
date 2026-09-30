@@ -1,10 +1,10 @@
-use bevy_color::Color;
-use bevy_ecs::entity::Entity;
-use bevy_ecs::world::World;
-use bevy_text::{
+use bevy::color::Color;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::world::World;
+use bevy::text::{
     FontSize, LineBreak, TextColor, TextFont, TextLayout,
 };
-use bevy_ui::widget::Text;
+use bevy::ui::widget::Text;
 use motiongfx_interp::interpolation::Interpolation;
 
 use crate::prop::Prop;

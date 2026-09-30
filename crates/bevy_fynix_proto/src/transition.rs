@@ -1,7 +1,7 @@
 //! Blending for Bevy's types, on the core's `Interpolation`.
 
-use bevy_color::{Color, Mix, Oklaba};
-use bevy_ecs::resource::Resource;
+use bevy::color::{Color, Mix, Oklaba};
+use bevy::ecs::resource::Resource;
 use motiongfx_interp::interpolation::Interpolation;
 
 /// Marks the interpolations this crate adds for Bevy's types, which

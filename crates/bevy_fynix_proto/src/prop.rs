@@ -1,10 +1,10 @@
 //! The core's props, bound to Bevy's world.
 
-use bevy_ecs::change_detection::Tick;
-use bevy_ecs::component::Component;
-use bevy_ecs::entity::Entity;
-use bevy_ecs::resource::Resource;
-use bevy_ecs::world::World;
+use bevy::ecs::change_detection::Tick;
+use bevy::ecs::component::Component;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::resource::Resource;
+use bevy::ecs::world::World;
 
 /// A prop of a view built into [`Bevy`](crate::Bevy).
 pub type Prop<T> = fynix_proto::Prop<World, T>;

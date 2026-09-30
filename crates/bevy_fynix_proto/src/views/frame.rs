@@ -1,10 +1,10 @@
 //! A box of bevy_ui layout, and the macro composites use to forward
 //! its builder methods.
 
-use bevy_color::Color;
-use bevy_ecs::entity::Entity;
-use bevy_ecs::world::World;
-use bevy_ui::{
+use bevy::color::Color;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::world::World;
+use bevy::ui::{
     AlignItems, BackgroundColor, BorderRadius, FlexDirection,
     JustifyContent, Node, UiRect, Val, px,
 };
@@ -226,12 +226,12 @@ impl<T: SpacingTokens> Element<Bevy, T> for Frame {
 
 #[cfg(test)]
 mod tests {
-    use bevy_app::App;
-    use bevy_ecs::hierarchy::Children;
-    use bevy_ecs::relationship::RelationshipTarget;
-    use bevy_ecs::resource::Resource;
-    use bevy_time::TimePlugin;
-    use bevy_ui::percent;
+    use bevy::app::App;
+    use bevy::ecs::hierarchy::Children;
+    use bevy::ecs::relationship::RelationshipTarget;
+    use bevy::ecs::resource::Resource;
+    use bevy::time::TimePlugin;
+    use bevy::ui::percent;
 
     use super::*;
     use crate::{FynixProtoPlugin, Theme, mount};

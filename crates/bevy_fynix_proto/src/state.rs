@@ -1,15 +1,15 @@
 //! Interaction states as components on a node, and the rules and
 //! transitions an element attaches to them.
 
-use bevy_ecs::component::Component;
-use bevy_ecs::entity::Entity;
-use bevy_ecs::event::EntityEvent;
-use bevy_ecs::lifecycle::{Insert, Remove};
-use bevy_ecs::observer::On;
-use bevy_ecs::resource::Resource;
-use bevy_ecs::system::{Commands, ResMut};
-use bevy_ecs::world::World;
-use bevy_picking::events::{Out, Over, Pointer, Press, Release};
+use bevy::ecs::component::Component;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::event::EntityEvent;
+use bevy::ecs::lifecycle::{Insert, Remove};
+use bevy::ecs::observer::On;
+use bevy::ecs::resource::Resource;
+use bevy::ecs::system::{Commands, ResMut};
+use bevy::ecs::world::World;
+use bevy::picking::events::{Out, Over, Pointer, Press, Release};
 use fynix_proto::{Curve, Motion, MotionTokens, Tween};
 use motiongfx_interp::interpolation::{InterpFn, Interpolation};
 
@@ -279,13 +279,13 @@ impl<T: Send + Sync + 'static, E: Element<Bevy, T>> Element<Bevy, T>
 mod tests {
     use core::time::Duration;
 
-    use bevy_app::App;
-    use bevy_color::Color;
-    use bevy_ecs::hierarchy::Children;
-    use bevy_ecs::relationship::RelationshipTarget;
-    use bevy_ecs::resource::Resource;
-    use bevy_text::{FontSize, TextColor, TextFont};
-    use bevy_time::{TimePlugin, TimeUpdateStrategy};
+    use bevy::app::App;
+    use bevy::color::Color;
+    use bevy::ecs::hierarchy::Children;
+    use bevy::ecs::relationship::RelationshipTarget;
+    use bevy::ecs::resource::Resource;
+    use bevy::text::{FontSize, TextColor, TextFont};
+    use bevy::time::{TimePlugin, TimeUpdateStrategy};
 
     use super::*;
     use crate::mounted::Mounts;

@@ -20,10 +20,10 @@ mod tests;
 
 use core::marker::PhantomData;
 
-use bevy_app::{App, Plugin, Update};
-use bevy_ecs::entity::Entity;
-use bevy_ecs::resource::Resource;
-use bevy_ecs::world::World;
+use bevy::app::{App, Plugin, Update};
+use bevy::ecs::entity::Entity;
+use bevy::ecs::resource::Resource;
+use bevy::ecs::world::World;
 pub use fynix_proto::{
     AnyView, Cx, Element, Styled, View, ViewExt, ViewSeq,
 };

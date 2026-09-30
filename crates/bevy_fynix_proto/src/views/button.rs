@@ -6,12 +6,12 @@
 //! is built, so they beat an outer `set::<Frame>` but not the call
 //! site, and never reach the content.
 
-use bevy_color::Color;
-use bevy_ecs::entity::Entity;
-use bevy_ui::{
+use bevy::color::Color;
+use bevy::ecs::entity::Entity;
+use bevy::ui::{
     AlignItems, FlexDirection, JustifyContent, UiRect, Val,
 };
-use bevy_ui_widgets::Button as ButtonBehavior;
+use bevy::ui_widgets::Button as ButtonBehavior;
 
 use crate::prop::Prop;
 use crate::tokens::{SpacingTokens, SurfaceTokens};
@@ -66,12 +66,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bevy_app::App;
-    use bevy_ecs::hierarchy::Children;
-    use bevy_text::{FontSize, TextFont};
-    use bevy_time::TimePlugin;
-    use bevy_ui::widget::Text;
-    use bevy_ui::{BackgroundColor, BorderRadius, Node, px};
+    use bevy::app::App;
+    use bevy::ecs::hierarchy::Children;
+    use bevy::text::{FontSize, TextFont};
+    use bevy::time::TimePlugin;
+    use bevy::ui::widget::Text;
+    use bevy::ui::{BackgroundColor, BorderRadius, Node, px};
 
     use super::*;
     use crate::tokens::{TextTokens, Tone};

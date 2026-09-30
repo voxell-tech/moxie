@@ -7,15 +7,15 @@ pub mod hierarchy;
 
 #[cfg(test)]
 mod testing {
-    use bevy_app::App;
-    use bevy_color::Color;
-    use bevy_ecs::entity::Entity;
-    use bevy_ecs::hierarchy::Children;
-    use bevy_ecs::relationship::RelationshipTarget;
-    use bevy_text::TextColor;
-    use bevy_time::TimePlugin;
-    use bevy_ui::widget::Text;
-    use bevy_ui::{BackgroundColor, Node};
+    use bevy::app::App;
+    use bevy::color::Color;
+    use bevy::ecs::entity::Entity;
+    use bevy::ecs::hierarchy::Children;
+    use bevy::ecs::relationship::RelationshipTarget;
+    use bevy::text::TextColor;
+    use bevy::time::TimePlugin;
+    use bevy::ui::widget::Text;
+    use bevy::ui::{BackgroundColor, Node};
 
     use crate::tokens::{
         SpacingTokens, SurfaceTokens, TextTokens, Tone,

@@ -1,10 +1,10 @@
-use bevy_asset::Handle;
-use bevy_color::Color;
-use bevy_ecs::entity::Entity;
-use bevy_ecs::world::World;
-use bevy_image::Image;
-use bevy_ui::widget::ImageNode;
-use bevy_ui::{Node, px};
+use bevy::asset::Handle;
+use bevy::color::Color;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::world::World;
+use bevy::image::Image;
+use bevy::ui::widget::ImageNode;
+use bevy::ui::{Node, px};
 
 use crate::prop::Prop;
 use crate::tokens::{TextTokens, Tone};
@@ -117,11 +117,11 @@ impl<T: TextTokens> Element<Bevy, T> for Icon {
 
 #[cfg(test)]
 mod tests {
-    use bevy_app::App;
-    use bevy_ecs::hierarchy::Children;
-    use bevy_ecs::relationship::RelationshipTarget;
-    use bevy_time::TimePlugin;
-    use bevy_ui::Val;
+    use bevy::app::App;
+    use bevy::ecs::hierarchy::Children;
+    use bevy::ecs::relationship::RelationshipTarget;
+    use bevy::time::TimePlugin;
+    use bevy::ui::Val;
 
     use super::*;
     use crate::{AnyView, FynixProtoPlugin, Theme, mount};

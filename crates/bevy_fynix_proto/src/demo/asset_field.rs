@@ -1,11 +1,11 @@
 //! The inspector's asset field button: an icon and the name of what
 //! is held, in a full-width button.
 
-use bevy_asset::Handle;
-use bevy_color::Color;
-use bevy_ecs::world::World;
-use bevy_image::Image;
-use bevy_ui::{JustifyContent, percent};
+use bevy::asset::Handle;
+use bevy::color::Color;
+use bevy::ecs::world::World;
+use bevy::image::Image;
+use bevy::ui::{JustifyContent, percent};
 
 use crate::prop::Signal;
 use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens, Tone};
@@ -40,13 +40,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bevy_app::App;
-    use bevy_ecs::entity::Entity;
-    use bevy_ecs::resource::Resource;
-    use bevy_text::{LineBreak, TextLayout};
-    use bevy_ui::Val;
-    use bevy_ui::widget::ImageNode;
-    use bevy_ui_widgets::{Activate, Button as ButtonBehavior};
+    use bevy::app::App;
+    use bevy::ecs::entity::Entity;
+    use bevy::ecs::resource::Resource;
+    use bevy::text::{LineBreak, TextLayout};
+    use bevy::ui::Val;
+    use bevy::ui::widget::ImageNode;
+    use bevy::ui_widgets::{Activate, Button as ButtonBehavior};
 
     use super::*;
     use crate::demo::testing::{
