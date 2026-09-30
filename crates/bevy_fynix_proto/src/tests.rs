@@ -1,8 +1,18 @@
 //! A headless app per test, and two unrelated themes to build under.
 
-use bevy::prelude::*;
+use bevy_app::App;
+use bevy_color::Color;
+use bevy_ecs::entity::Entity;
+use bevy_ecs::hierarchy::Children;
+use bevy_ecs::relationship::RelationshipTarget;
+use bevy_ecs::resource::Resource;
+use bevy_text::{
+    FontSize, LineBreak, TextColor, TextFont, TextLayout,
+};
+use bevy_time::TimePlugin;
+use bevy_ui::widget::Text;
 
-use crate::mounted::Mounted;
+use crate::mounted::Mounts;
 use crate::tokens::{TextTokens, Tone};
 use crate::views::label;
 use crate::{AnyView, Bevy, FynixProtoPlugin, Theme, derived, mount};
@@ -49,11 +59,8 @@ impl TextTokens for Cold {
 
 fn app<T: Send + Sync + 'static>(theme: T) -> App {
     let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins,
-        FynixProtoPlugin::<T>::default(),
-    ))
-    .insert_resource(Theme(theme));
+    app.add_plugins((TimePlugin, FynixProtoPlugin::<T>::default()))
+        .insert_resource(Theme(theme));
     app
 }
 
@@ -227,7 +234,7 @@ fn a_bound_prop_follows_the_world() {
     assert_eq!(text(&app, bound), "2");
     assert_eq!(text(&app, fixed), "fixed");
     assert_eq!(
-        app.world().resource::<Mounted<Warm>>().len(),
+        app.world().resource::<Mounts<Warm>>().len(),
         1,
         "only what can change stays mounted"
     );
@@ -246,5 +253,5 @@ fn a_despawned_view_is_dropped() {
     app.world_mut().despawn(node);
     app.update();
 
-    assert!(app.world().resource::<Mounted<Warm>>().is_empty());
+    assert!(app.world().resource::<Mounts<Warm>>().is_empty());
 }

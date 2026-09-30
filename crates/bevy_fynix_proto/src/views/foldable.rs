@@ -1,13 +1,15 @@
 //! A header with a body that can be folded away.
 
-use bevy::prelude::*;
+use bevy_color::Color;
+use bevy_ecs::component::Component;
+use bevy_ecs::entity::Entity;
+use bevy_ecs::world::World;
+use bevy_ui::{AlignItems, Display, FlexDirection, Node, percent};
 
-use crate::backend::Bevy;
-use crate::cx::Cx;
 use crate::prop::{Prop, derived};
 use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens};
-use crate::view::{Leaf, Styled, View};
 use crate::views::{BehaviorExt, button, frame, label, row};
+use crate::{Bevy, Cx, Leaf, Styled, View};
 
 /// On a [`Foldable`]'s root node while its body is shown.
 #[derive(Component, Clone, Copy, Debug, Default)]
@@ -71,7 +73,7 @@ impl Styled for Reveal {
     }
 }
 
-impl<T> Leaf<T> for Reveal {
+impl<T> Leaf<Bevy, T> for Reveal {
     type Snapshot = bool;
 
     fn prepare(world: &mut World, node: Entity) {

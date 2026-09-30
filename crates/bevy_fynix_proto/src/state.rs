@@ -1,12 +1,18 @@
 //! Interaction states as components on a node, and the rules and
 //! transitions a leaf attaches to them.
 
-use bevy::prelude::*;
+use bevy_ecs::component::Component;
+use bevy_ecs::entity::Entity;
+use bevy_ecs::event::EntityEvent;
+use bevy_ecs::observer::On;
+use bevy_ecs::system::Commands;
+use bevy_ecs::world::World;
+use bevy_picking::events::{Out, Over, Pointer, Press, Release};
+use fynix_proto::{Curve, Motion, MotionTokens, Tween};
+use motiongfx_interp::interpolation::{InterpFn, Interpolation};
 
-use crate::cx::Cx;
-use crate::tokens::{Curve, Motion, MotionTokens};
-use crate::transition::{Interpolate, Tween};
-use crate::view::{Leaf, Styled};
+use crate::transition::BevyMarker;
+use crate::{Bevy, Cx, Leaf, Styled};
 
 /// The pointer is over the node.
 #[derive(Component, Clone, Copy, Debug, Default)]
@@ -47,7 +53,7 @@ struct StateRule<S, T> {
 struct Move<S, T> {
     motion: Motion,
     curve: fn(&T, Motion) -> Curve,
-    lerp: fn(&S, &S, f32) -> S,
+    interp: InterpFn<S>,
 }
 
 impl<S, T> Clone for Move<S, T> {
@@ -63,13 +69,13 @@ impl<S, T> Copy for Move<S, T> {}
 /// It is a [`Leaf`] itself, so it mounts like any other, and it is
 /// [`Styled`], so set rules for `Stateful<L, T>` can add rules to
 /// every such leaf in a scope.
-pub struct Stateful<L: Leaf<T>, T> {
+pub struct Stateful<L: Leaf<Bevy, T>, T> {
     leaf: L,
     rules: Vec<StateRule<L::Snapshot, T>>,
     motion: Option<Move<L::Snapshot, T>>,
 }
 
-impl<L: Leaf<T>, T: Send + Sync + 'static> Stateful<L, T> {
+impl<L: Leaf<Bevy, T>, T: Send + Sync + 'static> Stateful<L, T> {
     fn new(leaf: L) -> Self {
         Self {
             leaf,
@@ -97,19 +103,20 @@ impl<L: Leaf<T>, T: Send + Sync + 'static> Stateful<L, T> {
     pub fn transition(mut self, motion: Motion) -> Self
     where
         T: MotionTokens,
-        L::Snapshot: Interpolate,
+        L::Snapshot: Interpolation<BevyMarker>,
     {
         self.motion = Some(Move {
             motion,
             curve: T::motion,
-            lerp: <L::Snapshot as Interpolate>::lerp,
+            interp:
+                <L::Snapshot as Interpolation<BevyMarker>>::interp,
         });
         self
     }
 }
 
 /// What any leaf can be given state rules and a transition with.
-pub trait StateExt<T: Send + Sync + 'static>: Leaf<T> {
+pub trait StateExt<T: Send + Sync + 'static>: Leaf<Bevy, T> {
     /// This leaf with a rule for the state `S`.
     fn when<S: Component>(
         self,
@@ -122,15 +129,17 @@ pub trait StateExt<T: Send + Sync + 'static>: Leaf<T> {
     fn transition(self, motion: Motion) -> Stateful<Self, T>
     where
         T: MotionTokens,
-        Self::Snapshot: Interpolate,
+        Self::Snapshot: Interpolation<BevyMarker>,
     {
         Stateful::new(self).transition(motion)
     }
 }
 
-impl<T: Send + Sync + 'static, L: Leaf<T>> StateExt<T> for L {}
+impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> StateExt<T> for L {}
 
-impl<T: Send + Sync + 'static, L: Leaf<T>> Styled for Stateful<L, T> {
+impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> Styled
+    for Stateful<L, T>
+{
     fn unset() -> Self {
         Self::new(L::unset())
     }
@@ -146,7 +155,7 @@ impl<T: Send + Sync + 'static, L: Leaf<T>> Styled for Stateful<L, T> {
     }
 }
 
-impl<T: Send + Sync + 'static, L: Leaf<T>> Leaf<T>
+impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> Leaf<Bevy, T>
     for Stateful<L, T>
 {
     type Snapshot = L::Snapshot;
@@ -177,7 +186,7 @@ impl<T: Send + Sync + 'static, L: Leaf<T>> Leaf<T>
         self.leaf.is_live() || !self.rules.is_empty()
     }
 
-    fn resolve(self, cx: &Cx<'_, crate::Bevy, T>) -> Self {
+    fn resolve(self, cx: &Cx<'_, Bevy, T>) -> Self {
         let Self {
             leaf,
             rules,
@@ -211,7 +220,7 @@ impl<T: Send + Sync + 'static, L: Leaf<T>> Leaf<T>
         match self.motion {
             Some(motion) => Some(Tween {
                 curve: (motion.curve)(theme, motion.motion),
-                lerp: motion.lerp,
+                interp: motion.interp,
             }),
             None => self.leaf.tween(theme),
         }
@@ -222,16 +231,20 @@ impl<T: Send + Sync + 'static, L: Leaf<T>> Leaf<T>
 mod tests {
     use core::time::Duration;
 
-    use bevy::time::TimeUpdateStrategy;
+    use bevy_app::App;
+    use bevy_color::Color;
+    use bevy_ecs::hierarchy::Children;
+    use bevy_ecs::relationship::RelationshipTarget;
+    use bevy_ecs::resource::Resource;
+    use bevy_text::{FontSize, TextColor, TextFont};
+    use bevy_time::{TimePlugin, TimeUpdateStrategy};
 
     use super::*;
-    use crate::mounted::Mounted;
+    use crate::mounted::Mounts;
     use crate::tokens::{TextTokens, Tone};
     use crate::transition::ReducedMotion;
     use crate::views::{Label, LabelSnapshot, label};
-    use crate::{
-        AnyView, Bevy, FynixProtoPlugin, Theme, derived, mount,
-    };
+    use crate::{AnyView, FynixProtoPlugin, Theme, derived, mount};
 
     struct Test;
 
@@ -267,7 +280,11 @@ mod tests {
 
     /// Halfway from black to white.
     fn halfway() -> Color {
-        Color::lerp(&BLACK, &Color::WHITE, 0.5)
+        blend(&BLACK, &Color::WHITE, 0.5)
+    }
+
+    fn blend(from: &Color, to: &Color, t: f32) -> Color {
+        <Color as Interpolation<BevyMarker>>::interp(from, to, t)
     }
 
     #[derive(Component)]
@@ -276,7 +293,7 @@ mod tests {
     fn app() -> App {
         let mut app = App::new();
         app.add_plugins((
-            MinimalPlugins,
+            TimePlugin,
             FynixProtoPlugin::<Test>::default(),
         ))
         .insert_resource(Theme(Test))
@@ -390,7 +407,7 @@ mod tests {
         );
         mount::<Test>(app.world_mut(), label("y"));
 
-        assert_eq!(app.world().resource::<Mounted<Test>>().len(), 1);
+        assert_eq!(app.world().resource::<Mounts<Test>>().len(), 1);
     }
 
     #[test]
@@ -518,7 +535,7 @@ mod tests {
         app.update();
         assert_eq!(
             color(&app, node),
-            Color::lerp(&halfway(), &BLACK, 0.5),
+            blend(&halfway(), &BLACK, 0.5),
             "halfway back to black from where it was, not from white"
         );
 
@@ -595,11 +612,11 @@ mod tests {
                 .when::<Hovered>(accent)
                 .transition(Motion::Interact),
         );
-        assert_eq!(app.world().resource::<Mounted<Test>>().len(), 1);
+        assert_eq!(app.world().resource::<Mounts<Test>>().len(), 1);
 
         app.world_mut().despawn(node);
         app.update();
 
-        assert!(app.world().resource::<Mounted<Test>>().is_empty());
+        assert!(app.world().resource::<Mounts<Test>>().is_empty());
     }
 }

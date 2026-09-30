@@ -5,11 +5,10 @@
 //! An edit is made once at build. A live prop of the inner frame on
 //! the same field rewrites it when that prop changes.
 
-use bevy::prelude::*;
+use bevy_ecs::entity::Entity;
+use bevy_ui::{Node, UiRect, Val};
 
-use crate::backend::Bevy;
-use crate::cx::Cx;
-use crate::view::View;
+use crate::{Bevy, Cx, View};
 
 /// A view with its root node's padding set.
 pub struct Padded<V> {
@@ -103,6 +102,12 @@ impl<V> ModifierExt for V {}
 
 #[cfg(test)]
 mod tests {
+    use bevy_app::App;
+    use bevy_color::Color;
+    use bevy_ecs::hierarchy::Children;
+    use bevy_time::TimePlugin;
+    use bevy_ui::{percent, px};
+
     use super::*;
     use crate::tokens::{SpacingTokens, TextTokens, Tone};
     use crate::views::{label, row};
@@ -141,7 +146,7 @@ mod tests {
     fn app() -> App {
         let mut app = App::new();
         app.add_plugins((
-            MinimalPlugins,
+            TimePlugin,
             FynixProtoPlugin::<Plain>::default(),
         ))
         .insert_resource(Theme(Plain));

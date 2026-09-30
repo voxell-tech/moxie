@@ -6,15 +6,17 @@
 //! is built, so they beat an outer `set::<Frame>` but not the call
 //! site, and never reach the content.
 
-use bevy::prelude::*;
-use bevy::ui_widgets::Button as ButtonBehavior;
+use bevy_color::Color;
+use bevy_ecs::entity::Entity;
+use bevy_ui::{
+    AlignItems, FlexDirection, JustifyContent, UiRect, Val,
+};
+use bevy_ui_widgets::Button as ButtonBehavior;
 
-use crate::backend::Bevy;
-use crate::cx::Cx;
 use crate::prop::Prop;
 use crate::tokens::{SpacingTokens, SurfaceTokens};
-use crate::view::{Styled, View};
 use crate::views::frame::{Frame, forward_all_frame_props};
+use crate::{Bevy, Cx, Styled, View};
 
 pub struct Button<C> {
     pub frame: Frame,
@@ -64,6 +66,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use bevy_app::App;
+    use bevy_ecs::hierarchy::Children;
+    use bevy_text::{FontSize, TextFont};
+    use bevy_time::TimePlugin;
+    use bevy_ui::widget::Text;
+    use bevy_ui::{BackgroundColor, BorderRadius, Node, px};
+
     use super::*;
     use crate::tokens::{TextTokens, Tone};
     use crate::views::{Label, label};
@@ -116,7 +125,7 @@ mod tests {
     fn app() -> App {
         let mut app = App::new();
         app.add_plugins((
-            MinimalPlugins,
+            TimePlugin,
             FynixProtoPlugin::<Plain>::default(),
         ))
         .insert_resource(Theme(Plain));
@@ -162,7 +171,7 @@ mod tests {
         let mut app = app();
         let root = mount::<Plain>(
             app.world_mut(),
-            AnyView::<crate::Bevy, Plain>::new(|cx| {
+            AnyView::<Bevy, Plain>::new(|cx| {
                 let root = cx.spawn();
                 cx.under(root, |cx| {
                     cx.set::<Frame>(|f, _| f.width(px(10.0)));

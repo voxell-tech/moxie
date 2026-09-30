@@ -1,13 +1,16 @@
 //! The inspector's asset field button: an icon and the name of what
 //! is held, in a full-width button.
 
-use bevy::prelude::*;
+use bevy_asset::Handle;
+use bevy_color::Color;
+use bevy_ecs::world::World;
+use bevy_image::Image;
+use bevy_ui::{JustifyContent, percent};
 
-use crate::backend::Bevy;
 use crate::prop::derived;
 use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens, Tone};
-use crate::view::View;
 use crate::views::{BehaviorExt, button, icon, label, row};
+use crate::{Bevy, View};
 
 /// A dimmed button showing `image` and the text `read` returns,
 /// running `open` when activated.
@@ -37,7 +40,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bevy::ui_widgets::{Activate, Button as ButtonBehavior};
+    use bevy_app::App;
+    use bevy_ecs::entity::Entity;
+    use bevy_ecs::resource::Resource;
+    use bevy_text::{LineBreak, TextLayout};
+    use bevy_ui::Val;
+    use bevy_ui::widget::ImageNode;
+    use bevy_ui_widgets::{Activate, Button as ButtonBehavior};
 
     use super::*;
     use crate::demo::testing::{

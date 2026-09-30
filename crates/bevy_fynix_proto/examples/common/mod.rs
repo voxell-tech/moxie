@@ -5,7 +5,13 @@
 
 use core::time::Duration;
 
-pub use bevy::prelude::*;
+pub use bevy_app::App;
+pub use bevy_asset::Handle;
+pub use bevy_color::Color;
+pub use bevy_ecs::entity::Entity;
+pub use bevy_ecs::hierarchy::Children;
+pub use bevy_ecs::relationship::RelationshipTarget;
+pub use bevy_ecs::world::World;
 #[allow(unused_imports)]
 pub use bevy_fynix_proto::ViewExt;
 pub use bevy_fynix_proto::modifier::ModifierExt;
@@ -20,6 +26,9 @@ pub use bevy_fynix_proto::{
     Bevy, FynixProtoPlugin, Hovered, StateExt, Stateful, Theme, View,
     mount,
 };
+pub use bevy_image::Image;
+pub use bevy_time::TimePlugin;
+pub use bevy_ui::{Node, UiRect, px};
 
 /// The theme the screens are built under.
 pub struct Editor;
@@ -287,7 +296,7 @@ pub fn run<V: View<Bevy, Editor>>(name: &str, view: V) {
 
     let mut app = App::new();
     app.add_plugins((
-        MinimalPlugins,
+        TimePlugin,
         FynixProtoPlugin::<Editor>::default(),
     ))
     .insert_resource(Theme(Editor));

@@ -1,9 +1,16 @@
-use bevy::prelude::*;
+use bevy_color::Color;
+use bevy_ecs::entity::Entity;
+use bevy_ecs::world::World;
+use bevy_text::{
+    FontSize, LineBreak, TextColor, TextFont, TextLayout,
+};
+use bevy_ui::widget::Text;
+use motiongfx_interp::interpolation::Interpolation;
 
 use crate::prop::Prop;
 use crate::tokens::{TextTokens, Tone};
-use crate::transition::Interpolate;
-use crate::view::{Leaf, Styled};
+use crate::transition::BevyMarker;
+use crate::{Bevy, Leaf, Styled};
 
 /// A run of text.
 pub struct Label {
@@ -71,18 +78,24 @@ pub struct LabelSnapshot {
     pub wrap: bool,
 }
 
-impl Interpolate for LabelSnapshot {
-    fn lerp(from: &Self, to: &Self, t: f32) -> Self {
+impl Interpolation<BevyMarker> for LabelSnapshot {
+    fn interp(from: &Self, to: &Self, t: f32) -> Self {
         Self {
             text: to.text.clone(),
-            size: <f32 as Interpolate>::lerp(&from.size, &to.size, t),
-            color: Color::lerp(&from.color, &to.color, t),
+            size: <f32 as Interpolation<()>>::interp(
+                &from.size, &to.size, t,
+            ),
+            color: <Color as Interpolation<BevyMarker>>::interp(
+                &from.color,
+                &to.color,
+                t,
+            ),
             wrap: to.wrap,
         }
     }
 }
 
-impl<T: TextTokens> Leaf<T> for Label {
+impl<T: TextTokens> Leaf<Bevy, T> for Label {
     type Snapshot = LabelSnapshot;
 
     fn prepare(world: &mut World, node: Entity) {
@@ -118,12 +131,12 @@ impl<T: TextTokens> Leaf<T> for Label {
             Text::new(snapshot.text.clone()),
             TextFont {
                 font_size: FontSize::Px(snapshot.size),
-                ..default()
+                ..Default::default()
             },
             TextColor(snapshot.color),
             TextLayout {
                 linebreak,
-                ..default()
+                ..Default::default()
             },
         ));
     }
@@ -155,13 +168,20 @@ mod tests {
             wrap: false,
         };
 
-        let mid = LabelSnapshot::lerp(&from, &to, 0.5);
+        let mid =
+            <LabelSnapshot as Interpolation<BevyMarker>>::interp(
+                &from, &to, 0.5,
+            );
 
         assert_eq!(mid.text, "b");
         assert_eq!(mid.size, 15.0);
         assert_eq!(
             mid.color,
-            Color::lerp(&from.color, &to.color, 0.5)
+            <Color as Interpolation<BevyMarker>>::interp(
+                &from.color,
+                &to.color,
+                0.5
+            )
         );
         assert!(!mid.wrap);
     }

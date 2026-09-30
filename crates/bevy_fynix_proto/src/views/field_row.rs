@@ -1,14 +1,14 @@
 //! A label column and a value column.
 
-use bevy::prelude::*;
+use bevy_ecs::component::Component;
+use bevy_ecs::entity::Entity;
+use bevy_ui::{AlignItems, UiRect, percent, px};
 
-use crate::backend::Bevy;
-use crate::cx::Cx;
 use crate::modifier::ModifierExt;
 use crate::state::{StateExt, Stateful};
 use crate::tokens::{SpacingTokens, TextTokens, Tone};
-use crate::view::{AnyView, View};
 use crate::views::{BehaviorExt, Label, LabelSnapshot, Tagged, row};
+use crate::{AnyView, Bevy, Cx, View};
 
 /// Indent per level of `depth`, in pixels.
 const INDENT: f32 = 12.0;

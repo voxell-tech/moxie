@@ -1,11 +1,17 @@
 //! A box of bevy_ui layout, and the macro composites use to forward
 //! its builder methods.
 
-use bevy::prelude::*;
+use bevy_color::Color;
+use bevy_ecs::entity::Entity;
+use bevy_ecs::world::World;
+use bevy_ui::{
+    AlignItems, BackgroundColor, BorderRadius, FlexDirection,
+    JustifyContent, Node, UiRect, Val, px,
+};
 
 use crate::prop::Prop;
 use crate::tokens::SpacingTokens;
-use crate::view::{Leaf, Styled};
+use crate::{Bevy, Leaf, Styled};
 
 /// A bevy_ui [`Node`] with a fill, holding no views of its own.
 ///
@@ -134,7 +140,7 @@ pub struct FrameSnapshot {
     pub radius: f32,
 }
 
-impl<T: SpacingTokens> Leaf<T> for Frame {
+impl<T: SpacingTokens> Leaf<Bevy, T> for Frame {
     type Snapshot = FrameSnapshot;
 
     fn prepare(world: &mut World, node: Entity) {
@@ -207,6 +213,13 @@ impl<T: SpacingTokens> Leaf<T> for Frame {
 
 #[cfg(test)]
 mod tests {
+    use bevy_app::App;
+    use bevy_ecs::hierarchy::Children;
+    use bevy_ecs::relationship::RelationshipTarget;
+    use bevy_ecs::resource::Resource;
+    use bevy_time::TimePlugin;
+    use bevy_ui::percent;
+
     use super::*;
     use crate::{FynixProtoPlugin, Theme, mount};
 
@@ -229,7 +242,7 @@ mod tests {
     fn app() -> App {
         let mut app = App::new();
         app.add_plugins((
-            MinimalPlugins,
+            TimePlugin,
             FynixProtoPlugin::<Plain>::default(),
         ))
         .insert_resource(Theme(Plain));
@@ -291,7 +304,7 @@ mod tests {
 
     #[test]
     fn a_set_rule_fills_what_the_call_site_left_unset() {
-        use crate::{AnyView, Bevy};
+        use crate::AnyView;
 
         let mut app = app();
         let root = mount::<Plain>(

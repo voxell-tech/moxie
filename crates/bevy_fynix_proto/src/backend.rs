@@ -1,32 +1,13 @@
-//! What a view is built into. Views above the leaves are generic over
-//! it; each leaf is written once per backend.
+//! The Bevy backend of the core.
 
-use core::hash::Hash;
-
-use bevy::prelude::*;
-
-pub trait Backend: 'static {
-    type World;
-    type Node: Copy + Eq + Hash + Send + Sync + 'static;
-
-    /// A new, empty node under `parent`, or at the root.
-    fn spawn(
-        world: &mut Self::World,
-        parent: Option<Self::Node>,
-    ) -> Self::Node;
-
-    /// Hangs `child` under `parent`.
-    fn adopt(
-        world: &mut Self::World,
-        parent: Self::Node,
-        child: Self::Node,
-    );
-}
+use bevy_ecs::entity::Entity;
+use bevy_ecs::world::World;
+use bevy_ui::Node;
 
 /// Bevy's ECS, with `bevy_ui` doing layout, text and picking.
 pub struct Bevy;
 
-impl Backend for Bevy {
+impl fynix_proto::Backend for Bevy {
     type World = World;
     type Node = Entity;
 
@@ -38,7 +19,7 @@ impl Backend for Bevy {
         node
     }
 
-    fn adopt(world: &mut World, parent: Entity, child: Entity) {
-        world.entity_mut(parent).add_child(child);
+    fn exists(world: &World, node: Entity) -> bool {
+        world.get_entity(node).is_ok()
     }
 }

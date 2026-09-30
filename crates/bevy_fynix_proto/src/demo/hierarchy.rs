@@ -1,13 +1,18 @@
 //! A hierarchy row: a foldable whose header button names an entity
 //! and selects it.
 
-use bevy::prelude::*;
+use bevy_color::Color;
+use bevy_ecs::component::Component;
+use bevy_ecs::entity::Entity;
+use bevy_ecs::name::Name;
+use bevy_ecs::resource::Resource;
+use bevy_ecs::world::World;
+use bevy_ui::{JustifyContent, percent, px};
 
-use crate::backend::Bevy;
 use crate::prop::derived;
 use crate::tokens::{SpacingTokens, SurfaceTokens, TextTokens, Tone};
-use crate::view::View;
 use crate::views::{BehaviorExt, Tagged, button, foldable, label};
+use crate::{Bevy, View};
 
 /// The entity the editor has selected.
 #[derive(Resource, Default)]
@@ -103,7 +108,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bevy::ui_widgets::{Activate, Button as ButtonBehavior};
+    use bevy_app::App;
+    use bevy_ui::{Display, Val};
+    use bevy_ui_widgets::{Activate, Button as ButtonBehavior};
 
     use super::*;
     use crate::demo::testing::{

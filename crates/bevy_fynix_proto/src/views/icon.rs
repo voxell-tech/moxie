@@ -1,8 +1,14 @@
-use bevy::prelude::*;
+use bevy_asset::Handle;
+use bevy_color::Color;
+use bevy_ecs::entity::Entity;
+use bevy_ecs::world::World;
+use bevy_image::Image;
+use bevy_ui::widget::ImageNode;
+use bevy_ui::{Node, px};
 
 use crate::prop::Prop;
 use crate::tokens::{TextTokens, Tone};
-use crate::view::{Leaf, Styled};
+use crate::{Bevy, Leaf, Styled};
 
 /// A square image tinted by a text tone.
 pub struct Icon {
@@ -64,7 +70,7 @@ pub struct IconSnapshot {
     pub color: Color,
 }
 
-impl<T: TextTokens> Leaf<T> for Icon {
+impl<T: TextTokens> Leaf<Bevy, T> for Icon {
     type Snapshot = IconSnapshot;
 
     fn prepare(world: &mut World, node: Entity) {
@@ -105,8 +111,14 @@ impl<T: TextTokens> Leaf<T> for Icon {
 
 #[cfg(test)]
 mod tests {
+    use bevy_app::App;
+    use bevy_ecs::hierarchy::Children;
+    use bevy_ecs::relationship::RelationshipTarget;
+    use bevy_time::TimePlugin;
+    use bevy_ui::Val;
+
     use super::*;
-    use crate::{AnyView, Bevy, FynixProtoPlugin, Theme, mount};
+    use crate::{AnyView, FynixProtoPlugin, Theme, mount};
 
     struct Plain;
 
@@ -131,7 +143,7 @@ mod tests {
     fn app() -> App {
         let mut app = App::new();
         app.add_plugins((
-            MinimalPlugins,
+            TimePlugin,
             FynixProtoPlugin::<Plain>::default(),
         ))
         .insert_resource(Theme(Plain));

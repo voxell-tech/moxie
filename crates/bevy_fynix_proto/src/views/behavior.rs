@@ -1,14 +1,17 @@
 //! Modifiers adding behaviour, a record, or a scoped tone to any
 //! [`Bevy`] view. Each acts on the root node of the view it wraps.
 
-use bevy::prelude::*;
-use bevy::ui_widgets::Activate;
+use bevy_ecs::component::Component;
+use bevy_ecs::entity::Entity;
+use bevy_ecs::event::EntityEvent;
+use bevy_ecs::observer::On;
+use bevy_ecs::system::Commands;
+use bevy_ecs::world::World;
+use bevy_ui_widgets::Activate;
 
-use crate::backend::Bevy;
-use crate::cx::Cx;
 use crate::tokens::Tone;
-use crate::view::View;
 use crate::views::{Icon, Label};
+use crate::{Bevy, Cx, View};
 
 /// A handler run with the whole world.
 type Handler = Box<dyn Fn(&mut World) + Send + Sync>;
