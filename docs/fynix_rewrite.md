@@ -665,9 +665,43 @@ Composites and custom leaves (`Foldable`, its private `Reveal` leaf)
 needed no core changes, which suggests the escape hatch for custom
 views works.
 
-Still unmeasured: compile time and type size with nested generic views
-against `AnyView`, and pointer-driven states against a real pointer
-(the tests toggle them directly).
+### Generic against boxed views
+
+`examples/screen_generic.rs` and `examples/screen_boxed.rs` build the
+same editor-like screen: 405 nodes, depth 10, 4 panels, 24 distinct
+sibling types, a stateful label with a transition in most rows. The
+boxed one erases each row, button and panel with `AnyView`. A 6x copy
+(2431 nodes) was measured too, from a scratch file. Times are the
+median of 3, in seconds, on an M-series Mac, over a baseline of 0.99
+that is mostly linking Bevy:
+
+| | Generic | Boxed | 6x generic | 6x boxed |
+|---|---|---|---|---|
+| Clean debug build | 1.30 | 1.27 | 1.74 | 1.84 |
+| Clean release build | 1.23 | 1.21 | 1.80 | 2.19 |
+| Rebuild after a one-line edit | 0.86 | 0.91 | 1.42 | 1.70 |
+| Top-level `type_name` length | 16,132 | 378 | 95,110 | 532 |
+
+What it says:
+
+- **Strain point 1 is not a build-time problem at this scale.** rustc
+  checks a 95k-character type in well under a second.
+- **Boxing does not speed builds up.** Each boxed view is still a
+  compiled closure, and at 6x boxing everything is slower, by 20% in
+  release.
+- **Boxing buys readability.** Type names shrink 40 to 180 times. A
+  bad tuple element reads `(AnyView, AnyView, u32, AnyView)` instead
+  of burying `u32` under a 4,000-character line of type soup.
+- **So erase at boundaries, not everywhere:** at panels, and wherever a
+  function hands a view to another module.
+
+Two smaller things turned up. `.boxed()` often needs its backend and
+theme spelled out (`<_ as ViewExt<Bevy, Editor>>::boxed(..)`), and six
+children per tuple forces real screens to nest tuples, so `ViewSeq`
+needs more arities.
+
+Still unmeasured: pointer-driven states against a real pointer (the
+tests toggle them directly), and the heap cost of boxing.
 
 ## Migration
 
