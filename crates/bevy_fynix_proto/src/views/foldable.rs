@@ -11,7 +11,7 @@ use crate::tokens::{
     MotionTokens, SpacingTokens, SurfaceTokens, TextTokens,
 };
 use crate::views::{BehaviorExt, button, frame, label, row};
-use crate::{Bevy, Cx, Element, Styled, View};
+use crate::{Bevy, Cx, Element, View};
 
 /// On a [`Foldable`]'s root node while its body is shown.
 #[derive(Component, Clone, Copy, Debug, Default)]
@@ -57,17 +57,7 @@ struct Reveal {
     shown: Prop<bool>,
 }
 
-impl Styled for Reveal {
-    fn unset() -> Self {
-        Self { shown: Prop::Unset }
-    }
-
-    fn over(self, below: Self) -> Self {
-        Self {
-            shown: self.shown.or(below.shown),
-        }
-    }
-}
+fynix_proto::styled!(Reveal { shown });
 
 impl<T> Element<Bevy, T> for Reveal {
     type Snapshot = bool;

@@ -22,12 +22,9 @@ pub use bevy_fynix_proto::tokens::{
     Curve, Motion, MotionTokens, SpacingTokens, SurfaceTokens,
     TextTokens, Tone,
 };
-pub use bevy_fynix_proto::views::{
-    LabelSnapshot, button, column, icon, label, row,
-};
+pub use bevy_fynix_proto::views::{button, column, icon, label, row};
 pub use bevy_fynix_proto::{
-    Bevy, FynixProtoPlugin, Hovered, StateExt, Stateful, Theme, View,
-    mount,
+    Bevy, FynixProtoPlugin, Hovered, ScopedExt, Theme, View, mount,
 };
 
 /// The theme the screens are built under.
@@ -89,15 +86,9 @@ impl MotionTokens for Editor {
 }
 
 /// A label that turns accent on hover, over the theme's curve.
-pub fn line(
-    text: String,
-) -> Stateful<bevy_fynix_proto::views::Label, Editor> {
+pub fn line(text: String) -> impl View<Bevy, Editor> {
     label(text)
-        .when::<Hovered>(
-            |snapshot: &mut LabelSnapshot, theme: &Editor| {
-                snapshot.color = theme.tone(Tone::Accent);
-            },
-        )
+        .when::<Hovered, Editor>(|label, _| label.tone(Tone::Accent))
         .transition(Motion::Interact)
 }
 

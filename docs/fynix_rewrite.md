@@ -328,10 +328,12 @@ state, and reaches everything built under that node:
 
 ```rust
 button(row((icon(save), label("Save"))))
-    .when::<Hovered>(|cx| {
-        cx.set::<Frame>(|f, t| f.fill(t.hover()));
+    .when::<Hovered, _>(|cx: &mut Cx<Bevy, Theme>| {
         cx.set::<Label>(|l, _| l.tone(Tone::Accent));
-        cx.set::<Icon>(|i, t| i.tint(t.tone(Tone::Accent)));
+        cx.set::<Icon>(|i, _| i.tone(Tone::Accent));
+    })
+    .when::<Pressed, _>(|cx: &mut Cx<Bevy, Theme>| {
+        cx.root(|cx| cx.set::<Frame>(|f, t| f.fill(t.panel())));
     })
     .transition(Motion::Interact)
 ```
@@ -343,44 +345,72 @@ the composite knows nothing about. Rules for one part among several of
 the same type go through `lenz` paths
 (`cx.set_field(Card::cursor().title().tone(), ..)`).
 
-The one-element form is sugar for the same thing, a rule on the node
-itself:
+An element has the one-rule form, sugar for a block with one set rule
+for itself:
 
 ```rust
-label(name).when::<Hovered>(|l| l.tone(Tone::Accent))
+label(name).when::<Hovered, Theme>(|l, _| l.tone(Tone::Accent))
 ```
 
-So `Button` is only a frame, its content and two behaviours, and its
-defaults, hover included, are a rule bundle a theme can replace:
+Three more kinds of rule block make the rest of a composite's styling
+rules too:
+
+- `cx.root(..)`: rules that reach only the root of the view they are
+  set for, the first node spawned after them. A button's pressed fill
+  above would otherwise reach a row nested in its content.
+- `cx.defaults(..)`: rules weaker than any that are not, wherever they
+  are. This is the composite-default layer finding 1 asked for.
+- `cx.transition(motion)`: a rule naming the curve for every element in
+  scope whose snapshot says how it blends. `.transition(motion)` on
+  any view is a scope holding one.
+
+So `Button` is only a frame, its content and two behaviours, and all
+its defaults, hover included, are root defaults a theme or call site
+can beat:
 
 ```rust
-pub fn button<C>(content: C) -> impl View {
-    row((content,))
-        .with(ButtonBehavior)
-        .with(EntityCursor(SystemCursorIcon::Pointer))
-        .rules(button_style())
+fn defaults<T: SurfaceTokens + SpacingTokens + MotionTokens>(
+    cx: &mut Cx<Bevy, T>,
+) {
+    cx.set::<Frame>(|f, t| f.fill(t.fill()).radius(t.radius()));
+    cx.when::<State<Hovered>>(|cx| {
+        cx.set::<Frame>(|f, t| f.fill(t.hover()));
+    });
+    cx.transition(Motion::Interact);
 }
+
+// In Button::build, before building the frame and then the content:
+cx.defaults(|cx| cx.root(defaults));
 ```
 
 Underneath:
 
-1. `.when::<S>(block)` runs the block into the rule arena like any
-   scope. Each rule carries a condition: a `holds` function for `S` and
-   the node it is checked on, filled in at build with the node `.when`
-   was written on.
-2. While that node's subtree builds, every element a conditional rule
-   applies to records the rule's key. The refcount that keeps rules
-   alive across `keyed` rebuilds keeps these alive too, and a rebuilt
-   child inside the node picks them up through its capture.
-3. When `S` is inserted on or removed from the node, the state
-   observer marks every element that recorded one of its rules dirty,
-   not just the node.
-4. A dirty element resolves its props with the active conditional
-   rules applied, diffs the result per field and animates the fields
-   that changed, if it has a transition.
+1. `.when::<S, _>(block)` opens a scope and runs the block with its
+   rules marked by the condition: a `holds` and a `watch` function for
+   `S`. Each rule entry also records the first node spawned after it,
+   which is the root of the view `.when` was written on.
+2. An element resolved while that root is not yet spawned is the root
+   itself, and one resolved after it is a descendant. For each
+   conditional rule reaching it, the element runs the rule on an unset
+   view once, at build, and keeps the result as a layer: the props the
+   rule sets, the node the state is read on, and whether it is its own.
+3. Mounting a layered element calls `watch` on that node, which in
+   Bevy adds insert and remove observers once per node and state, and
+   records the element as a reader of the node. A state change marks
+   the node and all its readers dirty. The refcount that keeps rules
+   alive across `keyed` rebuilds keeps these alive too, so a child
+   rebuilt under the node picks them up through its capture.
+4. A dirty element swaps the props of each layer whose state holds
+   into itself, takes a snapshot, and swaps them back. Nothing is
+   cloned, so bound props in a layer work. A layer written on an
+   ancestor only swaps in props the call site left unset.
 
 A rule acts on props, not on the resolved snapshot, so the element
 resolves `l.tone(Accent)` through the theme like any other value.
+
+The swap needs each element to number its props, which the `styled!`
+macro writes along with `unset` and `over` from a list of fields. A
+field enumeration in `lenz`'s derive could replace it.
 
 ### Precedence
 
@@ -389,14 +419,20 @@ From weakest to strongest, for every value:
 | Layer | Example |
 |---|---|
 | View default | A neutral constant |
+| Composite defaults, outer then inner | `cx.defaults(..)` |
 | Set rules, outer scope then inner | `ui.set(Label::size(12.0))` |
+| State rules from ancestors, outer then inner | `row(..).when(Hovered, ..)` |
 | Call-site argument | `label("x").size(20.0)` |
-| State rules on the node itself | `.when(Hovered, ..)` |
+| State rules on the node itself, inner then outer | `.when(Hovered, ..)` |
 
-A state rule that reaches into descendants ranks as a set rule of its
-scope, not above the call site. `label("Save").tone(Tone::Dim)` inside a
-hovered button stays dim: an explicit value is how a part opts out,
-the same as with set rules.
+A state rule that reaches into descendants ranks just above set rules,
+not above the call site. `label("Save").tone(Tone::Dim)` inside a
+hovered button stays dim: an explicit value is how a part opts out.
+
+State rules on the node itself run the other way: the outer one wins.
+It is the one written later in `.when(a).when(b)`, and the one a call
+site wrote around a composite's own. Composite defaults are weaker
+within each state rank too.
 
 This settles the "composite constraints" question: a composite's needs
 are set rules in its own scope, and a caller's explicit argument still
@@ -769,11 +805,34 @@ build, so it cannot be bound.
 
 `hover_fill` is the wrong shape: a hover colour is a transition
 between two rule sets, not a prop. Scoped state rules (see "State rules
-are scoped set rules" above) answer findings 5, 9 and 10: rules act on
-props, need no `Stateful` wrapper that names the theme, and reach a
-composite's parts from the call site. Findings 6 and 15 remain: the
-per-field diff gives per-field transitions a key, but properties every
-element shares still need a home.
+are scoped set rules" above) are now in the prototype, and `Stateful`,
+`hover_fill` and snapshot-editing rules are gone. They answer:
+
+- finding 1, through `cx.defaults`: an app's `set::<Frame>` now
+  restyles every button;
+- finding 5: rules act on props, by swapping a layer's props in and
+  out rather than cloning them;
+- finding 9: nothing names `Stateful<Label, Theme>` any more;
+- finding 10: a call site's `.when` reaches a composite's parts, and
+  one rule block can light a button's frame and every label in it.
+
+Findings 6 and 15 remain: transitions are still whole-snapshot, and
+properties every element shares still need a home. Building it turned
+up three more:
+
+16. **The one-rule form does not chain.** `label(x).when::<A, _>(a)`
+    returns a wrapper, not a `Label`, so a second `.when` is the block
+    form and takes `own(b)` instead of `b`. Keeping the element's type
+    through its rules would need the element to hold them, generic over
+    the theme.
+17. **Rule blocks need their context type spelled out.** A block is a
+    closure called later with `&mut Cx<Bevy, T>`, so it must be
+    annotated (`|cx: &mut Cx<Bevy, Theme>|`), or the theme type named
+    in `.when::<S, Theme>`. The gallery aliases it as `Build`.
+18. **A set rule can no longer give every element of a kind a state
+    rule.** `set::<Stateful<Label, T>>(|l| l.when(..))` did that. The
+    same is now a `.when` block on an ancestor, which reads the
+    ancestor's state, not each element's own.
 
 The hover source changed too. The `Hovered` marker used to be set by
 `Pointer<Over>` and `Pointer<Out>` observers on the node. Both events

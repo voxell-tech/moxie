@@ -12,11 +12,15 @@ use lenz::Lenz;
 use motiongfx_interp::ease;
 use motiongfx_interp::interpolation::Interpolation;
 
+mod state;
 mod structure;
 
+use motiongfx_interp::interpolation::InterpFn;
+
 use crate::{
-    AnyView, Backend, Curve, Cx, Element, Motion, MotionTokens,
-    Mounted, Prop, Signal, Styled, Tick, Trace, Tween, View, derived,
+    AnyView, Backend, Condition, Curve, Cx, Element, Motion,
+    MotionTokens, Mounted, Prop, Signal, Styled, Tick, Trace, Tween,
+    View, derived,
 };
 
 #[derive(Default)]
@@ -31,6 +35,8 @@ pub struct World {
     pick: u32,
     /// The list `each` shows.
     list: Vec<u32>,
+    /// The nodes a state rule is read on.
+    watched: Vec<usize>,
 }
 
 #[derive(Default)]
@@ -39,6 +45,8 @@ struct Node {
     children: Vec<usize>,
     text: String,
     size: f32,
+    /// The fake backend's one state.
+    lit: bool,
 }
 
 struct Fake;
@@ -115,6 +123,10 @@ impl World {
     fn is_alive(&self, node: usize) -> bool {
         self.nodes[node].is_some()
     }
+
+    fn light(&mut self, node: usize, lit: bool) {
+        self.nodes[node].as_mut().expect("a live node").lit = lit;
+    }
 }
 
 /// What the fake backend's one element reads from a theme.
@@ -150,23 +162,7 @@ impl Text {
     }
 }
 
-impl Styled for Text {
-    fn unset() -> Self {
-        Self {
-            text: Prop::Unset,
-            size: Prop::Unset,
-            motion: None,
-        }
-    }
-
-    fn over(self, below: Self) -> Self {
-        Self {
-            text: self.text.or(below.text),
-            size: self.size.or(below.size),
-            motion: self.motion.or(below.motion),
-        }
-    }
-}
+crate::styled!(Text { text, size, motion });
 
 #[derive(Clone, Debug, PartialEq)]
 struct Shown {
@@ -217,6 +213,25 @@ impl<T: Sizes + MotionTokens> Element<Fake, T> for Text {
             curve,
             interp: Shown::interp,
         })
+    }
+
+    fn interp() -> Option<InterpFn<Shown>> {
+        Some(Shown::interp)
+    }
+}
+
+/// The fake backend's one state: a node is lit.
+struct Lit;
+
+impl Condition<Fake> for Lit {
+    fn holds(world: &World, node: usize) -> bool {
+        world.node(node).lit
+    }
+
+    fn watch(world: &mut World, node: usize) {
+        if !world.watched.contains(&node) {
+            world.watched.push(node);
+        }
     }
 }
 

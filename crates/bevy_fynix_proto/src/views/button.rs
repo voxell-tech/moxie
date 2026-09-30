@@ -1,12 +1,11 @@
 //! A clickable [`Frame`] around one content view.
 //!
 //! Like a [`Stack`](super::Stack), it holds its frame and forwards the
-//! frame's builder methods. Its own defaults (fill, radius, centred
-//! content) are set rules inside a scope that ends before the content
-//! is built, so they beat an outer `set::<Frame>` but not the call
-//! site, and never reach the content. The frame is stateful: its fill
-//! moves to the hover fill while the pointer is over the button or its
-//! content.
+//! frame's builder methods. Everything else is rules: its defaults
+//! (fill, radius, centred content, a hover fill and a transition) are
+//! defaults for its root frame alone, so an app's `set::<Frame>` and a
+//! call site's `.when::<Hovered, _>(..)` both beat them, and none of
+//! them reach the content.
 
 use bevy::color::Color;
 use bevy::ecs::entity::Entity;
@@ -18,39 +17,44 @@ use bevy::window::SystemCursorIcon;
 
 use crate::cursor::EntityCursor;
 use crate::prop::Prop;
+use crate::state::State;
 use crate::tokens::{
     Motion, MotionTokens, SpacingTokens, SurfaceTokens,
 };
-use crate::views::frame::{
-    Frame, FrameSnapshot, forward_all_frame_props,
-};
-use crate::{Bevy, Cx, Hovered, StateExt, Styled, View};
+use crate::views::frame::{Frame, forward_all_frame_props};
+use crate::{Bevy, Cx, Hovered, Styled, View};
 
 pub struct Button<C> {
     pub frame: Frame,
     pub content: C,
-    /// The fill while hovered, the theme's hover surface when unset.
-    /// It is read once at build, so a bound value is not followed.
-    pub hover_fill: Prop<Color>,
 }
 
 pub fn button<C>(content: C) -> Button<C> {
     Button {
         frame: Frame::unset(),
         content,
-        hover_fill: Prop::Unset,
     }
 }
 
-impl<C> Button<C> {
-    pub fn hover_fill(
-        mut self,
-        fill: impl Into<Prop<Color>>,
-    ) -> Self {
-        self.hover_fill = fill.into();
-        self
-    }
+/// A button's defaults, for its root frame alone.
+fn defaults<T>(cx: &mut Cx<'_, Bevy, T>)
+where
+    T: SurfaceTokens + SpacingTokens + MotionTokens + 'static,
+{
+    cx.set::<Frame>(|frame, theme: &T| {
+        frame
+            .fill(theme.fill())
+            .radius(theme.radius())
+            .justify(JustifyContent::Center)
+            .align(AlignItems::Center)
+    });
+    cx.when::<State<Hovered>>(|cx| {
+        cx.set::<Frame>(|frame, theme: &T| frame.fill(theme.hover()));
+    });
+    cx.transition(Motion::Interact);
+}
 
+impl<C> Button<C> {
     pub fn direction(
         mut self,
         direction: impl Into<Prop<FlexDirection>>,
@@ -73,33 +77,16 @@ where
     C: View<Bevy, T>,
 {
     fn build(self, cx: &mut Cx<'_, Bevy, T>) -> Entity {
-        let hover = self
-            .hover_fill
-            .get(cx.world)
-            .unwrap_or_else(|| cx.theme().hover());
-        let frame = StateExt::<T>::when::<Hovered>(
-            self.frame,
-            move |shown: &mut FrameSnapshot, _: &T| {
-                shown.fill = hover;
-            },
-        )
-        .transition(Motion::Interact);
-        let node = cx.scope(|cx| {
-            cx.set::<Frame>(|frame, theme: &T| {
-                frame
-                    .fill(theme.fill())
-                    .radius(theme.radius())
-                    .justify(JustifyContent::Center)
-                    .align(AlignItems::Center)
-            });
-            cx.build(frame)
-        });
-        cx.world.entity_mut(node).insert((
-            ButtonBehavior,
-            EntityCursor(SystemCursorIcon::Pointer),
-        ));
-        cx.under(node, |cx| cx.build(self.content));
-        node
+        cx.scope(|cx| {
+            cx.defaults(|cx| cx.root(defaults));
+            let node = cx.build(self.frame);
+            cx.world.entity_mut(node).insert((
+                ButtonBehavior,
+                EntityCursor(SystemCursorIcon::Pointer),
+            ));
+            cx.under(node, |cx| cx.build(self.content));
+            node
+        })
     }
 }
 
@@ -125,7 +112,7 @@ mod tests {
     use crate::tokens::{Curve, TextTokens, Tone};
     use crate::transition::{BevyMarker, ReducedMotion};
     use crate::views::{Label, label};
-    use crate::{AnyView, FynixProtoPlugin, Theme, mount};
+    use crate::{AnyView, FynixProtoPlugin, StateExt, Theme, mount};
     use motiongfx_interp::interpolation::Interpolation;
 
     struct Plain;
@@ -301,11 +288,15 @@ mod tests {
     }
 
     #[test]
-    fn a_hover_fill_replaces_the_theme_hover_colour() {
+    fn a_call_site_state_rule_beats_the_default_hover_fill() {
         let mut app = app();
         let node = mount::<Plain>(
             app.world_mut(),
-            button(label("x")).hover_fill(Color::WHITE),
+            button(label("x")).when::<Hovered, _>(
+                |cx: &mut Cx<Bevy, Plain>| {
+                    cx.set::<Frame>(|f, _| f.fill(Color::WHITE));
+                },
+            ),
         );
 
         hover(&mut app, node, true);
@@ -313,6 +304,43 @@ mod tests {
         app.update();
 
         assert_eq!(fill(&app, node), Color::WHITE);
+    }
+
+    #[test]
+    fn a_state_rule_on_the_button_reaches_its_content() {
+        let mut app = app();
+        let node = mount::<Plain>(
+            app.world_mut(),
+            button(label("x")).when::<Hovered, _>(
+                |cx: &mut Cx<Bevy, Plain>| {
+                    cx.set::<Label>(|l, _| l.size(20.0));
+                },
+            ),
+        );
+        let content = app.world().get::<Children>(node).unwrap()[0];
+        let size = |app: &App| {
+            app.world().get::<TextFont>(content).unwrap().font_size
+        };
+        assert_eq!(size(&app), FontSize::Px(14.0));
+
+        hover(&mut app, node, true);
+        app.update();
+
+        assert_eq!(size(&app), FontSize::Px(20.0));
+    }
+
+    #[test]
+    fn an_app_rule_restyles_every_button() {
+        let mut app = app();
+        let root = mount::<Plain>(
+            app.world_mut(),
+            AnyView::<Bevy, Plain>::new(|cx| {
+                cx.set::<Frame>(|f, _| f.fill(Color::WHITE));
+                cx.build(button(label("x")))
+            }),
+        );
+
+        assert_eq!(fill(&app, root), Color::WHITE);
     }
 
     #[test]

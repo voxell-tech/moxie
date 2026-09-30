@@ -7,9 +7,10 @@ use bevy::text::{
 };
 use bevy::ui::UiTransform;
 use bevy::ui::widget::Text;
-use motiongfx_interp::interpolation::Interpolation;
+use motiongfx_interp::interpolation::{InterpFn, Interpolation};
 
 use crate::prop::Prop;
+use crate::state::own_when;
 use crate::tokens::{TextTokens, Tone};
 use crate::transition::BevyMarker;
 use crate::{Bevy, Element, Styled};
@@ -59,27 +60,15 @@ impl Label {
     }
 }
 
-impl Styled for Label {
-    fn unset() -> Self {
-        Self {
-            text: Prop::Unset,
-            size: Prop::Unset,
-            tone: Prop::Unset,
-            wrap: Prop::Unset,
-            scale: Prop::Unset,
-        }
-    }
+fynix_proto::styled!(Label {
+    text,
+    size,
+    tone,
+    wrap,
+    scale
+});
 
-    fn over(self, below: Self) -> Self {
-        Self {
-            text: self.text.or(below.text),
-            size: self.size.or(below.size),
-            tone: self.tone.or(below.tone),
-            wrap: self.wrap.or(below.wrap),
-            scale: self.scale.or(below.scale),
-        }
-    }
-}
+own_when!(Label);
 
 /// A [`Label`]'s props at one moment.
 #[derive(Clone, Debug, PartialEq)]
@@ -176,6 +165,10 @@ impl<T: TextTokens> Element<Bevy, T> for Label {
             | self.wrap.changed(world)
             | self.scale.changed(world)
     }
+
+    fn interp() -> Option<InterpFn<LabelSnapshot>> {
+        Some(<LabelSnapshot as Interpolation<BevyMarker>>::interp)
+    }
 }
 
 #[cfg(test)]
@@ -188,7 +181,7 @@ mod tests {
     use super::*;
     use crate::tokens::{Curve, Motion, MotionTokens};
     use crate::transition::ReducedMotion;
-    use crate::{FynixProtoPlugin, Hovered, StateExt, Theme, mount};
+    use crate::{FynixProtoPlugin, Hovered, ScopedExt, Theme, mount};
 
     struct Plain;
 
@@ -236,8 +229,8 @@ mod tests {
         app.world().get::<UiTransform>(node).unwrap().scale
     }
 
-    fn grow(shown: &mut LabelSnapshot, _: &Plain) {
-        shown.scale = 2.0;
+    fn grow(label: Label, _: &Plain) -> Label {
+        label.scale(2.0)
     }
 
     #[test]
@@ -269,7 +262,7 @@ mod tests {
         let node = mount::<Plain>(
             app.world_mut(),
             label("x")
-                .when::<Hovered>(grow)
+                .when::<Hovered, _>(grow)
                 .transition(Motion::Interact),
         );
 
@@ -294,7 +287,7 @@ mod tests {
         let node = mount::<Plain>(
             app.world_mut(),
             label("x")
-                .when::<Hovered>(grow)
+                .when::<Hovered, _>(grow)
                 .transition(Motion::Interact),
         );
 

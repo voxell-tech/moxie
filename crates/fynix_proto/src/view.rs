@@ -5,8 +5,11 @@ use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use motiongfx_interp::interpolation::InterpFn;
+
 use crate::backend::Backend;
 use crate::cx::Cx;
+use crate::layer::Live;
 use crate::transition::Tween;
 
 /// Something that can be built under a node, with the theme `T`.
@@ -24,13 +27,118 @@ pub trait Styled: Sized + Send + Sync + 'static {
     fn over(self, below: Self) -> Self;
 }
 
+/// A view whose props can be put on top of it for a while and taken
+/// off again, without cloning any of them: what a state rule needs.
+///
+/// Props are numbered in declaration order, one bit each. The
+/// [`styled!`](crate::styled) macro writes this and [`Styled`] from a
+/// list of fields.
+pub trait Layered: Styled {
+    /// The bits of the props this sets.
+    fn set_mask(&self) -> u64;
+
+    /// Swaps the props whose bits are in `mask` with `other`'s.
+    /// Swapping again with the same mask undoes it.
+    fn swap_props(&mut self, other: &mut Self, mask: u64);
+}
+
+/// A field of a [`Styled`] view: a [`Prop`](crate::Prop), or anything
+/// else a rule can leave unset.
+pub trait Settable {
+    fn empty() -> Self;
+
+    fn is_set(&self) -> bool;
+
+    /// This, or `below` when this was left unset.
+    fn or(self, below: Self) -> Self;
+}
+
+impl<W, T> Settable for crate::Prop<W, T> {
+    fn empty() -> Self {
+        Self::Unset
+    }
+
+    fn is_set(&self) -> bool {
+        !self.is_unset()
+    }
+
+    fn or(self, below: Self) -> Self {
+        crate::Prop::or(self, below)
+    }
+}
+
+impl<T> Settable for Option<T> {
+    fn empty() -> Self {
+        None
+    }
+
+    fn is_set(&self) -> bool {
+        self.is_some()
+    }
+
+    fn or(self, below: Self) -> Self {
+        Option::or(self, below)
+    }
+}
+
+/// [`Styled`] and [`Layered`] for a struct whose fields are all
+/// [`Settable`]: `styled!(Label { text, size, tone })`.
+#[macro_export]
+macro_rules! styled {
+    ($view:ty { $($field:ident),* $(,)? }) => {
+        impl $crate::Styled for $view {
+            fn unset() -> Self {
+                Self { $($field: $crate::Settable::empty()),* }
+            }
+
+            fn over(self, below: Self) -> Self {
+                Self {
+                    $($field: $crate::Settable::or(
+                        self.$field,
+                        below.$field,
+                    )),*
+                }
+            }
+        }
+
+        impl $crate::Layered for $view {
+            fn set_mask(&self) -> u64 {
+                let mut mask = 0;
+                let mut bit = 1;
+                $(
+                    if $crate::Settable::is_set(&self.$field) {
+                        mask |= bit;
+                    }
+                    bit <<= 1;
+                )*
+                let _ = bit;
+                mask
+            }
+
+            fn swap_props(&mut self, other: &mut Self, mask: u64) {
+                let mut bit = 1;
+                $(
+                    if mask & bit != 0 {
+                        ::core::mem::swap(
+                            &mut self.$field,
+                            &mut other.$field,
+                        );
+                    }
+                    bit <<= 1;
+                )*
+                let _ = (bit, other);
+            }
+        }
+    };
+}
+
 /// A view that is one node of its own, with no views under it.
 ///
 /// Its props are resolved against the rules in force, read into a
 /// [`Snapshot`](Self::Snapshot) of plain values, and written onto the
 /// node. A live element stays mounted, and is read and written again
 /// whenever it reports a change.
-pub trait Element<B: Backend, T>: Styled {
+pub trait Element<B: Backend, T>: Layered {
     /// Every prop's value at one moment, with the theme's defaults
     /// filled in.
     type Snapshot: Clone + PartialEq + Send + Sync + 'static;
@@ -78,22 +186,42 @@ pub trait Element<B: Backend, T>: Styled {
     ) {
     }
 
-    /// How the written values travel to a new snapshot. `None` snaps.
+    /// How the written values travel to a new snapshot, whatever the
+    /// rules say. `None` leaves it to a transition rule.
     fn tween(&self, _theme: &T) -> Option<Tween<Self::Snapshot>> {
+        None
+    }
+
+    /// How two snapshots blend, for a transition rule to travel with.
+    /// `None` snaps whatever the rules say.
+    fn interp() -> Option<InterpFn<Self::Snapshot>> {
         None
     }
 }
 
 impl<B: Backend, T: 'static, E: Element<B, T>> View<B, T> for E {
     fn build(self, cx: &mut Cx<'_, B, T>) -> B::Node {
-        let element = E::resolve(self, cx);
+        let call = self.set_mask();
+        let layers = cx.layers::<E>();
+        let curve = cx.curve();
+        let mut element = E::resolve(self, cx);
         let node = cx.spawn();
+        let mut live = Live {
+            layers,
+            call,
+            tween: element.tween(cx.theme()).or_else(|| {
+                Some(Tween {
+                    curve: curve?,
+                    interp: E::interp()?,
+                })
+            }),
+        };
         E::prepare(cx.world, node);
-        let mut snapshot = element.snapshot(cx.world, cx.theme());
-        element.adjust(&mut snapshot, cx.world, node, cx.theme());
+        let snapshot =
+            live.snapshot(&mut element, cx.world, node, cx.theme());
         E::write(&snapshot, cx.world, node);
-        if element.is_live() {
-            cx.mount(node, element, snapshot);
+        if element.is_live() || !live.layers.is_empty() {
+            cx.mount(node, element, snapshot, live);
         }
         node
     }

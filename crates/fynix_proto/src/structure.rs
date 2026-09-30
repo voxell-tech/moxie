@@ -98,7 +98,7 @@ struct KeyedEntry<B: Backend, T, K> {
     last: K,
     container: B::Node,
     child: B::Node,
-    capture: Vec<ScopeEntry>,
+    capture: Vec<ScopeEntry<B>>,
 }
 
 impl<B, T, K> Structure<B, T> for KeyedEntry<B, T, K>
@@ -226,7 +226,7 @@ struct EachEntry<B: Backend, T, I, K> {
     build: Box<BuildFn<B, T, I>>,
     container: B::Node,
     rows: Vec<Row<B, K>>,
-    capture: Vec<ScopeEntry>,
+    capture: Vec<ScopeEntry<B>>,
 }
 
 impl<B, T, I, K> Structure<B, T> for EachEntry<B, T, I, K>

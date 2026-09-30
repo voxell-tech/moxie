@@ -6,8 +6,12 @@ use bevy::image::Image;
 use bevy::ui::widget::ImageNode;
 use bevy::ui::{Node, px};
 
+use motiongfx_interp::interpolation::{InterpFn, Interpolation};
+
 use crate::prop::Prop;
+use crate::state::own_when;
 use crate::tokens::{TextTokens, Tone};
+use crate::transition::BevyMarker;
 use crate::{Bevy, Element, Styled};
 
 /// A square image tinted by a text tone.
@@ -44,23 +48,9 @@ impl Icon {
     }
 }
 
-impl Styled for Icon {
-    fn unset() -> Self {
-        Self {
-            image: Prop::Unset,
-            size: Prop::Unset,
-            tone: Prop::Unset,
-        }
-    }
+fynix_proto::styled!(Icon { image, size, tone });
 
-    fn over(self, below: Self) -> Self {
-        Self {
-            image: self.image.or(below.image),
-            size: self.size.or(below.size),
-            tone: self.tone.or(below.tone),
-        }
-    }
-}
+own_when!(Icon);
 
 /// An [`Icon`]'s props at one moment.
 #[derive(Clone, Debug, PartialEq)]
@@ -68,6 +58,23 @@ pub struct IconSnapshot {
     pub image: Handle<Image>,
     pub size: f32,
     pub color: Color,
+}
+
+/// The size and tint blend, and the image takes the target.
+impl Interpolation<BevyMarker> for IconSnapshot {
+    fn interp(from: &Self, to: &Self, t: f32) -> Self {
+        Self {
+            image: to.image.clone(),
+            size: <f32 as Interpolation<()>>::interp(
+                &from.size, &to.size, t,
+            ),
+            color: <Color as Interpolation<BevyMarker>>::interp(
+                &from.color,
+                &to.color,
+                t,
+            ),
+        }
+    }
 }
 
 impl<T: TextTokens> Element<Bevy, T> for Icon {
@@ -112,6 +119,10 @@ impl<T: TextTokens> Element<Bevy, T> for Icon {
         self.image.changed(world)
             | self.size.changed(world)
             | self.tone.changed(world)
+    }
+
+    fn interp() -> Option<InterpFn<IconSnapshot>> {
+        Some(<IconSnapshot as Interpolation<BevyMarker>>::interp)
     }
 }
 

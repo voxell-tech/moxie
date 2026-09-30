@@ -13,6 +13,7 @@ use hashbrown::{HashMap, HashSet};
 use typarena::type_table::TypeTable;
 
 use crate::backend::Backend;
+use crate::layer::Live;
 use crate::rules::RuleArena;
 use crate::transition::Run;
 use crate::view::Element;
@@ -93,6 +94,9 @@ pub struct Mounted<B: Backend, T> {
     counts: Vec<CountFn<B>>,
     kinds: HashSet<TypeId>,
     hooks: HashMap<B::Node, Hooks<B>>,
+    /// The elements whose state rules are read on each node, besides
+    /// the node's own element.
+    readers: HashMap<B::Node, Vec<B::Node>>,
     /// Structural views by id, parents before the views they build.
     slots: BTreeMap<Group, Slot<B, T>>,
     /// The slot of each container node.
@@ -109,6 +113,7 @@ impl<B: Backend, T> Default for Mounted<B, T> {
             counts: Vec::new(),
             kinds: HashSet::new(),
             hooks: HashMap::new(),
+            readers: HashMap::new(),
             slots: BTreeMap::new(),
             containers: HashMap::new(),
             next_group: 0,
@@ -119,12 +124,13 @@ impl<B: Backend, T> Default for Mounted<B, T> {
 
 impl<B: Backend, T: 'static> Mounted<B, T> {
     /// Keeps `element` in step with the world as the one on `node`.
-    pub fn mount<E: Element<B, T>>(
+    pub(crate) fn mount<E: Element<B, T>>(
         &mut self,
         world: &mut B::World,
         node: B::Node,
         mut element: E,
         snapshot: E::Snapshot,
+        mut live: Live<B, E, E::Snapshot>,
     ) {
         if self.kinds.insert(TypeId::of::<E>()) {
             self.updates.push(update_kind::<B, T, E>);
@@ -140,12 +146,24 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
         // Checks often fire on their first call, which the snapshot
         // just taken already covers.
         element.changed(world);
+        live.changed::<T>(world);
+        for layer in &live.layers {
+            let on = layer.on(node);
+            (layer.when.watch)(world, on);
+            if on != node {
+                let readers = self.readers.entry(on).or_default();
+                if !readers.contains(&node) {
+                    readers.push(node);
+                }
+            }
+        }
         B::on_mount(world, node);
         element.on_mounted(world, node);
         self.table.insert(
             node,
             Mount::<B, T, E> {
                 element,
+                live,
                 target: snapshot.clone(),
                 shown: snapshot,
                 run: None,
@@ -155,11 +173,20 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
         );
     }
 
-    /// Makes the element on `node` re-read at the next update, whatever
-    /// its checks say.
+    /// Makes the element on `node`, and every element with a state
+    /// rule read on `node`, re-read at the next update, whatever their
+    /// checks say.
     pub fn mark_dirty(&mut self, node: B::Node) {
         if let Some(hooks) = self.hooks.get(&node) {
             (hooks.mark)(&mut self.table, node);
+        }
+        let Some(readers) = self.readers.get_mut(&node) else {
+            return;
+        };
+        // Readers rebuilt away since are dropped here.
+        readers.retain(|reader| self.hooks.contains_key(reader));
+        for &reader in readers.iter() {
+            (self.hooks[&reader].mark)(&mut self.table, reader);
         }
     }
 
@@ -169,6 +196,7 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
         if let Some(hooks) = self.hooks.remove(&node) {
             (hooks.remove)(&mut self.table, node);
         }
+        self.readers.remove(&node);
         if let Some(id) = self.containers.remove(&node) {
             if let Some(slot) = self.slots.remove(&id) {
                 self.forget(slot);
@@ -284,6 +312,7 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
 
 struct Mount<B: Backend, T, E: Element<B, T>> {
     element: E,
+    live: Live<B, E, E::Snapshot>,
     /// Where the written values are heading.
     target: E::Snapshot,
     /// What is written on the node.
@@ -330,21 +359,27 @@ impl<B: Backend, T, E: Element<B, T>> Mount<B, T, E> {
         tick: Tick,
     ) {
         // Not `||`: every check must run, each keeps its own memory.
-        let stale = self.element.changed(world) | self.dirty;
+        let stale = self.element.changed(world)
+            | self.live.changed::<T>(world)
+            | self.dirty;
         self.dirty = false;
         if !stale && self.run.is_none() {
             return;
         }
 
         if stale {
-            let mut now = self.element.snapshot(world, theme);
-            self.element.adjust(&mut now, world, node, theme);
+            let now = self.live.snapshot(
+                &mut self.element,
+                world,
+                node,
+                theme,
+            );
 
             if now != self.target {
                 self.target = now;
                 self.run = self
-                    .element
-                    .tween(theme)
+                    .live
+                    .tween
                     .filter(|tween| {
                         !tick.reduced_motion
                             && !tween.curve.duration.is_zero()

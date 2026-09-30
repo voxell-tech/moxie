@@ -5,9 +5,8 @@ use bevy::ecs::entity::Entity;
 use bevy::ui::{AlignItems, UiRect, percent, px};
 
 use crate::modifier::ModifierExt;
-use crate::state::{StateExt, Stateful};
 use crate::tokens::{SpacingTokens, TextTokens, Tone};
-use crate::views::{BehaviorExt, Label, LabelSnapshot, Tagged, row};
+use crate::views::{BehaviorExt, Label, row};
 use crate::{AnyView, Bevy, Cx, View};
 
 /// Indent per level of `depth`, in pixels.
@@ -72,20 +71,16 @@ where
 }
 
 impl Label {
-    /// This label with the accent colour while the node holds
+    /// This label with the accent tone while the node holds
     /// [`HasAction`], and [`AnimatedField`] recording the field.
     pub fn animatable<T>(
         self,
         field: &'static str,
-    ) -> Tagged<Stateful<Self, T>, AnimatedField>
+    ) -> impl View<Bevy, T>
     where
         T: TextTokens + Send + Sync + 'static,
     {
-        self.when::<HasAction>(
-            |snapshot: &mut LabelSnapshot, theme: &T| {
-                snapshot.color = theme.tone(Tone::Accent);
-            },
-        )
-        .tagged(AnimatedField(field))
+        self.when::<HasAction, T>(|label, _| label.tone(Tone::Accent))
+            .tagged(AnimatedField(field))
     }
 }

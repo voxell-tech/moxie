@@ -1,5 +1,8 @@
-//! Interaction states as components on a node, and the rules and
-//! transitions an element attaches to them.
+//! Interaction states as components on a node, and the state rules
+//! that wait on them.
+
+use core::any::TypeId;
+use core::marker::PhantomData;
 
 use bevy::ecs::component::Component;
 use bevy::ecs::entity::Entity;
@@ -12,11 +15,9 @@ use bevy::ecs::system::{Commands, ResMut};
 use bevy::ecs::world::World;
 use bevy::picking::events::{Pointer, Press, Release};
 use bevy::picking::hover::Hovered as PickingHovered;
-use fynix_proto::{Curve, Motion, MotionTokens, Tween};
-use motiongfx_interp::interpolation::{InterpFn, Interpolation};
+use fynix_proto::{Condition, ScopedExt, When};
 
-use crate::transition::BevyMarker;
-use crate::{Bevy, Cx, Element, Styled};
+use crate::{Bevy, Cx, Styled};
 
 /// The pointer is over the node or one of its descendants.
 #[derive(Component, Clone, Copy, Debug, Default)]
@@ -72,219 +73,112 @@ fn state_removed<S: Component>(
     dirty.0.push(remove.event_target());
 }
 
+/// On a node whose state `S` is already reported to [`DirtyNodes`].
+#[derive(Component)]
+struct Watched<S: Component>(PhantomData<fn() -> S>);
+
 /// Queues the node whenever the state component `S` is inserted on
-/// or removed from it.
+/// or removed from it, once however many rules read it. The states
+/// this crate sets itself are kept up to date from picking too.
 fn watch_state<S: Component>(world: &mut World, node: Entity) {
-    world
-        .entity_mut(node)
+    let Ok(mut entity) = world.get_entity_mut(node) else {
+        return;
+    };
+    if entity.contains::<Watched<S>>() {
+        return;
+    }
+    entity
+        .insert(Watched::<S>(PhantomData))
         .observe(state_inserted::<S>)
         .observe(state_removed::<S>);
-}
-
-/// An edit of a snapshot, with the theme in hand.
-type Edit<S, T> = Box<dyn Fn(&mut S, &T) + Send + Sync>;
-
-/// An edit that holds while a state component is on the node.
-struct StateRule<S, T> {
-    holds: fn(&World, Entity) -> bool,
-    watch: fn(&mut World, Entity),
-    apply: Edit<S, T>,
-}
-
-/// A transition to attach, waiting for the theme to name its curve.
-struct Move<S, T> {
-    motion: Motion,
-    curve: fn(&T, Motion) -> Curve,
-    interp: InterpFn<S>,
-}
-
-impl<S, T> Clone for Move<S, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<S, T> Copy for Move<S, T> {}
-
-/// An element with state rules and a transition attached.
-///
-/// It is an [`Element`] itself, so it mounts like any other, and it is
-/// [`Styled`], so set rules for `Stateful<E, T>` can add rules to
-/// every such element in a scope.
-pub struct Stateful<E: Element<Bevy, T>, T> {
-    element: E,
-    rules: Vec<StateRule<E::Snapshot, T>>,
-    motion: Option<Move<E::Snapshot, T>>,
-}
-
-impl<E: Element<Bevy, T>, T: Send + Sync + 'static> Stateful<E, T> {
-    fn new(element: E) -> Self {
-        Self {
-            element,
-            rules: Vec::new(),
-            motion: None,
-        }
-    }
-
-    /// While the component `S` is on the node, `rule` edits the
-    /// resolved values. Rules apply in the order added, after the
-    /// call-site values and any bound props.
-    pub fn when<S: Component>(
-        mut self,
-        rule: impl Fn(&mut E::Snapshot, &T) + Send + Sync + 'static,
-    ) -> Self {
-        self.rules.push(StateRule {
-            holds: |world, node| world.entity(node).contains::<S>(),
-            watch: watch_state::<S>,
-            apply: Box::new(rule),
-        });
-        self
-    }
-
-    /// Makes every change to the written values travel over the
-    /// theme's curve for `motion`.
-    pub fn transition(mut self, motion: Motion) -> Self
-    where
-        T: MotionTokens,
-        E::Snapshot: Interpolation<BevyMarker>,
+    let tracked = [TypeId::of::<Hovered>(), TypeId::of::<Pressed>()];
+    if tracked.contains(&TypeId::of::<S>())
+        && !entity.contains::<PickingHovered>()
     {
-        self.motion = Some(Move {
-            motion,
-            curve: T::motion,
-            interp:
-                <E::Snapshot as Interpolation<BevyMarker>>::interp,
-        });
-        self
-    }
-}
-
-/// What any element can be given state rules and a transition with.
-pub trait StateExt<T: Send + Sync + 'static>:
-    Element<Bevy, T>
-{
-    /// This element with a rule for the state `S`.
-    fn when<S: Component>(
-        self,
-        rule: impl Fn(&mut Self::Snapshot, &T) + Send + Sync + 'static,
-    ) -> Stateful<Self, T> {
-        Stateful::new(self).when::<S>(rule)
-    }
-
-    /// This element with a transition.
-    fn transition(self, motion: Motion) -> Stateful<Self, T>
-    where
-        T: MotionTokens,
-        Self::Snapshot: Interpolation<BevyMarker>,
-    {
-        Stateful::new(self).transition(motion)
-    }
-}
-
-impl<T: Send + Sync + 'static, E: Element<Bevy, T>> StateExt<T>
-    for E
-{
-}
-
-impl<T: Send + Sync + 'static, E: Element<Bevy, T>> Styled
-    for Stateful<E, T>
-{
-    fn unset() -> Self {
-        Self::new(E::unset())
-    }
-
-    fn over(mut self, below: Self) -> Self {
-        let mut rules = below.rules;
-        rules.append(&mut self.rules);
-        Self {
-            element: self.element.over(below.element),
-            rules,
-            motion: self.motion.or(below.motion),
-        }
-    }
-}
-
-impl<T: Send + Sync + 'static, E: Element<Bevy, T>> Element<Bevy, T>
-    for Stateful<E, T>
-{
-    type Snapshot = E::Snapshot;
-
-    fn prepare(world: &mut World, node: Entity) {
-        E::prepare(world, node);
-        world
-            .entity_mut(node)
+        entity
             .insert(PickingHovered::default())
             .observe(sync_hover)
             .observe(press)
             .observe(release);
     }
+}
 
-    fn snapshot(&self, world: &World, theme: &T) -> E::Snapshot {
-        self.element.snapshot(world, theme)
+/// The state of a node holding the component `S`, for rules to wait
+/// on. See [`StateExt::when`].
+pub struct State<S>(PhantomData<fn() -> S>);
+
+impl<S: Component> Condition<Bevy> for State<S> {
+    fn holds(world: &World, node: Entity) -> bool {
+        world
+            .get_entity(node)
+            .is_ok_and(|entity| entity.contains::<S>())
     }
 
-    fn write(
-        snapshot: &E::Snapshot,
-        world: &mut World,
-        node: Entity,
-    ) {
-        E::write(snapshot, world, node);
-    }
-
-    fn is_live(&self) -> bool {
-        self.element.is_live() || !self.rules.is_empty()
-    }
-
-    fn changed(&mut self, world: &World) -> bool {
-        self.element.changed(world)
-    }
-
-    fn on_mounted(&self, world: &mut World, node: Entity) {
-        self.element.on_mounted(world, node);
-        for rule in &self.rules {
-            (rule.watch)(world, node);
-        }
-    }
-
-    fn resolve(self, cx: &Cx<'_, Bevy, T>) -> Self {
-        let Self {
-            element,
-            rules,
-            motion,
-        } = self;
-        // Rules for the bare element, then rules for the wrapped one.
-        let element = E::resolve(element, cx);
-        cx.resolve(Self {
-            element,
-            rules,
-            motion,
-        })
-    }
-
-    fn adjust(
-        &self,
-        snapshot: &mut E::Snapshot,
-        world: &World,
-        node: Entity,
-        theme: &T,
-    ) {
-        self.element.adjust(snapshot, world, node, theme);
-        for rule in &self.rules {
-            if (rule.holds)(world, node) {
-                (rule.apply)(snapshot, theme);
-            }
-        }
-    }
-
-    fn tween(&self, theme: &T) -> Option<Tween<E::Snapshot>> {
-        match self.motion {
-            Some(motion) => Some(Tween {
-                curve: (motion.curve)(theme, motion.motion),
-                interp: motion.interp,
-            }),
-            None => self.element.tween(theme),
-        }
+    fn watch(world: &mut World, node: Entity) {
+        watch_state::<S>(world, node);
     }
 }
+
+/// What any view can be given state rules with.
+pub trait StateExt: Sized {
+    /// This view, with the rules `rules` sets holding while its root
+    /// node holds the component `S`: on the root they beat its call
+    /// site, and on a view under it they fill what its call site left
+    /// unset. See [`Cx::when`].
+    ///
+    /// ```ignore
+    /// button(row((icon(save), label("Save"))))
+    ///     .when::<Hovered, _>(|cx: &mut Cx<Bevy, Theme>| {
+    ///         cx.set::<Label>(|l, _| l.tone(Tone::Accent));
+    ///     })
+    /// ```
+    fn when<S: Component, F>(
+        self,
+        rules: F,
+    ) -> When<Self, F, State<S>> {
+        self.when_in::<State<S>, F>(rules)
+    }
+}
+
+impl<V> StateExt for V {}
+
+/// A rule an element writes on itself, as the block of a
+/// [`StateExt::when`].
+pub fn own<V: Styled, T: 'static>(
+    rule: impl Fn(V, &T) -> V + Send + Sync + 'static,
+) -> impl FnOnce(&mut Cx<'_, Bevy, T>) {
+    move |cx| cx.set::<V>(rule)
+}
+
+/// An inherent `when` for an element, taking one rule for the element
+/// itself instead of a block.
+macro_rules! own_when {
+    ($element:ty) => {
+        impl $element {
+            /// This element, with `rule` restyling it while its node
+            /// holds the component `S`. It beats the call site.
+            pub fn when<S, T>(
+                self,
+                rule: impl Fn(Self, &T) -> Self + Send + Sync + 'static,
+            ) -> fynix_proto::When<
+                Self,
+                impl FnOnce(&mut $crate::Cx<'_, $crate::Bevy, T>),
+                $crate::state::State<S>,
+            >
+            where
+                S: bevy::ecs::component::Component,
+                T: 'static,
+            {
+                $crate::state::StateExt::when::<S, _>(
+                    self,
+                    $crate::state::own(rule),
+                )
+            }
+        }
+    };
+}
+
+pub(crate) use own_when;
 
 #[cfg(test)]
 mod tests {
@@ -297,12 +191,14 @@ mod tests {
     use bevy::ecs::resource::Resource;
     use bevy::text::{FontSize, TextColor, TextFont};
     use bevy::time::{TimePlugin, TimeUpdateStrategy};
+    use fynix_proto::{Curve, Motion, MotionTokens, ScopedExt};
+    use motiongfx_interp::interpolation::Interpolation;
 
     use super::*;
     use crate::mounted::Mounts;
     use crate::tokens::{TextTokens, Tone};
-    use crate::transition::ReducedMotion;
-    use crate::views::{Label, LabelSnapshot, label};
+    use crate::transition::{BevyMarker, ReducedMotion};
+    use crate::views::{Label, label, row};
     use crate::{
         AnyView, FynixProtoPlugin, Theme, derived, every_frame,
         mount, resource,
@@ -314,7 +210,7 @@ mod tests {
         fn tone(&self, tone: Tone) -> Color {
             match tone {
                 Tone::Body => Color::BLACK,
-                Tone::Dim => Color::srgb(0.2, 0.2, 0.2),
+                Tone::Dim => DIM,
                 Tone::Accent => Color::WHITE,
             }
         }
@@ -337,8 +233,22 @@ mod tests {
         }
     }
 
+    impl crate::tokens::SpacingTokens for Test {
+        fn gap(&self) -> f32 {
+            0.0
+        }
+
+        fn row(&self) -> f32 {
+            20.0
+        }
+
+        fn radius(&self) -> f32 {
+            0.0
+        }
+    }
+
     const BLACK: Color = Color::BLACK;
-    const GREY: Color = Color::srgb(0.5, 0.5, 0.5);
+    const DIM: Color = Color::srgb(0.2, 0.2, 0.2);
 
     /// Halfway from black to white.
     fn halfway() -> Color {
@@ -373,8 +283,8 @@ mod tests {
         app.world().get::<TextColor>(node).expect("a label").0
     }
 
-    fn accent(snapshot: &mut LabelSnapshot, theme: &Test) {
-        snapshot.color = theme.tone(Tone::Accent);
+    fn accent(label: Label, _: &Test) -> Label {
+        label.tone(Tone::Accent)
     }
 
     fn hover(app: &mut App, node: Entity, on: bool) {
@@ -386,12 +296,19 @@ mod tests {
         }
     }
 
+    fn children(app: &App, node: Entity) -> Vec<Entity> {
+        app.world()
+            .get::<Children>(node)
+            .map(|children| children.iter().collect())
+            .unwrap_or_default()
+    }
+
     #[test]
     fn a_state_rule_applies_while_its_state_holds() {
         let mut app = app();
         let node = mount::<Test>(
             app.world_mut(),
-            label("x").when::<Hovered>(accent),
+            label("x").when::<Hovered, _>(accent),
         );
         assert_eq!(color(&app, node), BLACK);
 
@@ -409,7 +326,7 @@ mod tests {
         let mut app = app();
         let node = mount::<Test>(
             app.world_mut(),
-            label("x").when::<Selected>(accent),
+            label("x").when::<Selected, _>(accent),
         );
 
         app.world_mut().entity_mut(node).insert(Selected);
@@ -419,14 +336,14 @@ mod tests {
     }
 
     #[test]
-    fn rules_apply_in_order_and_only_for_their_state() {
+    fn the_later_rule_wins_while_both_hold() {
         let mut app = app();
         let node = mount::<Test>(
             app.world_mut(),
-            label("x").when::<Hovered>(accent).when::<Pressed>(
-                |s: &mut LabelSnapshot, _: &Test| {
-                    s.color = GREY;
-                },
+            // The second rule is on the first's wrapper, not on the
+            // label, so it takes a block.
+            label("x").when::<Hovered, _>(accent).when::<Pressed, _>(
+                own(|l: Label, _: &Test| l.tone(Tone::Dim)),
             ),
         );
 
@@ -436,7 +353,7 @@ mod tests {
 
         app.world_mut().entity_mut(node).insert(Pressed);
         app.update();
-        assert_eq!(color(&app, node), GREY);
+        assert_eq!(color(&app, node), DIM, "the one written later");
     }
 
     #[test]
@@ -444,13 +361,13 @@ mod tests {
         let mut app = app();
         let fixed = mount::<Test>(
             app.world_mut(),
-            label("x").tone(Tone::Dim).when::<Hovered>(accent),
+            label("x").tone(Tone::Dim).when::<Hovered, _>(accent),
         );
         let bound = mount::<Test>(
             app.world_mut(),
             label("x")
                 .tone(derived(|_| Tone::Dim).when(every_frame()))
-                .when::<Hovered>(accent),
+                .when::<Hovered, _>(accent),
         );
         hover(&mut app, fixed, true);
         hover(&mut app, bound, true);
@@ -458,6 +375,56 @@ mod tests {
 
         assert_eq!(color(&app, fixed), Color::WHITE);
         assert_eq!(color(&app, bound), Color::WHITE);
+
+        hover(&mut app, bound, false);
+        app.update();
+        assert_eq!(
+            color(&app, bound),
+            DIM,
+            "and the binding is back"
+        );
+    }
+
+    #[test]
+    fn a_state_rule_on_a_composite_reaches_the_labels_in_it() {
+        let mut app = app();
+        let root = mount::<Test>(
+            app.world_mut(),
+            row((label("lit"), label("kept").tone(Tone::Dim)))
+                .when::<Hovered, _>(|cx: &mut Cx<Bevy, Test>| {
+                    cx.set::<Label>(accent);
+                }),
+        );
+        let [lit, kept] = children(&app, root)[..] else {
+            panic!("two labels");
+        };
+
+        hover(&mut app, root, true);
+        app.update();
+
+        assert_eq!(color(&app, lit), Color::WHITE);
+        assert_eq!(color(&app, kept), DIM, "its call site opts out");
+
+        hover(&mut app, root, false);
+        app.update();
+        assert_eq!(color(&app, lit), BLACK);
+    }
+
+    #[test]
+    fn a_label_under_the_hovered_node_does_not_need_its_own_hover() {
+        let mut app = app();
+        let root = mount::<Test>(
+            app.world_mut(),
+            row((label("x"),)).when::<Hovered, _>(
+                |cx: &mut Cx<Bevy, Test>| cx.set::<Label>(accent),
+            ),
+        );
+        let child = children(&app, root)[0];
+
+        hover(&mut app, child, true);
+        app.update();
+
+        assert_eq!(color(&app, child), BLACK, "read on the row");
     }
 
     #[test]
@@ -465,7 +432,7 @@ mod tests {
         let mut app = app();
         mount::<Test>(
             app.world_mut(),
-            label("x").when::<Hovered>(accent),
+            label("x").when::<Hovered, _>(accent),
         );
         mount::<Test>(app.world_mut(), label("y"));
 
@@ -473,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn set_rules_reach_the_stateful_element_and_its_bare_element() {
+    fn a_set_rule_still_fills_under_a_state_rule() {
         let mut app = app();
         let root = mount::<Test>(
             app.world_mut(),
@@ -481,45 +448,19 @@ mod tests {
                 let root = cx.spawn();
                 cx.under(root, |cx| {
                     cx.set::<Label>(|l, _| l.size(20.0));
-                    cx.set::<Stateful<Label, Test>>(|l, _| {
-                        l.when::<Hovered>(accent)
-                    });
-                    cx.build(label("x").when::<Pressed>(
-                        |s: &mut LabelSnapshot, _: &Test| {
-                            s.color = GREY;
-                        },
-                    ));
-                    cx.build(label("plain"));
+                    cx.build(label("x").when::<Hovered, _>(accent));
                 });
                 root
             }),
         );
-        let [stateful, plain] = app
-            .world()
-            .get::<Children>(root)
-            .expect("two labels")
-            .iter()
-            .collect::<Vec<_>>()[..]
-        else {
-            panic!("two labels");
-        };
-        hover(&mut app, stateful, true);
-        hover(&mut app, plain, true);
+        let node = children(&app, root)[0];
+        hover(&mut app, node, true);
         app.update();
 
-        assert_eq!(color(&app, stateful), Color::WHITE);
-        assert_eq!(color(&app, plain), BLACK);
+        assert_eq!(color(&app, node), Color::WHITE);
         let size =
-            app.world().get::<TextFont>(stateful).unwrap().font_size;
+            app.world().get::<TextFont>(node).unwrap().font_size;
         assert_eq!(size, FontSize::Px(20.0));
-
-        app.world_mut().entity_mut(stateful).insert(Pressed);
-        app.update();
-        assert_eq!(
-            color(&app, stateful),
-            GREY,
-            "call site rules come last"
-        );
     }
 
     #[test]
@@ -527,7 +468,7 @@ mod tests {
         let mut app = app();
         let node = mount::<Test>(
             app.world_mut(),
-            label("x").when::<Hovered>(accent),
+            label("x").when::<Hovered, _>(accent),
         );
 
         hover(&mut app, node, true);
@@ -542,7 +483,7 @@ mod tests {
         let node = mount::<Test>(
             app.world_mut(),
             label("x")
-                .when::<Hovered>(accent)
+                .when::<Hovered, _>(accent)
                 .transition(Motion::Interact),
         );
 
@@ -585,7 +526,7 @@ mod tests {
         let node = mount::<Test>(
             app.world_mut(),
             label("x")
-                .when::<Hovered>(accent)
+                .when::<Hovered, _>(accent)
                 .transition(Motion::Interact),
         );
 
@@ -606,22 +547,20 @@ mod tests {
     }
 
     #[test]
-    fn a_transition_can_come_from_a_set_rule() {
+    fn a_transition_rule_in_a_scope_reaches_the_elements_in_it() {
         let mut app = app();
         let root = mount::<Test>(
             app.world_mut(),
             AnyView::<Bevy, Test>::new(|cx| {
                 let root = cx.spawn();
                 cx.under(root, |cx| {
-                    cx.set::<Stateful<Label, Test>>(|l, _| {
-                        l.transition(Motion::Interact)
-                    });
-                    cx.build(label("x").when::<Hovered>(accent));
+                    cx.transition(Motion::Interact);
+                    cx.build(label("x").when::<Hovered, _>(accent));
                 });
                 root
             }),
         );
-        let node = app.world().get::<Children>(root).unwrap()[0];
+        let node = children(&app, root)[0];
 
         hover(&mut app, node, true);
         app.update();
@@ -636,7 +575,7 @@ mod tests {
         let node = mount::<Test>(
             app.world_mut(),
             label("x")
-                .when::<Hovered>(accent)
+                .when::<Hovered, _>(accent)
                 .transition(Motion::Interact),
         );
 
@@ -652,7 +591,7 @@ mod tests {
         let node = mount::<Test>(
             app.world_mut(),
             label("x")
-                .when::<Hovered>(accent)
+                .when::<Hovered, _>(accent)
                 .transition(Motion::Interact),
         );
         hover(&mut app, node, true);
@@ -670,7 +609,7 @@ mod tests {
         let mut app = app();
         let node = mount::<Test>(
             app.world_mut(),
-            label("x").when::<Selected>(accent),
+            label("x").when::<Selected, _>(accent),
         );
 
         app.world_mut().entity_mut(node).insert(Selected);
@@ -693,11 +632,29 @@ mod tests {
     }
 
     #[test]
+    fn a_node_read_by_many_rules_is_queued_once() {
+        let mut app = app();
+        let root = mount::<Test>(
+            app.world_mut(),
+            row((label("a"), label("b"))).when::<Selected, _>(
+                |cx: &mut Cx<Bevy, Test>| cx.set::<Label>(accent),
+            ),
+        );
+
+        app.world_mut().entity_mut(root).insert(Selected);
+
+        assert_eq!(
+            app.world().resource::<DirtyNodes>().0,
+            vec![root]
+        );
+    }
+
+    #[test]
     fn a_state_the_element_has_no_rule_for_does_not_queue_it() {
         let mut app = app();
         let node = mount::<Test>(
             app.world_mut(),
-            label("x").when::<Hovered>(accent),
+            label("x").when::<Hovered, _>(accent),
         );
 
         app.world_mut().entity_mut(node).insert(Selected);
@@ -706,12 +663,12 @@ mod tests {
     }
 
     #[test]
-    fn a_despawned_stateful_element_is_dropped() {
+    fn a_despawned_element_with_a_state_rule_is_dropped() {
         let mut app = app();
         let node = mount::<Test>(
             app.world_mut(),
             label("x")
-                .when::<Hovered>(accent)
+                .when::<Hovered, _>(accent)
                 .transition(Motion::Interact),
         );
         assert_eq!(app.world().resource::<Mounts<Test>>().len(), 1);

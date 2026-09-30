@@ -1,7 +1,7 @@
 //! The prototype's views in a window, one section per idea in
 //! `docs/fynix_rewrite.md`: a theme implemented through token traits,
-//! an app-wide set rule, bound labels, hover rules with transitions, a
-//! scoped rule, a folding section, field rows, a screen switch and a
+//! an app-wide set rule, bound labels, hover rules with transitions,
+//! one state rule reaching a button's parts, a scoped rule, a folding section, field rows, a screen switch and a
 //! keyed list that rebuild structure, and a reduced-motion switch.
 //!
 //! `cargo run -p bevy_fynix_proto --example gallery`
@@ -23,12 +23,13 @@ use bevy_fynix_proto::tokens::{
     TextTokens, Tone,
 };
 use bevy_fynix_proto::views::{
-    AnimatedField, BehaviorExt, HasAction, Label, LabelSnapshot,
-    button, column, field_row, foldable, frame, label, row,
+    AnimatedField, BehaviorExt, Frame, HasAction, Label, button,
+    column, field_row, foldable, frame, label, row,
 };
 use bevy_fynix_proto::{
-    AnyView, Bevy, Cx, FynixProtoPlugin, Hovered, ReducedMotion,
-    StateExt, Theme, View, ViewExt, each, keyed, mount, resource,
+    AnyView, Bevy, Cx, FynixProtoPlugin, Hovered, Pressed,
+    ReducedMotion, ScopedExt, StateExt, Theme, View, ViewExt, each,
+    keyed, mount, resource,
 };
 
 /// What a view is built with, in this app.
@@ -140,6 +141,10 @@ fn gallery() -> AnyView<Bevy, Monokai> {
                 label("fynix prototype on Bevy").size(20.0),
                 section("Bound values", bound_values()),
                 section("Hover, with a transition", hover_list()),
+                section(
+                    "One state rule across a button's parts",
+                    parts(),
+                ),
                 section("A scoped rule", scoped()),
                 section("Folding", folding()),
                 section("Field rows", fields()),
@@ -194,13 +199,37 @@ fn bound_values() -> impl View<Bevy, Monokai> {
 /// label moves.
 fn line(text: &str) -> impl View<Bevy, Monokai> + use<> {
     label(text)
-        .when::<Hovered>(
-            |shown: &mut LabelSnapshot, theme: &Monokai| {
-                shown.color = theme.tone(Tone::Accent);
-                shown.scale = 1.1;
-            },
-        )
+        .when::<Hovered, Monokai>(|label, _| {
+            label.tone(Tone::Accent).scale(1.1)
+        })
         .transition(Motion::Interact)
+}
+
+/// One state rule for a whole button: hovering lights every label in
+/// it that did not choose its own tone, and pressing darkens the frame
+/// over the button's own hover fill.
+fn parts() -> impl View<Bevy, Monokai> {
+    row((
+        button(
+            row((label("Save"), label("Ctrl+S").tone(Tone::Dim)))
+                .gap(12.0),
+        )
+        .padding(UiRect::axes(px(10.0), px(4.0)))
+        .when::<Hovered, _>(|cx: &mut Build| {
+            cx.set::<Label>(|label, _| label.tone(Tone::Accent));
+        })
+        .when::<Pressed, _>(|cx: &mut Build| {
+            cx.root(|cx| {
+                cx.set::<Frame>(|frame, theme| {
+                    frame.fill(theme.panel())
+                });
+            });
+        })
+        .transition(Motion::Interact),
+        label("The shortcut keeps its dim tone").tone(Tone::Dim),
+    ))
+    .gap(8.0)
+    .align(AlignItems::Center)
 }
 
 fn hover_list() -> impl View<Bevy, Monokai> {

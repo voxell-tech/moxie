@@ -19,9 +19,11 @@ extern crate std;
 
 pub mod backend;
 pub mod cx;
+mod layer;
 pub mod mounted;
 pub mod prop;
 pub mod rules;
+pub mod scoped;
 pub mod structure;
 pub mod transition;
 pub mod view;
@@ -34,7 +36,11 @@ pub use cx::{Cx, Trace};
 pub use lenz;
 pub use mounted::{Mounted, Tick};
 pub use prop::{Derived, Prop, Signal, derived};
-pub use rules::RuleArena;
+pub use rules::{Condition, RuleArena};
+pub use scoped::{Rules, ScopedExt, Transition, When};
 pub use structure::{Each, Keyed, each, keyed};
 pub use transition::{Curve, Motion, MotionTokens, Tween};
-pub use view::{AnyView, Element, Styled, View, ViewExt, ViewSeq};
+pub use view::{
+    AnyView, Element, Layered, Settable, Styled, View, ViewExt,
+    ViewSeq,
+};

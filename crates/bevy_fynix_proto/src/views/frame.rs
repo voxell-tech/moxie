@@ -9,9 +9,10 @@ use bevy::ui::{
     JustifyContent, Node, UiRect, Val, px,
 };
 
-use motiongfx_interp::interpolation::Interpolation;
+use motiongfx_interp::interpolation::{InterpFn, Interpolation};
 
 use crate::prop::Prop;
+use crate::state::own_when;
 use crate::tokens::SpacingTokens;
 use crate::transition::BevyMarker;
 use crate::{Bevy, Element, Styled};
@@ -95,37 +96,20 @@ impl Frame {
     );
 }
 
-impl Styled for Frame {
-    fn unset() -> Self {
-        Self {
-            direction: Prop::Unset,
-            gap: Prop::Unset,
-            padding: Prop::Unset,
-            width: Prop::Unset,
-            height: Prop::Unset,
-            grow: Prop::Unset,
-            justify: Prop::Unset,
-            align: Prop::Unset,
-            fill: Prop::Unset,
-            radius: Prop::Unset,
-        }
-    }
+fynix_proto::styled!(Frame {
+    direction,
+    gap,
+    padding,
+    width,
+    height,
+    grow,
+    justify,
+    align,
+    fill,
+    radius,
+});
 
-    fn over(self, below: Self) -> Self {
-        Self {
-            direction: self.direction.or(below.direction),
-            gap: self.gap.or(below.gap),
-            padding: self.padding.or(below.padding),
-            width: self.width.or(below.width),
-            height: self.height.or(below.height),
-            grow: self.grow.or(below.grow),
-            justify: self.justify.or(below.justify),
-            align: self.align.or(below.align),
-            fill: self.fill.or(below.fill),
-            radius: self.radius.or(below.radius),
-        }
-    }
-}
+own_when!(Frame);
 
 /// A [`Frame`]'s props at one moment. A `None` field is left as the
 /// node has it.
@@ -236,6 +220,10 @@ impl<T: SpacingTokens> Element<Bevy, T> for Frame {
             | self.align.changed(world)
             | self.fill.changed(world)
             | self.radius.changed(world)
+    }
+
+    fn interp() -> Option<InterpFn<FrameSnapshot>> {
+        Some(<FrameSnapshot as Interpolation<BevyMarker>>::interp)
     }
 }
 

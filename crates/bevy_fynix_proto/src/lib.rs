@@ -26,7 +26,8 @@ use bevy::ecs::entity::Entity;
 use bevy::ecs::resource::Resource;
 use bevy::ecs::world::World;
 pub use fynix_proto::{
-    AnyView, Cx, Element, Styled, View, ViewExt, ViewSeq,
+    AnyView, Cx, Element, Layered, ScopedExt, Styled, View, ViewExt,
+    ViewSeq,
 };
 
 pub use backend::{Bevy, Unmounted};
@@ -37,7 +38,7 @@ pub use prop::{
     Derived, Each, Keyed, Prop, Signal, component, derived, each,
     every_frame, keyed, resource,
 };
-pub use state::{DirtyNodes, Hovered, Pressed, StateExt, Stateful};
+pub use state::{DirtyNodes, Hovered, Pressed, State, StateExt};
 pub use transition::{BevyMarker, ReducedMotion};
 
 /// The theme views are built with, as a resource.
