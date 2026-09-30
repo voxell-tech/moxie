@@ -930,6 +930,7 @@ dependencies = [
 name = "bevy_fynix_proto"
 version = "0.1.0"
 dependencies = [
+ "bevy",
  "bevy_app",
  "bevy_asset",
  "bevy_color",
