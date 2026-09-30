@@ -189,20 +189,23 @@ fn bound_values() -> impl View<Bevy, Monokai> {
     .gap(6.0)
 }
 
-/// A label that turns accent under the pointer, over the theme's
-/// curve.
+/// A label that turns accent and grows under the pointer, over the
+/// theme's curve. The growth is a transform, so nothing around the
+/// label moves.
 fn line(text: &str) -> impl View<Bevy, Monokai> + use<> {
     label(text)
         .when::<Hovered>(
             |shown: &mut LabelSnapshot, theme: &Monokai| {
                 shown.color = theme.tone(Tone::Accent);
-                shown.size = 15.0;
+                shown.scale = 1.1;
             },
         )
         .transition(Motion::Interact)
 }
 
 fn hover_list() -> impl View<Bevy, Monokai> {
+    // Start-aligned, so each label is as wide as its text and scales
+    // around it.
     column(
         ["cube.glb", "sphere.glb", "brick", "hello_world.mox"]
             .into_iter()
@@ -210,6 +213,7 @@ fn hover_list() -> impl View<Bevy, Monokai> {
             .collect::<Vec<_>>(),
     )
     .gap(4.0)
+    .align(AlignItems::Start)
 }
 
 /// Rules set in a scope end with it, and an explicit value still
