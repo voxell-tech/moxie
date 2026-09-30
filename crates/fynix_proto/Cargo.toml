@@ -1,6 +1,6 @@
 [package]
 name = "fynix_proto"
-description = "Throwaway prototype of the fynix rewrite, see docs/fynix_rewrite.md."
+description = "Backend-agnostic core of the fynix rewrite prototype, see docs/fynix_rewrite.md."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,12 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bevy = { workspace = true, default-features = true }
+typarena = { version = "0.1.2", features = ["send", "sync"] }
+# `std`: its integer interpolation does not build without it.
+motiongfx_interp = { version = "0.3.1" }
+hashbrown = { version = "0.17", default-features = false, features = [
+    "default-hasher",
+] }
 
 [lints]
 workspace = true

@@ -7,16 +7,16 @@ use core::time::Duration;
 
 pub use bevy::prelude::*;
 #[allow(unused_imports)]
-pub use fynix_proto::ViewExt;
-pub use fynix_proto::modifier::ModifierExt;
-pub use fynix_proto::tokens::{
+pub use bevy_fynix_proto::ViewExt;
+pub use bevy_fynix_proto::modifier::ModifierExt;
+pub use bevy_fynix_proto::tokens::{
     Curve, Motion, MotionTokens, SpacingTokens, SurfaceTokens,
     TextTokens, Tone,
 };
-pub use fynix_proto::views::{
+pub use bevy_fynix_proto::views::{
     LabelSnapshot, button, column, icon, label, row,
 };
-pub use fynix_proto::{
+pub use bevy_fynix_proto::{
     Bevy, FynixProtoPlugin, Hovered, StateExt, Stateful, Theme, View,
     mount,
 };
@@ -82,7 +82,7 @@ impl MotionTokens for Editor {
 /// A label that turns accent on hover, over the theme's curve.
 pub fn line(
     text: String,
-) -> Stateful<fynix_proto::views::Label, Editor> {
+) -> Stateful<bevy_fynix_proto::views::Label, Editor> {
     label(text)
         .when::<Hovered>(
             |snapshot: &mut LabelSnapshot, theme: &Editor| {
@@ -92,7 +92,7 @@ pub fn line(
         .transition(Motion::Interact)
 }
 
-pub fn glyph() -> fynix_proto::views::Icon {
+pub fn glyph() -> bevy_fynix_proto::views::Icon {
     icon(Handle::<Image>::default()).size(14.0)
 }
 

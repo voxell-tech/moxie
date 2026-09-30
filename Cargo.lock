@@ -927,6 +927,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_fynix_proto"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "bevy_gilrs"
 version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2904,7 +2911,9 @@ dependencies = [
 name = "fynix_proto"
 version = "0.1.0"
 dependencies = [
- "bevy",
+ "hashbrown 0.17.1",
+ "motiongfx_interp",
+ "typarena",
 ]
 
 [[package]]

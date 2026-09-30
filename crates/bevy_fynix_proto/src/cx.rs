@@ -1,55 +1,46 @@
 //! What a view is built with: the world, the theme, where it hangs,
-//! the rules in force there, and where live leaves are kept.
+//! and the rules in force there.
 
-use typarena::type_table::TypeTable;
+use core::any::{Any, TypeId};
+use std::collections::HashMap;
 
 use crate::backend::Backend;
-use crate::mounted::Mounted;
 use crate::view::{Styled, View};
 
-/// One rule restyling a `V`, with the theme in hand.
+/// A set or show rule for views of one kind, erased so rules for every
+/// kind share a table.
+type ErasedRule = Box<dyn Any + Send + Sync>;
+
+/// A rule restyling a `V`, with the theme in hand.
 type Rule<V, T> = Box<dyn Fn(V, &T) -> V + Send + Sync>;
 
-/// The rules restyling a `V` that one scope adds, in the order set.
-type Rules<V, T> = Vec<Rule<V, T>>;
+/// The rules one scope adds, by the kind of view they restyle.
+#[derive(Default)]
+struct Scope {
+    sets: HashMap<TypeId, Vec<ErasedRule>>,
+    shows: HashMap<TypeId, Vec<ErasedRule>>,
+}
 
 pub struct Cx<'a, B: Backend, T> {
     pub world: &'a mut B::World,
     theme: &'a T,
-    mounted: &'a mut Mounted<B, T>,
     parent: Option<B::Node>,
-    /// Set rules, one row per scope depth, one column per view kind.
-    sets: TypeTable<usize>,
-    /// Show rules, laid out like `sets`.
-    shows: TypeTable<usize>,
-    /// The innermost scope's depth. The root's is 0.
-    depth: usize,
+    /// Outermost first. Never empty: the first is the root's.
+    scopes: Vec<Scope>,
 }
 
 impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
-    pub fn new(
-        world: &'a mut B::World,
-        theme: &'a T,
-        mounted: &'a mut Mounted<B, T>,
-    ) -> Self {
+    pub fn new(world: &'a mut B::World, theme: &'a T) -> Self {
         Self {
             world,
             theme,
-            mounted,
             parent: None,
-            sets: TypeTable::new(),
-            shows: TypeTable::new(),
-            depth: 0,
+            scopes: vec![Scope::default()],
         }
     }
 
     pub fn theme(&self) -> &'a T {
         self.theme
-    }
-
-    /// Where live leaves are kept, to mount one.
-    pub fn mounted(&mut self) -> &mut Mounted<B, T> {
-        self.mounted
     }
 
     /// Where a view built now hangs. `None` at the root.
@@ -84,11 +75,9 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
         &mut self,
         build: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        self.depth += 1;
+        self.scopes.push(Scope::default());
         let built = build(self);
-        self.sets.remove_row(&self.depth);
-        self.shows.remove_row(&self.depth);
-        self.depth -= 1;
+        self.scopes.pop();
         built
     }
 
@@ -98,16 +87,27 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
         &mut self,
         rule: impl Fn(V, &T) -> V + Send + Sync + 'static,
     ) {
-        push::<V, T>(&mut self.sets, self.depth, Box::new(rule));
+        let rule: Rule<V, T> = Box::new(rule);
+        self.innermost()
+            .sets
+            .entry(TypeId::of::<V>())
+            .or_default()
+            .push(Box::new(rule));
     }
 
     /// Transforms every `V` built from here to the end of the scope,
-    /// after its call site, so unlike a set rule it wins over it.
+    /// after its call site. Unlike a set rule, it wins over the call
+    /// site.
     pub fn show<V: Styled>(
         &mut self,
         rule: impl Fn(V, &T) -> V + Send + Sync + 'static,
     ) {
-        push::<V, T>(&mut self.shows, self.depth, Box::new(rule));
+        let rule: Rule<V, T> = Box::new(rule);
+        self.innermost()
+            .shows
+            .entry(TypeId::of::<V>())
+            .or_default()
+            .push(Box::new(rule));
     }
 
     /// `view` with the rules in force applied: set rules fill what its
@@ -115,26 +115,32 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
     /// transform the result.
     pub fn resolve<V: Styled>(&self, view: V) -> V {
         let theme = self.theme;
-        let below = (0..=self.depth)
-            .filter_map(|depth| self.sets.get::<Rules<V, T>>(&depth))
-            .flatten()
+        let below = self
+            .scopes
+            .iter()
+            .flat_map(|scope| rules_for::<V, T>(&scope.sets))
             .fold(V::unset(), |below, rule| rule(below, theme));
-        (0..=self.depth)
-            .filter_map(|depth| self.shows.get::<Rules<V, T>>(&depth))
-            .flatten()
+        self.scopes
+            .iter()
+            .flat_map(|scope| rules_for::<V, T>(&scope.shows))
             .fold(view.over(below), |view, rule| rule(view, theme))
+    }
+
+    fn innermost(&mut self) -> &mut Scope {
+        self.scopes
+            .last_mut()
+            .expect("the root scope is never popped")
     }
 }
 
-fn push<V: Styled, T: 'static>(
-    table: &mut TypeTable<usize>,
-    depth: usize,
-    rule: Rule<V, T>,
-) {
-    match table.get_mut::<Rules<V, T>>(&depth) {
-        Some(rules) => rules.push(rule),
-        None => {
-            table.insert(depth, vec![rule]);
-        }
-    }
+/// The rules in `table` for views of kind `V`, in the order they were
+/// set.
+fn rules_for<V: 'static, T: 'static>(
+    table: &HashMap<TypeId, Vec<ErasedRule>>,
+) -> impl Iterator<Item = &Rule<V, T>> {
+    table
+        .get(&TypeId::of::<V>())
+        .into_iter()
+        .flatten()
+        .filter_map(|rule| rule.downcast_ref::<Rule<V, T>>())
 }

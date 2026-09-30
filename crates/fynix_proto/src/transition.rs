@@ -1,94 +1,77 @@
-//! Values travelling to a new target over a curve.
+//! How a leaf's written values travel to new ones.
 
 use core::time::Duration;
 
-use bevy::prelude::*;
+use motiongfx_interp::ease::EaseFn;
+use motiongfx_interp::interpolation::InterpFn;
 
-use crate::tokens::Curve;
-
-/// A value that can be blended between two of itself.
-pub trait Interpolate: Sized {
-    /// The blend of `from` and `to` at `t`, from 0 to 1. A part that
-    /// cannot blend takes `to`.
-    fn lerp(from: &Self, to: &Self, t: f32) -> Self;
+/// A kind of movement, resolved to a [`Curve`] by the theme.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Motion {
+    /// Answering the pointer: hover, press.
+    Interact,
+    /// Something opening or growing.
+    Expand,
 }
 
-impl Interpolate for f32 {
-    fn lerp(from: &Self, to: &Self, t: f32) -> Self {
-        from + (to - from) * t
-    }
+/// How long a value travels, and how its progress eases.
+#[derive(Clone, Copy, Debug)]
+pub struct Curve {
+    pub duration: Duration,
+    pub ease: EaseFn,
 }
 
-/// Blended in Oklab, whatever space either colour is stored in.
-impl Interpolate for Color {
-    fn lerp(from: &Self, to: &Self, t: f32) -> Self {
-        Oklaba::from(*from).mix(&Oklaba::from(*to), t).into()
-    }
+/// What a theme answers when asked how something moves.
+pub trait MotionTokens {
+    fn motion(&self, motion: Motion) -> Curve;
 }
 
-/// When set, every transition finishes at once.
-#[derive(Resource, Default, Clone, Copy, Debug)]
-pub struct ReducedMotion(pub bool);
-
-/// How one leaf's snapshots travel: over `curve`, blended by `lerp`.
+/// How a leaf's snapshot `S` travels: over `curve`, blended by
+/// `interp`.
 pub struct Tween<S> {
     pub curve: Curve,
-    pub lerp: fn(&S, &S, f32) -> S,
+    pub interp: InterpFn<S>,
 }
 
-/// A transition under way from `from` to whatever the target is.
+impl<S> Clone for Tween<S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S> Copy for Tween<S> {}
+
+/// One travel in progress, from where the value was when it started.
 pub(crate) struct Run<S> {
     from: S,
-    tween: Tween<S>,
     elapsed: Duration,
+    tween: Tween<S>,
 }
 
 impl<S> Run<S> {
     pub(crate) fn new(from: S, tween: Tween<S>) -> Self {
         Self {
             from,
-            tween,
             elapsed: Duration::ZERO,
+            tween,
         }
     }
 
-    /// Moves `delta` on, and returns the value now, or `None` once it
-    /// has reached `to`.
+    /// Where the value is `delta` later, heading to `to`. `None` once
+    /// it has arrived.
     pub(crate) fn advance(
         &mut self,
         delta: Duration,
         to: &S,
-        reduced: bool,
     ) -> Option<S> {
         self.elapsed += delta;
-        let total = self.tween.curve.duration;
-        if reduced || self.elapsed >= total {
+        let duration = self.tween.curve.duration;
+        if self.elapsed >= duration {
             return None;
         }
         let progress =
-            self.elapsed.as_secs_f32() / total.as_secs_f32();
-        let t = (self.tween.curve.ease)(progress);
-        Some((self.tween.lerp)(&self.from, to, t))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn floats_and_colors_blend() {
-        assert_eq!(
-            <f32 as Interpolate>::lerp(&10.0, &20.0, 0.25),
-            12.5
-        );
-        let black = Color::BLACK;
-        let white = Color::srgb(1.0, 1.0, 1.0);
-
-        let end = Color::lerp(&black, &white, 1.0).to_srgba();
-        assert!((end.red - 1.0).abs() < 1e-4);
-        let mid = Color::lerp(&black, &white, 0.5).to_srgba();
-        assert!(mid.red > 0.0 && mid.red < 1.0);
-        assert!((mid.red - mid.green).abs() < 1e-4);
+            self.elapsed.as_secs_f32() / duration.as_secs_f32();
+        let eased = (self.tween.curve.ease)(progress);
+        Some((self.tween.interp)(&self.from, to, eased))
     }
 }

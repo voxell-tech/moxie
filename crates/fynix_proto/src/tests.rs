@@ -1,250 +1,431 @@
-//! A headless app per test, and two unrelated themes to build under.
+//! The core against a fake backend: a flat list of nodes holding some
+//! text at a size, and one number the text can be bound to.
 
-use bevy::prelude::*;
+use core::time::Duration;
 
-use crate::mounted::Mounted;
-use crate::tokens::{TextTokens, Tone};
-use crate::views::label;
-use crate::{AnyView, Bevy, FynixProtoPlugin, Theme, derived, mount};
+use motiongfx_interp::ease;
+use motiongfx_interp::interpolation::Interpolation;
+
+use crate::{
+    AnyView, Backend, Curve, Cx, Frame, Leaf, Motion, MotionTokens,
+    Mounted, Prop, Styled, Tween, View, derived,
+};
+
+#[derive(Default)]
+struct World {
+    nodes: Vec<Option<Node>>,
+    count: i32,
+}
+
+#[derive(Default)]
+struct Node {
+    parent: Option<usize>,
+    text: String,
+    size: f32,
+}
+
+struct Fake;
+
+impl Backend for Fake {
+    type World = World;
+    type Node = usize;
+
+    fn spawn(world: &mut World, parent: Option<usize>) -> usize {
+        world.nodes.push(Some(Node {
+            parent,
+            ..Node::default()
+        }));
+        world.nodes.len() - 1
+    }
+
+    fn exists(world: &World, node: usize) -> bool {
+        world.nodes.get(node).is_some_and(Option::is_some)
+    }
+}
+
+impl World {
+    fn node(&self, node: usize) -> &Node {
+        self.nodes[node].as_ref().expect("a live node")
+    }
+
+    fn children(&self, parent: usize) -> Vec<usize> {
+        (0..self.nodes.len())
+            .filter(|&node| {
+                self.nodes[node]
+                    .as_ref()
+                    .is_some_and(|n| n.parent == Some(parent))
+            })
+            .collect()
+    }
+}
+
+/// What the fake backend's one leaf reads from a theme.
+trait Sizes {
+    fn body(&self) -> f32;
+}
+
+/// A run of text.
+struct Text {
+    text: Prop<World, String>,
+    size: Prop<World, f32>,
+    motion: Option<Motion>,
+}
+
+fn text(text: impl Into<Prop<World, String>>) -> Text {
+    Text {
+        text: text.into(),
+        ..Text::unset()
+    }
+}
+
+impl Text {
+    fn size(mut self, size: impl Into<Prop<World, f32>>) -> Self {
+        self.size = size.into();
+        self
+    }
+
+    fn transition(mut self, motion: Motion) -> Self {
+        self.motion = Some(motion);
+        self
+    }
+}
+
+impl Styled for Text {
+    fn unset() -> Self {
+        Self {
+            text: Prop::Unset,
+            size: Prop::Unset,
+            motion: None,
+        }
+    }
+
+    fn over(self, below: Self) -> Self {
+        Self {
+            text: self.text.or(below.text),
+            size: self.size.or(below.size),
+            motion: self.motion.or(below.motion),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Shown {
+    text: String,
+    size: f32,
+}
+
+impl Shown {
+    fn interp(from: &Self, to: &Self, t: f32) -> Self {
+        Self {
+            text: to.text.clone(),
+            size: <f32 as Interpolation<()>>::interp(
+                &from.size, &to.size, t,
+            ),
+        }
+    }
+}
+
+impl<T: Sizes + MotionTokens> Leaf<Fake, T> for Text {
+    type Snapshot = Shown;
+
+    fn prepare(_: &mut World, _: usize) {}
+
+    fn snapshot(&self, world: &World, theme: &T) -> Shown {
+        Shown {
+            text: self.text.get(world).unwrap_or_default(),
+            size: self.size.get(world).unwrap_or(theme.body()),
+        }
+    }
+
+    fn write(shown: &Shown, world: &mut World, node: usize) {
+        let node = world.nodes[node].as_mut().expect("a live node");
+        node.text = shown.text.clone();
+        node.size = shown.size;
+    }
+
+    fn is_live(&self) -> bool {
+        self.text.is_bound() || self.size.is_bound()
+    }
+
+    fn tween(&self, theme: &T) -> Option<Tween<Shown>> {
+        let curve = theme.motion(self.motion?);
+        Some(Tween {
+            curve,
+            interp: Shown::interp,
+        })
+    }
+}
 
 /// One app's theme.
 struct Warm;
 
-impl TextTokens for Warm {
-    fn tone(&self, tone: Tone) -> Color {
-        match tone {
-            Tone::Body => Color::WHITE,
-            Tone::Dim => Color::srgb(0.5, 0.5, 0.5),
-            Tone::Accent => Color::srgb(1.0, 0.5, 0.0),
-        }
-    }
-
-    fn body_size(&self) -> f32 {
+impl Sizes for Warm {
+    fn body(&self) -> f32 {
         14.0
     }
+}
 
-    fn small_size(&self) -> f32 {
-        11.0
+impl MotionTokens for Warm {
+    fn motion(&self, _: Motion) -> Curve {
+        Curve {
+            duration: Duration::from_secs(1),
+            ease: ease::linear,
+        }
     }
 }
 
 /// Another app's, stored nothing like the first.
 struct Cold {
-    sizes: [f32; 2],
+    sizes: [f32; 1],
 }
 
-impl TextTokens for Cold {
-    fn tone(&self, _: Tone) -> Color {
-        Color::srgb(0.0, 0.5, 1.0)
-    }
-
-    fn body_size(&self) -> f32 {
+impl Sizes for Cold {
+    fn body(&self) -> f32 {
         self.sizes[0]
     }
+}
 
-    fn small_size(&self) -> f32 {
-        self.sizes[1]
+impl MotionTokens for Cold {
+    fn motion(&self, _: Motion) -> Curve {
+        Curve {
+            duration: Duration::ZERO,
+            ease: ease::linear,
+        }
     }
 }
 
-fn app<T: Send + Sync + 'static>(theme: T) -> App {
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins,
-        FynixProtoPlugin::<T>::default(),
-    ))
-    .insert_resource(Theme(theme));
-    app
+/// A world, a theme and its mounted leaves, built into together.
+struct Ui<T> {
+    world: World,
+    theme: T,
+    mounted: Mounted<Fake, T>,
 }
 
-fn size(app: &App, node: Entity) -> FontSize {
-    app.world()
-        .get::<TextFont>(node)
-        .expect("a label")
-        .font_size
-}
+impl<T: 'static> Ui<T> {
+    fn new(theme: T) -> Self {
+        Self {
+            world: World::default(),
+            theme,
+            mounted: Mounted::default(),
+        }
+    }
 
-fn text(app: &App, node: Entity) -> String {
-    app.world().get::<Text>(node).expect("a label").0.clone()
-}
+    fn build(&mut self, view: impl View<Fake, T>) -> usize {
+        let mut cx =
+            Cx::new(&mut self.world, &self.theme, &mut self.mounted);
+        view.build(&mut cx)
+    }
 
-fn color(app: &App, node: Entity) -> Color {
-    app.world().get::<TextColor>(node).expect("a label").0
-}
+    fn update(&mut self, delta: Duration, reduced_motion: bool) {
+        self.mounted.update(
+            &mut self.world,
+            &self.theme,
+            Frame {
+                delta,
+                reduced_motion,
+            },
+        );
+    }
 
-/// The nodes built directly under `root`, in order.
-fn children(app: &App, root: Entity) -> Vec<Entity> {
-    app.world()
-        .get::<Children>(root)
-        .map(|children| children.iter().collect())
-        .unwrap_or_default()
+    /// A root node with whatever `build` puts under it.
+    fn under(
+        &mut self,
+        build: impl FnOnce(&mut Cx<'_, Fake, T>) + 'static,
+    ) -> Vec<usize> {
+        let root =
+            self.build(AnyView::new(|cx: &mut Cx<'_, Fake, T>| {
+                let root = cx.spawn();
+                cx.under(root, build);
+                root
+            }));
+        self.world.children(root)
+    }
 }
 
 #[test]
 fn an_unset_prop_falls_back_to_the_theme() {
-    let mut app = app(Warm);
-    let node = mount::<Warm>(app.world_mut(), label("Save"));
+    let mut ui = Ui::new(Warm);
+    let node = ui.build(text("Save"));
 
-    assert_eq!(text(&app, node), "Save");
-    assert_eq!(size(&app, node), FontSize::Px(14.0));
-    assert_eq!(color(&app, node), Color::WHITE);
+    assert_eq!(ui.world.node(node).text, "Save");
+    assert_eq!(ui.world.node(node).size, 14.0);
 }
 
 #[test]
 fn the_same_view_works_under_two_unrelated_themes() {
-    let mut warm = app(Warm);
-    let mut cold = app(Cold {
-        sizes: [20.0, 16.0],
-    });
-    let in_warm = mount::<Warm>(warm.world_mut(), label("x"));
-    let in_cold = mount::<Cold>(cold.world_mut(), label("x"));
+    let mut warm = Ui::new(Warm);
+    let mut cold = Ui::new(Cold { sizes: [20.0] });
+    let in_warm = warm.build(text("x"));
+    let in_cold = cold.build(text("x"));
 
-    assert_eq!(size(&warm, in_warm), FontSize::Px(14.0));
-    assert_eq!(size(&cold, in_cold), FontSize::Px(20.0));
+    assert_eq!(warm.world.node(in_warm).size, 14.0);
+    assert_eq!(cold.world.node(in_cold).size, 20.0);
 }
 
 #[test]
-fn a_set_rule_fills_what_the_call_site_left_unset() {
-    let mut app = app(Warm);
-    let root = mount::<Warm>(
-        app.world_mut(),
-        AnyView::<Bevy, Warm>::new(|cx| {
-            let root = cx.spawn();
-            cx.under(root, |cx| {
-                cx.set::<crate::views::Label>(|l, _| {
-                    l.size(20.0).tone(Tone::Dim)
-                });
-                cx.build(label("ruled"));
-                cx.build(label("explicit").size(9.0));
-            });
-            root
-        }),
-    );
-    let [ruled, explicit] = children(&app, root)[..] else {
-        panic!("two labels");
+fn a_set_rule_fills_only_what_the_call_site_left_unset() {
+    let mut ui = Ui::new(Warm);
+    let [ruled, explicit] = ui.under(|cx| {
+        cx.set::<Text>(|t, _| t.size(20.0));
+        cx.build(text("ruled"));
+        cx.build(text("explicit").size(9.0));
+    })[..] else {
+        panic!("two nodes");
     };
 
-    assert_eq!(size(&app, ruled), FontSize::Px(20.0));
-    assert_eq!(
-        size(&app, explicit),
-        FontSize::Px(9.0),
-        "call site wins"
-    );
-    assert_eq!(color(&app, explicit), Color::srgb(0.5, 0.5, 0.5));
-}
-
-#[test]
-fn an_inner_scope_wins_and_ends_with_its_scope() {
-    let mut app = app(Warm);
-    let root = mount::<Warm>(
-        app.world_mut(),
-        AnyView::<Bevy, Warm>::new(|cx| {
-            let root = cx.spawn();
-            cx.under(root, |cx| {
-                cx.set::<crate::views::Label>(|l, _| l.size(20.0));
-                cx.scope(|cx| {
-                    cx.set::<crate::views::Label>(|l, _| {
-                        l.size(30.0)
-                    });
-                    cx.build(label("inner"));
-                });
-                cx.build(label("after"));
-            });
-            root
-        }),
-    );
-    let [inner, after] = children(&app, root)[..] else {
-        panic!("two labels");
-    };
-
-    assert_eq!(size(&app, inner), FontSize::Px(30.0));
-    assert_eq!(size(&app, after), FontSize::Px(20.0));
+    assert_eq!(ui.world.node(ruled).size, 20.0);
+    assert_eq!(ui.world.node(explicit).size, 9.0, "call site wins");
 }
 
 #[test]
 fn a_rule_can_read_the_theme() {
-    let mut app = app(Warm);
-    let root = mount::<Warm>(
-        app.world_mut(),
-        AnyView::<Bevy, Warm>::new(|cx| {
-            let root = cx.spawn();
-            cx.under(root, |cx| {
-                cx.set::<crate::views::Label>(|l, theme: &Warm| {
-                    l.size(theme.small_size())
-                });
-                cx.build(label("small"));
-            });
-            root
-        }),
-    );
+    let mut ui = Ui::new(Warm);
+    let nodes = ui.under(|cx| {
+        cx.set::<Text>(|t, theme: &Warm| t.size(theme.body() * 2.0));
+        cx.build(text("big"));
+    });
 
-    assert_eq!(
-        size(&app, children(&app, root)[0]),
-        FontSize::Px(11.0)
-    );
+    assert_eq!(ui.world.node(nodes[0]).size, 28.0);
+}
+
+#[test]
+fn an_inner_scope_wins_and_ends_with_its_scope() {
+    let mut ui = Ui::new(Warm);
+    let [inner, after] = ui.under(|cx| {
+        cx.set::<Text>(|t, _| t.size(20.0));
+        cx.scope(|cx| {
+            cx.set::<Text>(|t, _| t.size(30.0));
+            cx.build(text("inner"));
+        });
+        cx.build(text("after"));
+    })[..] else {
+        panic!("two nodes");
+    };
+
+    assert_eq!(ui.world.node(inner).size, 30.0);
+    assert_eq!(ui.world.node(after).size, 20.0);
 }
 
 #[test]
 fn a_show_rule_wins_over_the_call_site() {
-    let mut app = app(Warm);
-    let root = mount::<Warm>(
-        app.world_mut(),
-        AnyView::<Bevy, Warm>::new(|cx| {
-            let root = cx.spawn();
-            cx.under(root, |cx| {
-                cx.show::<crate::views::Label>(|l, _| l.wrap(false));
-                cx.build(label("x").wrap(true));
-            });
-            root
-        }),
-    );
-    let node = children(&app, root)[0];
+    let mut ui = Ui::new(Warm);
+    let nodes = ui.under(|cx| {
+        cx.show::<Text>(|t, _| t.size(1.0));
+        cx.build(text("x").size(9.0));
+    });
 
-    let layout =
-        app.world().get::<TextLayout>(node).expect("a label");
-    assert_eq!(layout.linebreak, LineBreak::NoWrap);
+    assert_eq!(ui.world.node(nodes[0]).size, 1.0);
 }
-
-#[derive(Resource)]
-struct Count(u32);
 
 #[test]
 fn a_bound_prop_follows_the_world() {
-    let mut app = app(Warm);
-    app.insert_resource(Count(1));
-    let bound = mount::<Warm>(
-        app.world_mut(),
-        label(derived(|world| {
-            world.resource::<Count>().0.to_string()
-        })),
-    );
-    let fixed = mount::<Warm>(app.world_mut(), label("fixed"));
-    assert_eq!(text(&app, bound), "1");
+    let mut ui = Ui::new(Warm);
+    ui.world.count = 1;
+    let bound = ui.build(text(derived(|world: &World| {
+        world.count.to_string()
+    })));
+    let fixed = ui.build(text("fixed"));
+    assert_eq!(ui.world.node(bound).text, "1");
 
-    app.world_mut().resource_mut::<Count>().0 = 2;
-    app.update();
+    ui.world.count = 2;
+    ui.update(Duration::ZERO, false);
 
-    assert_eq!(text(&app, bound), "2");
-    assert_eq!(text(&app, fixed), "fixed");
+    assert_eq!(ui.world.node(bound).text, "2");
+    assert_eq!(ui.world.node(fixed).text, "fixed");
     assert_eq!(
-        app.world().resource::<Mounted<Warm>>().len(),
+        ui.mounted.len(),
         1,
         "only what can change stays mounted"
     );
 }
 
 #[test]
-fn a_despawned_view_is_dropped() {
-    let mut app = app(Warm);
-    app.insert_resource(Count(1));
-    let node = mount::<Warm>(
-        app.world_mut(),
-        label(derived(|world| {
-            world.resource::<Count>().0.to_string()
-        })),
-    );
-    app.world_mut().despawn(node);
-    app.update();
+fn a_gone_node_is_dropped() {
+    let mut ui = Ui::new(Warm);
+    let node = ui.build(text(derived(|world: &World| {
+        world.count.to_string()
+    })));
+    ui.world.nodes[node] = None;
+    ui.update(Duration::ZERO, false);
 
-    assert!(app.world().resource::<Mounted<Warm>>().is_empty());
+    assert!(ui.mounted.is_empty());
+}
+
+/// A text whose size follows `world.count`, travelling when asked.
+fn counted(motion: Option<Motion>) -> Text {
+    let text =
+        text("x").size(derived(|world: &World| world.count as f32));
+    match motion {
+        Some(motion) => text.transition(motion),
+        None => text,
+    }
+}
+
+#[test]
+fn nothing_travels_unless_asked() {
+    let mut ui = Ui::new(Warm);
+    ui.world.count = 10;
+    let node = ui.build(counted(None));
+
+    ui.world.count = 20;
+    ui.update(Duration::from_millis(100), false);
+
+    assert_eq!(ui.world.node(node).size, 20.0);
+}
+
+#[test]
+fn a_transition_reaches_its_target_over_the_curve() {
+    let mut ui = Ui::new(Warm);
+    ui.world.count = 10;
+    let node = ui.build(counted(Some(Motion::Interact)));
+
+    ui.world.count = 20;
+    ui.update(Duration::ZERO, false);
+    ui.update(Duration::from_millis(500), false);
+    assert_eq!(ui.world.node(node).size, 15.0);
+
+    ui.update(Duration::from_millis(500), false);
+    assert_eq!(ui.world.node(node).size, 20.0);
+}
+
+#[test]
+fn an_interrupted_transition_starts_from_where_it_got_to() {
+    let mut ui = Ui::new(Warm);
+    ui.world.count = 0;
+    let node = ui.build(counted(Some(Motion::Interact)));
+
+    ui.world.count = 100;
+    ui.update(Duration::ZERO, false);
+    ui.update(Duration::from_millis(500), false);
+    assert_eq!(ui.world.node(node).size, 50.0);
+
+    // Heads back to 0 from 50, not from 100.
+    ui.world.count = 0;
+    ui.update(Duration::ZERO, false);
+    ui.update(Duration::from_millis(500), false);
+    assert_eq!(ui.world.node(node).size, 25.0);
+}
+
+#[test]
+fn reduced_motion_snaps() {
+    let mut ui = Ui::new(Warm);
+    ui.world.count = 10;
+    let node = ui.build(counted(Some(Motion::Interact)));
+
+    ui.world.count = 20;
+    ui.update(Duration::from_millis(100), true);
+
+    assert_eq!(ui.world.node(node).size, 20.0);
+}
+
+#[test]
+fn a_zero_length_curve_snaps() {
+    let mut ui = Ui::new(Cold { sizes: [12.0] });
+    ui.world.count = 10;
+    let node = ui.build(counted(Some(Motion::Interact)));
+
+    ui.world.count = 20;
+    ui.update(Duration::from_millis(1), false);
+
+    assert_eq!(ui.world.node(node).size, 20.0);
 }

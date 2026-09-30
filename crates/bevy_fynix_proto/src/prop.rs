@@ -1,26 +1,28 @@
 //! A value a view is handed.
 
-/// A prop: set at the call site, bound to the world `W`, or left for
-/// set rules and then the theme to decide.
+use bevy::prelude::*;
+
+/// A prop: set at the call site, bound to the world, or left for set
+/// rules and then the theme to decide.
 #[derive(Default)]
-pub enum Prop<W, T> {
+pub enum Prop<T> {
     #[default]
     Unset,
     Value(T),
-    Bound(Signal<W, T>),
+    Bound(Signal<T>),
 }
 
-/// A value read from the world `W`, re-read while its view is mounted.
-pub struct Signal<W, T>(Box<dyn Fn(&W) -> T + Send + Sync>);
+/// A value read from the world, re-read every frame.
+pub struct Signal<T>(Box<dyn Fn(&World) -> T + Send + Sync>);
 
 /// A prop that follows whatever `read` returns.
-pub fn derived<W, T>(
-    read: impl Fn(&W) -> T + Send + Sync + 'static,
-) -> Signal<W, T> {
+pub fn derived<T>(
+    read: impl Fn(&World) -> T + Send + Sync + 'static,
+) -> Signal<T> {
     Signal(Box::new(read))
 }
 
-impl<W, T> Prop<W, T> {
+impl<T> Prop<T> {
     pub fn is_unset(&self) -> bool {
         matches!(self, Self::Unset)
     }
@@ -38,7 +40,7 @@ impl<W, T> Prop<W, T> {
     }
 
     /// What this holds now. `None` when unset.
-    pub fn get(&self, world: &W) -> Option<T>
+    pub fn get(&self, world: &World) -> Option<T>
     where
         T: Clone,
     {
@@ -50,19 +52,19 @@ impl<W, T> Prop<W, T> {
     }
 }
 
-impl<W, T> From<T> for Prop<W, T> {
+impl<T> From<T> for Prop<T> {
     fn from(value: T) -> Self {
         Self::Value(value)
     }
 }
 
-impl<W, T> From<Signal<W, T>> for Prop<W, T> {
-    fn from(signal: Signal<W, T>) -> Self {
+impl<T> From<Signal<T>> for Prop<T> {
+    fn from(signal: Signal<T>) -> Self {
         Self::Bound(signal)
     }
 }
 
-impl<W> From<&str> for Prop<W, String> {
+impl From<&str> for Prop<String> {
     fn from(text: &str) -> Self {
         Self::Value(text.to_string())
     }

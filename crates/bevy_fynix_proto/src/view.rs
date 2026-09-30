@@ -1,8 +1,11 @@
-//! What a view is, and the kinds there are: leaves, composites built
-//! out of other views, and wrappers around any view.
+//! What a view is, and the three kinds there are: leaves, composites
+//! built out of other views, and modifiers wrapping any view.
 
-use crate::backend::Backend;
+use bevy::prelude::*;
+
+use crate::backend::{Backend, Bevy};
 use crate::cx::Cx;
+use crate::mounted::Mounted;
 use crate::transition::Tween;
 
 /// Something that can be built under a node, with the theme `T`.
@@ -20,60 +23,59 @@ pub trait Styled: Sized + Send + Sync + 'static {
     fn over(self, below: Self) -> Self;
 }
 
-/// A view that is one node of its own, with no views under it.
+/// A view that is one Bevy node of its own, with no views under it.
 ///
-/// Its props are resolved against the rules in force, read into a
-/// [`Snapshot`](Self::Snapshot) of plain values, and written onto the
-/// node. A live leaf stays mounted, and is read and written again
-/// whenever its snapshot changes.
-pub trait Leaf<B: Backend, T>: Styled {
+/// Its props are resolved against the rules in force, then read into a
+/// [`Snapshot`](Self::Snapshot) of plain values and written onto the
+/// node. A leaf holding a bound prop stays mounted, and is read and
+/// written again whenever its snapshot changes.
+pub trait Leaf<T>: Styled {
     /// Every prop's value at one moment, with the theme's defaults
     /// filled in.
     type Snapshot: Clone + PartialEq + Send + Sync + 'static;
 
     /// What the node needs besides what [`write`](Self::write) keeps
     /// up to date.
-    fn prepare(world: &mut B::World, node: B::Node);
+    fn prepare(world: &mut World, node: Entity);
 
-    fn snapshot(&self, world: &B::World, theme: &T)
-    -> Self::Snapshot;
+    fn snapshot(&self, world: &World, theme: &T) -> Self::Snapshot;
 
     fn write(
         snapshot: &Self::Snapshot,
-        world: &mut B::World,
-        node: B::Node,
+        world: &mut World,
+        node: Entity,
     );
 
     /// Whether anything it holds can change after the build.
     fn is_live(&self) -> bool;
 
     /// This, with the rules in force applied.
-    fn resolve(self, cx: &Cx<'_, B, T>) -> Self
+    fn resolve(self, cx: &Cx<'_, Bevy, T>) -> Self
     where
         T: 'static,
     {
         cx.resolve(self)
     }
 
-    /// Edits a fresh snapshot of `node` before it is written, from
-    /// what only the node knows.
+    /// Edits a fresh snapshot of `node` before it is written.
     fn adjust(
         &self,
         _snapshot: &mut Self::Snapshot,
-        _world: &B::World,
-        _node: B::Node,
+        _world: &World,
+        _node: Entity,
         _theme: &T,
     ) {
     }
 
-    /// How the written values travel to a new snapshot. `None` snaps.
+    /// How the written values travel to a new snapshot. `None`
+    /// snaps.
     fn tween(&self, _theme: &T) -> Option<Tween<Self::Snapshot>> {
         None
     }
 }
 
-impl<B: Backend, T: 'static, L: Leaf<B, T>> View<B, T> for L {
-    fn build(self, cx: &mut Cx<'_, B, T>) -> B::Node {
+impl<T: Send + Sync + 'static, L: Leaf<T>> View<Bevy, T> for L {
+    fn build(self, cx: &mut Cx<'_, Bevy, T>) -> Entity {
         let leaf = L::resolve(self, cx);
         let node = cx.spawn();
         L::prepare(cx.world, node);
@@ -81,7 +83,9 @@ impl<B: Backend, T: 'static, L: Leaf<B, T>> View<B, T> for L {
         leaf.adjust(&mut snapshot, cx.world, node, cx.theme());
         L::write(&snapshot, cx.world, node);
         if leaf.is_live() {
-            cx.mounted().mount(node, leaf, snapshot);
+            cx.world
+                .resource_mut::<Mounted<T>>()
+                .mount(node, leaf, snapshot);
         }
         node
     }
@@ -114,18 +118,12 @@ macro_rules! view_seq {
 }
 
 view_seq!();
-view_seq!(V1);
-view_seq!(V1, V2);
-view_seq!(V1, V2, V3);
-view_seq!(V1, V2, V3, V4);
-view_seq!(V1, V2, V3, V4, V5);
-view_seq!(V1, V2, V3, V4, V5, V6);
-view_seq!(V1, V2, V3, V4, V5, V6, V7);
-view_seq!(V1, V2, V3, V4, V5, V6, V7, V8);
-view_seq!(V1, V2, V3, V4, V5, V6, V7, V8, V9);
-view_seq!(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10);
-view_seq!(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11);
-view_seq!(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12);
+view_seq!(A);
+view_seq!(A, B1);
+view_seq!(A, B1, C);
+view_seq!(A, B1, C, D);
+view_seq!(A, B1, C, D, E);
+view_seq!(A, B1, C, D, E, F);
 
 /// A view's build, its type erased.
 type BuildFn<B, T> =
@@ -150,7 +148,7 @@ impl<B: Backend, T> View<B, T> for AnyView<B, T> {
     }
 }
 
-/// What any view can be turned into.
+/// What any view can be modified with.
 pub trait ViewExt<B: Backend, T>:
     View<B, T> + Sized + 'static
 {
