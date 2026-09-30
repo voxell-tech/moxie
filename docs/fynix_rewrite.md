@@ -672,7 +672,7 @@ same editor-like screen: 405 nodes, depth 10, 4 panels, 24 distinct
 sibling types, a stateful label with a transition in most rows. The
 boxed one erases each row, button and panel with `AnyView`. A 6x copy
 (2431 nodes) was measured too, from a scratch file. Times are the
-median of 3, in seconds, on an M-series Mac, over a baseline of 0.99
+median of 3, in seconds, on an Apple M5 Max, over a baseline of 0.99
 that is mostly linking Bevy:
 
 | | Generic | Boxed | 6x generic | 6x boxed |
