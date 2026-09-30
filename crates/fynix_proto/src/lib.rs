@@ -22,7 +22,7 @@ mod tests;
 
 pub use backend::Backend;
 pub use cx::Cx;
-pub use mounted::{Frame, Mounted};
+pub use mounted::{Mounted, Tick};
 pub use prop::{Prop, Signal, derived};
 pub use transition::{Curve, Motion, MotionTokens, Tween};
 pub use view::{AnyView, Leaf, Styled, View, ViewExt, ViewSeq};

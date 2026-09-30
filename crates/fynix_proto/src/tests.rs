@@ -7,8 +7,8 @@ use motiongfx_interp::ease;
 use motiongfx_interp::interpolation::Interpolation;
 
 use crate::{
-    AnyView, Backend, Curve, Cx, Frame, Leaf, Motion, MotionTokens,
-    Mounted, Prop, Styled, Tween, View, derived,
+    AnyView, Backend, Curve, Cx, Leaf, Motion, MotionTokens, Mounted,
+    Prop, Styled, Tick, Tween, View, derived,
 };
 
 #[derive(Default)]
@@ -220,7 +220,7 @@ impl<T: 'static> Ui<T> {
         self.mounted.update(
             &mut self.world,
             &self.theme,
-            Frame {
+            Tick {
                 delta,
                 reduced_motion,
             },

@@ -14,7 +14,7 @@ use crate::view::Leaf;
 
 /// What one update runs with.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Frame {
+pub struct Tick {
     /// Time since the last update, what transitions advance by.
     pub delta: Duration,
     /// Whether every transition finishes at once.
@@ -26,7 +26,7 @@ type UpdateFn<B, T> = fn(
     &mut TypeTable<<B as Backend>::Node>,
     &mut <B as Backend>::World,
     &T,
-    Frame,
+    Tick,
 );
 
 /// How many leaves of one kind are mounted.
@@ -81,10 +81,10 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
         &mut self,
         world: &mut B::World,
         theme: &T,
-        frame: Frame,
+        tick: Tick,
     ) {
         for update in &self.updates {
-            update(&mut self.table, world, theme, frame);
+            update(&mut self.table, world, theme, tick);
         }
     }
 
@@ -111,12 +111,12 @@ fn update_kind<B: Backend, T: 'static, L: Leaf<B, T>>(
     table: &mut TypeTable<B::Node>,
     world: &mut B::World,
     theme: &T,
-    frame: Frame,
+    tick: Tick,
 ) {
     let mut gone = Vec::new();
     for (&node, mount) in table.iter_mut::<Mount<B, T, L>>() {
         if B::exists(world, node) {
-            mount.update(world, node, theme, frame);
+            mount.update(world, node, theme, tick);
         } else {
             gone.push(node);
         }
@@ -132,7 +132,7 @@ impl<B: Backend, T, L: Leaf<B, T>> Mount<B, T, L> {
         world: &mut B::World,
         node: B::Node,
         theme: &T,
-        frame: Frame,
+        tick: Tick,
     ) {
         let mut now = self.leaf.snapshot(world, theme);
         self.leaf.adjust(&mut now, world, node, theme);
@@ -143,24 +143,25 @@ impl<B: Backend, T, L: Leaf<B, T>> Mount<B, T, L> {
                 .leaf
                 .tween(theme)
                 .filter(|tween| {
-                    !frame.reduced_motion
+                    !tick.reduced_motion
                         && !tween.curve.duration.is_zero()
                 })
                 .map(|tween| Run::new(self.shown.clone(), tween));
         }
-        if frame.reduced_motion {
+        if tick.reduced_motion {
             self.run = None;
         }
 
         let next = match &mut self.run {
-            Some(run) => match run.advance(frame.delta, &self.target)
-            {
-                Some(next) => next,
-                None => {
-                    self.run = None;
-                    self.target.clone()
+            Some(run) => {
+                match run.advance(tick.delta, &self.target) {
+                    Some(next) => next,
+                    None => {
+                        self.run = None;
+                        self.target.clone()
+                    }
                 }
-            },
+            }
             None => self.target.clone(),
         };
         if next != self.shown {

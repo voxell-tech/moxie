@@ -36,7 +36,7 @@ impl<T: 'static> DerefMut for Mounts<T> {
 
 /// Brings every mounted leaf up to date.
 pub(crate) fn update<T: Send + Sync + 'static>(world: &mut World) {
-    let frame = fynix_proto::Frame {
+    let tick = fynix_proto::Tick {
         delta: world.resource::<Time>().delta(),
         reduced_motion: world
             .get_resource::<ReducedMotion>()
@@ -44,7 +44,7 @@ pub(crate) fn update<T: Send + Sync + 'static>(world: &mut World) {
     };
     world.resource_scope::<Mounts<T>, _>(|world, mut mounts| {
         world.resource_scope::<Theme<T>, _>(|world, theme| {
-            mounts.0.update(world, &theme.0, frame);
+            mounts.0.update(world, &theme.0, tick);
         });
     });
 }
