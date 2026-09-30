@@ -18,7 +18,7 @@ use bevy::picking::hover::Hovered as PickingHovered;
 use fynix_proto::{Condition, ScopedExt, When};
 
 use crate::leave::Entering;
-use crate::{Bevy, Cx, Styled};
+use crate::{Bevy, Cx, Styled, View};
 
 /// The pointer is over the node or one of its descendants.
 #[derive(Component, Clone, Copy, Debug, Default)]
@@ -188,6 +188,55 @@ pub fn own<V: Styled, T: 'static>(
     move |cx| cx.set::<V>(rule)
 }
 
+/// An element `E` built as `view`, with `rule` restyling it while its
+/// node holds the component `S`, under the theme `T`. See the `when`
+/// of [`Label`](crate::views::Label), [`Frame`](crate::views::Frame)
+/// and [`Icon`](crate::views::Icon).
+///
+/// It has a `when` of its own, taking a rule for `E` again, so rules
+/// chain: `label(x).when::<A, _>(a).when::<B, _>(b)`. The one written
+/// later wins while both hold.
+pub struct OwnWhen<E, V, S, R, T> {
+    view: V,
+    rule: R,
+    marker: PhantomData<fn(E, &T) -> S>,
+}
+
+impl<E, V, S, R, T> OwnWhen<E, V, S, R, T> {
+    pub(crate) fn new(view: V, rule: R) -> Self {
+        Self {
+            view,
+            rule,
+            marker: PhantomData,
+        }
+    }
+
+    /// This, with `rule` restyling the element too while its node
+    /// holds the component `S2`.
+    pub fn when<S2, R2>(self, rule: R2) -> OwnWhen<E, Self, S2, R2, T>
+    where
+        R2: Fn(E, &T) -> E + Send + Sync + 'static,
+    {
+        OwnWhen::new(self, rule)
+    }
+}
+
+impl<E, V, S, R, T> View<Bevy, T> for OwnWhen<E, V, S, R, T>
+where
+    E: Styled,
+    V: View<Bevy, T>,
+    S: Component,
+    R: Fn(E, &T) -> E + Send + Sync + 'static,
+    T: 'static,
+{
+    fn build(self, cx: &mut Cx<'_, Bevy, T>) -> Entity {
+        cx.scope(|cx| {
+            cx.when::<State<S>>(|cx| cx.set::<E>(self.rule));
+            self.view.build(cx)
+        })
+    }
+}
+
 /// An inherent `when` for an element, taking one rule for the element
 /// itself instead of a block.
 macro_rules! own_when {
@@ -198,19 +247,14 @@ macro_rules! own_when {
             pub fn when<S, T>(
                 self,
                 rule: impl Fn(Self, &T) -> Self + Send + Sync + 'static,
-            ) -> fynix_proto::When<
+            ) -> $crate::state::OwnWhen<
                 Self,
-                impl FnOnce(&mut $crate::Cx<'_, $crate::Bevy, T>),
-                $crate::state::State<S>,
-            >
-            where
-                S: bevy::ecs::component::Component,
-                T: 'static,
-            {
-                $crate::state::StateExt::when::<S, _>(
-                    self,
-                    $crate::state::own(rule),
-                )
+                Self,
+                S,
+                impl Fn(Self, &T) -> Self + Send + Sync + 'static,
+                T,
+            > {
+                $crate::state::OwnWhen::new(self, rule)
             }
         }
     };
@@ -378,10 +422,8 @@ mod tests {
         let mut app = app();
         let node = mount::<Test>(
             app.world_mut(),
-            // The second rule is on the first's wrapper, not on the
-            // label, so it takes a block.
             label("x").when::<Hovered, _>(accent).when::<Pressed, _>(
-                own(|l: Label, _: &Test| l.tone(Tone::Dim)),
+                |l: Label, _: &Test| l.tone(Tone::Dim),
             ),
         );
 

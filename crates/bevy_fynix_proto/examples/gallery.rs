@@ -388,7 +388,8 @@ fn switching() -> impl View<Bevy, Monokai> {
                 .transition(Motion::Expand)
                 .boxed(),
             }
-        }),
+        })
+        .within(column(())),
     ))
     .gap(6.0)
 }
@@ -431,7 +432,8 @@ fn keyed_list() -> impl View<Bevy, Monokai> {
                     .appear::<Monokai>(hidden)
                     .boxed()
             },
-        ),
+        )
+        .within(column(()).gap(4.0).align(AlignItems::Start)),
     ))
     .gap(6.0)
 }

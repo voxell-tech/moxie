@@ -878,11 +878,11 @@ Findings 6 and 15 remained: transitions were still whole-snapshot, and
 properties every element shares still needed a home. Building it
 turned up three more:
 
-16. **The one-rule form does not chain.** `label(x).when::<A, _>(a)`
-    returns a wrapper, not a `Label`, so a second `.when` is the block
-    form and takes `own(b)` instead of `b`. Keeping the element's type
-    through its rules would need the element to hold them, generic over
-    the theme.
+16. **The one-rule form did not chain.** `label(x).when::<A, _>(a)`
+    returned a wrapper, not a `Label`, so a second `.when` was the
+    block form. Fixed: the element's `when` returns an `OwnWhen` that
+    remembers the element's type and has a `when` of its own, so
+    `.when(a).when(b)` takes plain rules both times.
 17. **Rule blocks need their context type spelled out.** A block is a
     closure called later with `&mut Cx<Bevy, T>`, so it must be
     annotated (`|cx: &mut Cx<Bevy, Theme>|`), or the theme type named
@@ -900,11 +900,12 @@ Entering and leaving (see "Entering and leaving" above) answer finding
     element in it, and overlapping translucent children do not fade as
     one layer. A frame's border is not faded either, since `Frame`
     does not own its border colour.
-20. **`keyed` and `each` containers are rows.** A container is a bare
-    node, which lays its children out left to right, so a leaving
-    view's collapse takes its width, and a switched screen appears
-    beside the old one until it goes. Containers need a direction, or
-    a frame of their own.
+20. **`keyed` and `each` containers were rows.** A container is a
+    bare node, which lays its children out left to right, so a leaving
+    view's collapse took its width, and a switched screen appeared
+    beside the old one until it went. Fixed: `.within(column(()))`
+    builds the container from a view, which gives it any layout, and
+    the core still names none.
 21. **A leaving view's timing is a guess.** It fades for one length of
     its root element's curve and collapses for another, instead of
     waiting for the transitions under it to settle, which would need

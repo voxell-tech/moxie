@@ -32,11 +32,38 @@ fn build_in<B: Backend, T: 'static>(
     built
 }
 
+/// Builds the container a structural view holds its parts in: `within`,
+/// or a bare node, whose layout is the backend's default.
+fn container<B: Backend, T: 'static>(
+    cx: &mut Cx<'_, B, T>,
+    within: Option<AnyView<B, T>>,
+) -> B::Node {
+    match within {
+        Some(view) => cx.build(view),
+        None => cx.spawn(),
+    }
+}
+
 /// A view that builds again under the same node whenever its key
 /// changes to a different value. See [`keyed`].
 pub struct Keyed<B: Backend, T, K> {
     key: Signal<B::World, K>,
     build: Box<BuildFn<B, T, K>>,
+    within: Option<AnyView<B, T>>,
+}
+
+impl<B: Backend, T, K> Keyed<B, T, K> {
+    /// This, with its view built under the root of `container`, a view
+    /// with nothing under it, instead of under a bare node: for giving
+    /// the container a layout.
+    pub fn within(
+        mut self,
+        container: impl View<B, T> + 'static,
+    ) -> Self {
+        self.within =
+            Some(AnyView::new(move |cx| container.build(cx)));
+        self
+    }
 }
 
 /// A view of `build(&key)`, built again when the key signal reports a
@@ -56,6 +83,7 @@ where
     Keyed {
         key,
         build: Box::new(build),
+        within: None,
     }
 }
 
@@ -66,7 +94,7 @@ where
     K: PartialEq + Clone + Send + Sync + 'static,
 {
     fn build(mut self, cx: &mut Cx<'_, B, T>) -> B::Node {
-        let container = cx.spawn();
+        let container = container(cx, self.within.take());
         let parent = cx.owner();
         let id = cx.mounted().new_group();
         let capture = cx.capture();
@@ -143,6 +171,21 @@ pub struct Each<B: Backend, T, I, K> {
     items: Signal<B::World, Vec<I>>,
     key: fn(&I) -> K,
     build: Box<BuildFn<B, T, I>>,
+    within: Option<AnyView<B, T>>,
+}
+
+impl<B: Backend, T, I, K> Each<B, T, I, K> {
+    /// This, with its items built under the root of `container`, a
+    /// view with nothing under it, instead of under a bare node: for
+    /// giving the container a layout.
+    pub fn within(
+        mut self,
+        container: impl View<B, T> + 'static,
+    ) -> Self {
+        self.within =
+            Some(AnyView::new(move |cx| container.build(cx)));
+        self
+    }
 }
 
 /// One view of `build(&item)` per item, matched by `key` when the list
@@ -168,6 +211,7 @@ where
         items,
         key,
         build: Box::new(build),
+        within: None,
     }
 }
 
@@ -186,7 +230,7 @@ where
     K: PartialEq + Clone + Send + Sync + 'static,
 {
     fn build(mut self, cx: &mut Cx<'_, B, T>) -> B::Node {
-        let container = cx.spawn();
+        let container = container(cx, self.within.take());
         let parent = cx.owner();
         let id = cx.mounted().new_group();
         let capture = cx.capture();

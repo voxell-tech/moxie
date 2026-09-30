@@ -142,6 +142,27 @@ fn a_keyed_view_animates_its_old_view_out_beside_the_new() {
 }
 
 #[test]
+fn a_container_can_be_a_view_of_its_own() {
+    let mut ui = Ui::new(Warm);
+    ui.world.list(&[1, 2]);
+    let [container] = ui.under(|cx: &mut Cx<'_, Fake, Warm>| {
+        cx.build(
+            each(
+                watch(|world: &World| world.list.clone()),
+                |&id| id,
+                |&id| text(id.to_string()).boxed(),
+            )
+            .within(text("list")),
+        );
+    })[..] else {
+        panic!("a container");
+    };
+
+    assert_eq!(ui.world.node(container).text, "list");
+    assert_eq!(texts(&ui, container), ["1", "2"]);
+}
+
+#[test]
 fn a_leaving_row_despawned_with_its_container_is_forgotten() {
     let (mut ui, container) = rows(&[1, 2], true);
     let two = ui.world.children(container)[1];

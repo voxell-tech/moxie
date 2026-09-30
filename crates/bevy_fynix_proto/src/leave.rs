@@ -187,12 +187,10 @@ mod tests {
     use fynix_proto::{Curve, Motion, MotionTokens, ScopedExt};
 
     use super::*;
-    use crate::state::own;
     use crate::tokens::{SpacingTokens, TextTokens, Tone};
     use crate::views::{Label, column, label};
     use crate::{
-        Bevy, FynixProtoPlugin, StateExt, Theme, ViewExt, each,
-        mount, resource,
+        Bevy, FynixProtoPlugin, Theme, ViewExt, each, mount, resource,
     };
 
     struct Test;
@@ -271,7 +269,7 @@ mod tests {
     fn row(id: &u32) -> fynix_proto::AnyView<Bevy, Test> {
         label(id.to_string())
             .when::<Entering, _>(faded)
-            .when::<Leaving, _>(own(faded))
+            .when::<Leaving, _>(faded)
             .transition(Motion::Interact)
             .boxed()
     }
