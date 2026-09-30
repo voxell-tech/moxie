@@ -989,9 +989,9 @@ rename, but four things were awkward:
 It also turned up a bug outside the prototype: vendored
 `motiongfx_interp` did not build without `std`, since its integer
 interpolation called `f64::round`. The rest of the workspace never saw
-it because `bevy_motiongfx` turns `std` on. It is fixed through `libm`
-on the local submodule branch `nixon/no-std-round`, which is not yet
-pushed, so the superproject still points at the old commit.
+it because `bevy_motiongfx` turns `std` on. Upstream fixed it the same
+way, through `libm`, in motiongfx #187, which is on `main` but not yet
+in a release.
 
 ### Set rules through `lenz` paths
 
