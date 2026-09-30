@@ -1,6 +1,7 @@
 //! The core against a fake backend: a flat list of nodes holding some
 //! text at a size, and one number the text can be bound to.
 
+use core::mem;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 use std::string::{String, ToString};
@@ -22,11 +23,18 @@ pub struct World {
     count: i32,
     /// Bumped by every change to `count`.
     version: u32,
+    /// The nodes despawned since the last update.
+    gone: Vec<usize>,
+    /// A number the structural views key on.
+    pick: u32,
+    /// The list `each` shows.
+    list: Vec<u32>,
 }
 
 #[derive(Default)]
 struct Node {
     parent: Option<usize>,
+    children: Vec<usize>,
     text: String,
     size: f32,
 }
@@ -42,7 +50,37 @@ impl Backend for Fake {
             parent,
             ..Node::default()
         }));
-        world.nodes.len() - 1
+        let node = world.nodes.len() - 1;
+        if let Some(parent) = parent {
+            world.nodes[parent]
+                .as_mut()
+                .expect("a live parent")
+                .children
+                .push(node);
+        }
+        node
+    }
+
+    fn despawn(world: &mut World, node: usize) {
+        let Some(gone) = world.nodes[node].take() else {
+            return;
+        };
+        world.gone.push(node);
+        if let Some(parent) = gone.parent
+            && let Some(parent) = world.nodes[parent].as_mut()
+        {
+            parent.children.retain(|&child| child != node);
+        }
+        for child in gone.children {
+            Self::despawn(world, child);
+        }
+    }
+
+    fn reorder(world: &mut World, parent: usize, children: &[usize]) {
+        world.nodes[parent]
+            .as_mut()
+            .expect("a live parent")
+            .children = children.to_vec();
     }
 }
 
@@ -69,13 +107,11 @@ impl World {
     }
 
     fn children(&self, parent: usize) -> Vec<usize> {
-        (0..self.nodes.len())
-            .filter(|&node| {
-                self.nodes[node]
-                    .as_ref()
-                    .is_some_and(|n| n.parent == Some(parent))
-            })
-            .collect()
+        self.node(parent).children.clone()
+    }
+
+    fn is_alive(&self, node: usize) -> bool {
+        self.nodes[node].is_some()
     }
 }
 
@@ -242,8 +278,19 @@ impl<T: 'static> Ui<T> {
         view.build(&mut cx)
     }
 
+    /// Drops what was despawned since the last call, as a backend
+    /// does.
+    fn unmount_gone(&mut self) {
+        for node in mem::take(&mut self.world.gone) {
+            self.mounted.unmount(node);
+        }
+    }
+
     fn update(&mut self, delta: Duration, reduced_motion: bool) {
-        self.mounted.update(
+        self.unmount_gone();
+        self.mounted.update_structure(&mut self.world, &self.theme);
+        self.unmount_gone();
+        self.mounted.update_elements(
             &mut self.world,
             &self.theme,
             Tick {

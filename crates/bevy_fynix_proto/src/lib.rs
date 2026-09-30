@@ -32,7 +32,8 @@ pub use backend::{Bevy, Unmounted};
 pub use modifier::ModifierExt;
 pub use mounted::Mounts;
 pub use prop::{
-    Derived, Prop, Signal, component, derived, every_frame, resource,
+    Derived, Each, Keyed, Prop, Signal, component, derived, each,
+    every_frame, keyed, resource,
 };
 pub use state::{DirtyNodes, Hovered, Pressed, StateExt, Stateful};
 pub use transition::{BevyMarker, ReducedMotion};

@@ -1,6 +1,9 @@
 //! Elements whose props can change after they are built, kept in step
 //! with the world.
 
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::any::TypeId;
 use core::marker::PhantomData;
@@ -10,8 +13,36 @@ use hashbrown::{HashMap, HashSet};
 use typarena::type_table::TypeTable;
 
 use crate::backend::Backend;
+use crate::rules::RuleArena;
 use crate::transition::Run;
 use crate::view::Element;
+
+/// A set of structural views built together, dropped together.
+pub(crate) type Group = u32;
+
+/// A view that builds and drops parts of the tree as the world
+/// changes.
+pub(crate) trait Structure<B: Backend, T>: Send + Sync {
+    /// Rebuilds what the world's changes call for.
+    fn update(
+        &mut self,
+        id: Group,
+        world: &mut B::World,
+        theme: &T,
+        mounted: &mut Mounted<B, T>,
+    );
+
+    /// Lets go of the rules it captured.
+    fn release(&mut self, rules: &mut RuleArena);
+}
+
+/// One registered structural view.
+struct Slot<B: Backend, T> {
+    /// The group the slot was built in.
+    parent: Option<Group>,
+    container: B::Node,
+    structure: Box<dyn Structure<B, T>>,
+}
 
 /// What one update runs with.
 #[derive(Clone, Copy, Debug, Default)]
@@ -60,6 +91,12 @@ pub struct Mounted<B: Backend, T> {
     counts: Vec<CountFn<B>>,
     kinds: HashSet<TypeId>,
     hooks: HashMap<B::Node, Hooks<B>>,
+    /// Structural views by id, parents before the views they build.
+    slots: BTreeMap<Group, Slot<B, T>>,
+    /// The slot of each container node.
+    containers: HashMap<B::Node, Group>,
+    next_group: Group,
+    pub(crate) rules: RuleArena,
 }
 
 impl<B: Backend, T> Default for Mounted<B, T> {
@@ -70,6 +107,10 @@ impl<B: Backend, T> Default for Mounted<B, T> {
             counts: Vec::new(),
             kinds: HashSet::new(),
             hooks: HashMap::new(),
+            slots: BTreeMap::new(),
+            containers: HashMap::new(),
+            next_group: 0,
+            rules: RuleArena::default(),
         }
     }
 }
@@ -120,17 +161,92 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
         }
     }
 
-    /// Drops the element on `node`.
+    /// Drops the element on `node`, and the structural view whose
+    /// container it is.
     pub fn unmount(&mut self, node: B::Node) {
         if let Some(hooks) = self.hooks.remove(&node) {
             (hooks.remove)(&mut self.table, node);
+        }
+        if let Some(id) = self.containers.remove(&node) {
+            if let Some(slot) = self.slots.remove(&id) {
+                self.forget(slot);
+            }
+            self.drop_group(id);
+        }
+    }
+
+    /// A group for structural views built together.
+    pub(crate) fn new_group(&mut self) -> Group {
+        self.next_group += 1;
+        self.next_group
+    }
+
+    /// Registers `structure` as the one with `container`, under the
+    /// group `id` that `new_group` gave.
+    pub(crate) fn register(
+        &mut self,
+        id: Group,
+        parent: Option<Group>,
+        container: B::Node,
+        structure: Box<dyn Structure<B, T>>,
+    ) {
+        self.containers.insert(container, id);
+        self.slots.insert(
+            id,
+            Slot {
+                parent,
+                container,
+                structure,
+            },
+        );
+    }
+
+    /// Drops every structural view built in `group`, and in the
+    /// groups those made.
+    pub(crate) fn drop_group(&mut self, group: Group) {
+        let mut dead = vec![group];
+        let mut next = 0;
+        while let Some(&group) = dead.get(next) {
+            next += 1;
+            let built = self
+                .slots
+                .iter()
+                .filter(|(_, slot)| slot.parent == Some(group))
+                .map(|(&id, _)| id)
+                .collect::<Vec<_>>();
+            for id in built {
+                if let Some(slot) = self.slots.remove(&id) {
+                    self.forget(slot);
+                }
+                dead.push(id);
+            }
+        }
+    }
+
+    fn forget(&mut self, mut slot: Slot<B, T>) {
+        self.containers.remove(&slot.container);
+        slot.structure.release(&mut self.rules);
+    }
+
+    /// Rebuilds what the world's changes call for, in every `keyed`
+    /// and `each` view. Views they build are checked from the next
+    /// update on.
+    pub fn update_structure(&mut self, world: &mut B::World, theme: &T) {
+        let ids = self.slots.keys().copied().collect::<Vec<_>>();
+        for id in ids {
+            // Gone when the rebuild of a view before it dropped it.
+            let Some(mut slot) = self.slots.remove(&id) else {
+                continue;
+            };
+            slot.structure.update(id, world, theme, self);
+            self.slots.insert(id, slot);
         }
     }
 
     /// Writes what changed to every mounted element that reports a
     /// change or is marked dirty, and keeps every transition under
     /// way advancing.
-    pub fn update(
+    pub fn update_elements(
         &mut self,
         world: &mut B::World,
         theme: &T,
@@ -139,6 +255,16 @@ impl<B: Backend, T: 'static> Mounted<B, T> {
         for update in &self.updates {
             update(&mut self.table, world, theme, tick);
         }
+    }
+
+    /// The rules stored for the scopes and captures alive.
+    pub fn rules(&self) -> &RuleArena {
+        &self.rules
+    }
+
+    /// How many `keyed` and `each` views are registered.
+    pub fn structure_len(&self) -> usize {
+        self.slots.len()
     }
 
     pub fn len(&self) -> usize {

@@ -14,6 +14,17 @@ pub trait Backend: 'static {
         parent: Option<Self::Node>,
     ) -> Self::Node;
 
+    /// Removes `node` and every node under it.
+    fn despawn(world: &mut Self::World, node: Self::Node);
+
+    /// Sets the order of the children of `parent`, which `children`
+    /// lists whole.
+    fn reorder(
+        world: &mut Self::World,
+        parent: Self::Node,
+        children: &[Self::Node],
+    );
+
     /// A hook run when an element is mounted on `node`, for telling
     /// [`Mounted::unmount`](crate::Mounted::unmount) once it is gone.
     fn on_mount(_world: &mut Self::World, _node: Self::Node) {}

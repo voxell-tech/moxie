@@ -1,28 +1,17 @@
-//! What a view is built with: the world, the theme, where it hangs,
-//! the rules in force there, and where live elements are kept.
-
 use alloc::boxed::Box;
-use alloc::vec;
 use alloc::vec::Vec;
-use core::marker::PhantomData;
+use core::any::TypeId;
 
 use lenz::{Cursor, FieldId, FieldPath};
-use typarena::type_table::TypeTable;
 
 use crate::backend::Backend;
-use crate::mounted::Mounted;
+use crate::mounted::{Group, Mounted};
 use crate::prop::Prop;
+use crate::rules::{RuleKind, ScopeEntry};
 use crate::view::{Element, Styled, View};
 
 /// One rule restyling a `V`, with the theme in hand.
 type Rule<V, T> = Box<dyn Fn(V, &T) -> V + Send + Sync>;
-
-/// The rules restyling a `V` that one scope adds, in the order set.
-type Rules<V, T> = Vec<Rule<V, T>>;
-
-/// The fields of a `V` that one scope's path rules set, in the order
-/// set.
-struct Targets<V>(Vec<FieldId>, PhantomData<fn() -> V>);
 
 /// Which set rules in force could decide a field, for telling where a
 /// value came from.
@@ -41,14 +30,20 @@ pub struct Cx<'a, B: Backend, T> {
     theme: &'a T,
     mounted: &'a mut Mounted<B, T>,
     parent: Option<B::Node>,
-    /// Set rules, one row per scope depth, one column per view kind.
-    sets: TypeTable<usize>,
-    /// Show rules, laid out like `sets`.
-    shows: TypeTable<usize>,
-    /// What the path rules among `sets` name, laid out like `sets`.
-    targets: TypeTable<usize>,
+    /// The rules in force, outermost first.
+    entries: Vec<ScopeEntry>,
     /// The innermost scope's depth. The root's is 0.
     depth: usize,
+    /// The group structural views built now belong to.
+    owner: Option<Group>,
+}
+
+impl<B: Backend, T> Drop for Cx<'_, B, T> {
+    fn drop(&mut self) {
+        for entry in self.entries.drain(..) {
+            self.mounted.rules.release(entry.key);
+        }
+    }
 }
 
 impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
@@ -62,11 +57,53 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
             theme,
             mounted,
             parent: None,
-            sets: TypeTable::new(),
-            shows: TypeTable::new(),
-            targets: TypeTable::new(),
+            entries: Vec::new(),
             depth: 0,
+            owner: None,
         }
+    }
+
+    /// A context with `capture` in force, for building again after the
+    /// original is gone.
+    pub(crate) fn seeded(
+        world: &'a mut B::World,
+        theme: &'a T,
+        mounted: &'a mut Mounted<B, T>,
+        capture: &[ScopeEntry],
+        owner: Group,
+    ) -> Self {
+        for entry in capture {
+            mounted.rules.retain(entry.key);
+        }
+        Self {
+            world,
+            theme,
+            mounted,
+            parent: None,
+            entries: capture.to_vec(),
+            depth: capture.last().map_or(0, |entry| entry.depth),
+            owner: Some(owner),
+        }
+    }
+
+    /// The rules in force now, each referred to once more.
+    pub(crate) fn capture(&mut self) -> Vec<ScopeEntry> {
+        for entry in &self.entries {
+            self.mounted.rules.retain(entry.key);
+        }
+        self.entries.clone()
+    }
+
+    pub(crate) fn owner(&self) -> Option<Group> {
+        self.owner
+    }
+
+    pub(crate) fn set_owner(&mut self, owner: Option<Group>) {
+        self.owner = owner;
+    }
+
+    pub(crate) fn mounted(&mut self) -> &mut Mounted<B, T> {
+        self.mounted
     }
 
     pub fn theme(&self) -> &'a T {
@@ -117,9 +154,11 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
     ) -> R {
         self.depth += 1;
         let built = build(self);
-        self.sets.remove_row(&self.depth);
-        self.shows.remove_row(&self.depth);
-        self.targets.remove_row(&self.depth);
+        while let Some(entry) =
+            self.entries.pop_if(|entry| entry.depth == self.depth)
+        {
+            self.mounted.rules.release(entry.key);
+        }
         self.depth -= 1;
         built
     }
@@ -130,7 +169,38 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
         &mut self,
         rule: impl Fn(V, &T) -> V + Send + Sync + 'static,
     ) {
-        push::<V, T>(&mut self.sets, self.depth, Box::new(rule));
+        self.push::<V>(RuleKind::Set, None, Box::new(rule));
+    }
+
+    fn push<V: Styled>(
+        &mut self,
+        kind: RuleKind,
+        field: Option<FieldId>,
+        rule: Rule<V, T>,
+    ) {
+        let key = self.mounted.rules.insert(rule);
+        self.entries.push(ScopeEntry {
+            view: TypeId::of::<V>(),
+            kind,
+            key,
+            field,
+            depth: self.depth,
+        });
+    }
+
+    /// The rules of `kind` for a `V`, outermost first.
+    fn rules<V: Styled>(
+        &self,
+        kind: RuleKind,
+    ) -> impl Iterator<Item = &Rule<V, T>> {
+        self.entries
+            .iter()
+            .filter(move |entry| {
+                entry.kind == kind && entry.view == TypeId::of::<V>()
+            })
+            .filter_map(|entry| {
+                self.mounted.rules.get::<Rule<V, T>>(&entry.key)
+            })
     }
 
     /// Sets the field `path` names to `value`, on every view `path`
@@ -162,39 +232,34 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
     {
         let field = path.key();
         let accessor = path.accessor();
-        self.set::<P::Source>(move |mut view, theme| {
-            if let Some(prop) = accessor.get_mut(&mut view) {
-                *prop = Prop::Value(read(theme));
-            }
-            view
-        });
-        match self.targets.get_mut::<Targets<P::Source>>(&self.depth)
-        {
-            Some(targets) => targets.0.push(field),
-            None => {
-                self.targets.insert(
-                    self.depth,
-                    Targets::<P::Source>(vec![field], PhantomData),
-                );
-            }
-        }
+        self.push::<P::Source>(
+            RuleKind::Set,
+            Some(field),
+            Box::new(move |mut view, theme| {
+                if let Some(prop) = accessor.get_mut(&mut view) {
+                    *prop = Prop::Value(read(theme));
+                }
+                view
+            }),
+        );
     }
 
     /// Which set rules in force for a `V` could decide `field`.
     pub fn trace<V: Styled>(&self, field: FieldId) -> Trace {
         let mut trace = Trace::default();
-        for depth in 0..=self.depth {
-            let named = self
-                .targets
-                .get::<Targets<V>>(&depth)
-                .map_or(&[][..], |targets| &targets.0[..]);
-            let rules = self
-                .sets
-                .get::<Rules<V, T>>(&depth)
-                .map_or(0, Vec::len);
-            trace.opaque += rules - named.len();
-            if named.contains(&field) {
-                trace.named.push(depth);
+        let sets = self.entries.iter().filter(|entry| {
+            entry.kind == RuleKind::Set
+                && entry.view == TypeId::of::<V>()
+        });
+        for entry in sets {
+            match entry.field {
+                None => trace.opaque += 1,
+                Some(named) if named == field => {
+                    if trace.named.last() != Some(&entry.depth) {
+                        trace.named.push(entry.depth);
+                    }
+                }
+                Some(_) => {}
             }
         }
         trace
@@ -206,7 +271,7 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
         &mut self,
         rule: impl Fn(V, &T) -> V + Send + Sync + 'static,
     ) {
-        push::<V, T>(&mut self.shows, self.depth, Box::new(rule));
+        self.push::<V>(RuleKind::Show, None, Box::new(rule));
     }
 
     /// `view` with the rules in force applied: set rules fill what its
@@ -214,26 +279,10 @@ impl<'a, B: Backend, T: 'static> Cx<'a, B, T> {
     /// transform the result.
     pub fn resolve<V: Styled>(&self, view: V) -> V {
         let theme = self.theme;
-        let below = (0..=self.depth)
-            .filter_map(|depth| self.sets.get::<Rules<V, T>>(&depth))
-            .flatten()
+        let below = self
+            .rules::<V>(RuleKind::Set)
             .fold(V::unset(), |below, rule| rule(below, theme));
-        (0..=self.depth)
-            .filter_map(|depth| self.shows.get::<Rules<V, T>>(&depth))
-            .flatten()
+        self.rules::<V>(RuleKind::Show)
             .fold(view.over(below), |view, rule| rule(view, theme))
-    }
-}
-
-fn push<V: Styled, T: 'static>(
-    table: &mut TypeTable<usize>,
-    depth: usize,
-    rule: Rule<V, T>,
-) {
-    match table.get_mut::<Rules<V, T>>(&depth) {
-        Some(rules) => rules.push(rule),
-        None => {
-            table.insert(depth, vec![rule]);
-        }
     }
 }

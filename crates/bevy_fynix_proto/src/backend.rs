@@ -35,4 +35,14 @@ impl fynix_proto::Backend for Bevy {
         }
         node
     }
+
+    fn despawn(world: &mut World, node: Entity) {
+        if let Ok(node) = world.get_entity_mut(node) {
+            node.despawn();
+        }
+    }
+
+    fn reorder(world: &mut World, parent: Entity, children: &[Entity]) {
+        world.entity_mut(parent).replace_children(children);
+    }
 }

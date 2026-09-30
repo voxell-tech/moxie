@@ -32,6 +32,16 @@ impl<W, T> Signal<W, T> {
             changed: Box::new(changed),
         }
     }
+
+    /// What the world holds now.
+    pub fn get(&self, world: &W) -> T {
+        (self.read)(world)
+    }
+
+    /// Whether what this reads may have changed since the last call.
+    pub fn changed(&mut self, world: &W) -> bool {
+        (self.changed)(world)
+    }
 }
 
 /// A read from the world `W` still waiting for its change check.
@@ -86,7 +96,7 @@ impl<W, T> Prop<W, T> {
         match self {
             Self::Unset => None,
             Self::Value(value) => Some(value.clone()),
-            Self::Bound(signal) => Some((signal.read)(world)),
+            Self::Bound(signal) => Some(signal.get(world)),
         }
     }
 
@@ -94,7 +104,7 @@ impl<W, T> Prop<W, T> {
     /// Only a bound prop can.
     pub fn changed(&mut self, world: &W) -> bool {
         match self {
-            Self::Bound(signal) => (signal.changed)(world),
+            Self::Bound(signal) => signal.changed(world),
             Self::Unset | Self::Value(_) => false,
         }
     }

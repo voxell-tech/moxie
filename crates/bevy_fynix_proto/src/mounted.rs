@@ -36,7 +36,20 @@ impl<T: 'static> DerefMut for Mounts<T> {
     }
 }
 
-/// Brings every mounted element up to date.
+/// Drops the mounts of the nodes despawned since the last drain.
+fn drain_unmounted<T: 'static>(
+    world: &mut World,
+    mounts: &mut Mounts<T>,
+) {
+    let gone =
+        core::mem::take(&mut world.resource_mut::<Unmounted>().0);
+    for node in gone {
+        mounts.unmount(node);
+    }
+}
+
+/// Rebuilds what the world's changes call for, then brings every
+/// mounted element up to date.
 pub(crate) fn update<T: Send + Sync + 'static>(world: &mut World) {
     let tick = fynix_proto::Tick {
         delta: world.resource::<Time>().delta(),
@@ -44,19 +57,18 @@ pub(crate) fn update<T: Send + Sync + 'static>(world: &mut World) {
             .get_resource::<ReducedMotion>()
             .is_some_and(|reduced| reduced.0),
     };
-    let gone =
-        core::mem::take(&mut world.resource_mut::<Unmounted>().0);
     let dirty =
         core::mem::take(&mut world.resource_mut::<DirtyNodes>().0);
     world.resource_scope::<Mounts<T>, _>(|world, mut mounts| {
-        for node in gone {
-            mounts.unmount(node);
-        }
+        drain_unmounted(world, &mut mounts);
         for node in dirty {
             mounts.mark_dirty(node);
         }
         world.resource_scope::<Theme<T>, _>(|world, theme| {
-            mounts.0.update(world, &theme.0, tick);
+            mounts.0.update_structure(world, &theme.0);
+            // A rebuild despawns nodes whose elements are still mounted.
+            drain_unmounted(world, &mut mounts);
+            mounts.0.update_elements(world, &theme.0, tick);
         });
     });
 }

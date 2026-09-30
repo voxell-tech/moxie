@@ -12,6 +12,42 @@ pub type Prop<T> = fynix_proto::Prop<World, T>;
 /// A value read from the world, with its change check.
 pub type Signal<T> = fynix_proto::Signal<World, T>;
 
+/// A view built again when its key changes, built into
+/// [`Bevy`](crate::Bevy).
+pub type Keyed<T, K> = fynix_proto::Keyed<crate::Bevy, T, K>;
+
+/// One view per item, built into [`Bevy`](crate::Bevy).
+pub type Each<T, I, K> = fynix_proto::Each<crate::Bevy, T, I, K>;
+
+/// See [`fynix_proto::keyed`].
+pub fn keyed<T, K>(
+    key: Signal<K>,
+    build: impl Fn(&K) -> fynix_proto::AnyView<crate::Bevy, T>
+    + Send
+    + Sync
+    + 'static,
+) -> Keyed<T, K>
+where
+    K: PartialEq + Clone + Send + Sync + 'static,
+{
+    fynix_proto::keyed(key, build)
+}
+
+/// See [`fynix_proto::each`].
+pub fn each<T, I, K>(
+    items: Signal<Vec<I>>,
+    key: fn(&I) -> K,
+    build: impl Fn(&I) -> fynix_proto::AnyView<crate::Bevy, T>
+    + Send
+    + Sync
+    + 'static,
+) -> Each<T, I, K>
+where
+    K: PartialEq + Clone + Send + Sync + 'static,
+{
+    fynix_proto::each(items, key, build)
+}
+
 /// A read of the world still waiting for its change check.
 pub type Derived<T> = fynix_proto::Derived<World, T>;
 
