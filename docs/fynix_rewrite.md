@@ -684,6 +684,38 @@ turned up five more problems:
     component. Tests also need a frame for handlers queued through
     `Commands` to run.
 
+Growing a hover label and lighting a button's fill turned up one more
+problem and answered another in part:
+
+15. **Animatable properties every element shares have no home.** A
+    transform (and later opacity) belongs to every element, but it had
+    to be added to `Label` alone, as a `scale` prop written to
+    `UiTransform`. Generic modifiers are build-once and cannot take
+    state rules or transitions (finding 3), so they cannot carry it.
+    The design needs a place for properties all elements share, so a
+    `when::<Hovered>` rule can animate them on any of them.
+
+Finding 10 is partly answered. `Button` now wires a hover rule onto its
+own frame while building it, with a `hover_fill` prop and a transition
+from the theme, so a composite can put state rules on its own parts. A
+call site still cannot add one, and `hover_fill` is read once at
+build, so it cannot be bound.
+
+The hover source changed too. The `Hovered` marker used to be set by
+`Pointer<Over>` and `Pointer<Out>` observers on the node. Both events
+bubble, so a pointer crossing from a button's padding onto its label
+fires Out and Over on the button in turn, and the marker drops and
+returns, taking `Pressed` with it. Bevy 0.19 has a hover component for
+this in `bevy::picking::hover`: `Hovered(bool)` is true while the
+pointer is over the entity or any descendant, and it only changes when
+that changes. A stateful element now carries it, and an observer copies
+each change onto the prototype's marker. There is also `DirectlyHovered`,
+which leaves descendants out, and `HoverMap`, which is per frame and
+per pointer. Both are less fit for this. Bevy's component is kept up to
+date by its picking plugins, so an app without them never sees a hover. The
+tests drive it through a `HoverMap` and `update_is_hovered`, not a real
+pointer.
+
 Composites and custom elements (`Foldable`, its private `Reveal` element)
 needed no core changes, which suggests the escape hatch for custom
 views works.
