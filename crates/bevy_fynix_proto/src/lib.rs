@@ -3,7 +3,7 @@
 //! The core owns views, set rules, props and transitions. This crate
 //! says what a world and a node are in Bevy, writes the leaves and
 //! composites against `bevy_ui`, and keeps mounted leaves in step with
-//! the world every frame.
+//! the world.
 
 pub mod backend;
 pub mod demo;
@@ -28,11 +28,13 @@ pub use fynix_proto::{
     AnyView, Cx, Leaf, Styled, View, ViewExt, ViewSeq,
 };
 
-pub use backend::Bevy;
+pub use backend::{Bevy, Unmounted};
 pub use modifier::ModifierExt;
 pub use mounted::Mounts;
-pub use prop::{Prop, Signal, derived};
-pub use state::{Hovered, Pressed, StateExt, Stateful};
+pub use prop::{
+    Derived, Prop, Signal, component, derived, every_frame, resource,
+};
+pub use state::{DirtyNodes, Hovered, Pressed, StateExt, Stateful};
 pub use transition::{BevyMarker, ReducedMotion};
 
 /// The theme views are built with, as a resource.
@@ -52,7 +54,10 @@ impl<T> Default for FynixProtoPlugin<T> {
 impl<T: Send + Sync + 'static> Plugin for FynixProtoPlugin<T> {
     fn build(&self, app: &mut App) {
         app.init_resource::<Mounts<T>>()
+            .init_resource::<Unmounted>()
+            .init_resource::<DirtyNodes>()
             .init_resource::<ReducedMotion>()
+            .add_observer(backend::queue_unmounted)
             .add_systems(Update, mounted::update::<T>);
     }
 }

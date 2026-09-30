@@ -4,8 +4,10 @@
 use bevy_ecs::component::Component;
 use bevy_ecs::entity::Entity;
 use bevy_ecs::event::EntityEvent;
+use bevy_ecs::lifecycle::{Insert, Remove};
 use bevy_ecs::observer::On;
-use bevy_ecs::system::Commands;
+use bevy_ecs::resource::Resource;
+use bevy_ecs::system::{Commands, ResMut};
 use bevy_ecs::world::World;
 use bevy_picking::events::{Out, Over, Pointer, Press, Release};
 use fynix_proto::{Curve, Motion, MotionTokens, Tween};
@@ -40,12 +42,41 @@ fn release(release: On<Pointer<Release>>, mut commands: Commands) {
     commands.entity(release.event_target()).remove::<Pressed>();
 }
 
+/// The nodes whose state components were inserted or removed since
+/// the last update.
+#[derive(Resource, Default, Debug)]
+pub struct DirtyNodes(pub Vec<Entity>);
+
+fn state_inserted<S: Component>(
+    insert: On<Insert, S>,
+    mut dirty: ResMut<DirtyNodes>,
+) {
+    dirty.0.push(insert.event_target());
+}
+
+fn state_removed<S: Component>(
+    remove: On<Remove, S>,
+    mut dirty: ResMut<DirtyNodes>,
+) {
+    dirty.0.push(remove.event_target());
+}
+
+/// Queues the node whenever the state component `S` is inserted on
+/// or removed from it.
+fn watch_state<S: Component>(world: &mut World, node: Entity) {
+    world
+        .entity_mut(node)
+        .observe(state_inserted::<S>)
+        .observe(state_removed::<S>);
+}
+
 /// An edit of a snapshot, with the theme in hand.
 type Edit<S, T> = Box<dyn Fn(&mut S, &T) + Send + Sync>;
 
 /// An edit that holds while a state component is on the node.
 struct StateRule<S, T> {
     holds: fn(&World, Entity) -> bool,
+    watch: fn(&mut World, Entity),
     apply: Edit<S, T>,
 }
 
@@ -93,6 +124,7 @@ impl<L: Leaf<Bevy, T>, T: Send + Sync + 'static> Stateful<L, T> {
     ) -> Self {
         self.rules.push(StateRule {
             holds: |world, node| world.entity(node).contains::<S>(),
+            watch: watch_state::<S>,
             apply: Box::new(rule),
         });
         self
@@ -186,6 +218,17 @@ impl<T: Send + Sync + 'static, L: Leaf<Bevy, T>> Leaf<Bevy, T>
         self.leaf.is_live() || !self.rules.is_empty()
     }
 
+    fn changed(&mut self, world: &World) -> bool {
+        self.leaf.changed(world)
+    }
+
+    fn on_mounted(&self, world: &mut World, node: Entity) {
+        self.leaf.on_mounted(world, node);
+        for rule in &self.rules {
+            (rule.watch)(world, node);
+        }
+    }
+
     fn resolve(self, cx: &Cx<'_, Bevy, T>) -> Self {
         let Self {
             leaf,
@@ -244,7 +287,10 @@ mod tests {
     use crate::tokens::{TextTokens, Tone};
     use crate::transition::ReducedMotion;
     use crate::views::{Label, LabelSnapshot, label};
-    use crate::{AnyView, FynixProtoPlugin, Theme, derived, mount};
+    use crate::{
+        AnyView, FynixProtoPlugin, Theme, derived, every_frame,
+        mount, resource,
+    };
 
     struct Test;
 
@@ -387,7 +433,7 @@ mod tests {
         let bound = mount::<Test>(
             app.world_mut(),
             label("x")
-                .tone(derived(|_| Tone::Dim))
+                .tone(derived(|_| Tone::Dim).when(every_frame()))
                 .when::<Hovered>(accent),
         );
         hover(&mut app, fixed, true);
@@ -502,8 +548,8 @@ mod tests {
         let node = mount::<Test>(
             app.world_mut(),
             label("x")
-                .tone(derived(|world| {
-                    world.resource::<Selection>().0
+                .tone(resource::<Selection, _>(|selection| {
+                    selection.0
                 }))
                 .transition(Motion::Interact),
         );
@@ -601,6 +647,46 @@ mod tests {
         app.update();
 
         assert_eq!(color(&app, node), Color::WHITE);
+    }
+
+    #[test]
+    fn inserting_and_removing_a_state_re_applies_its_rule() {
+        let mut app = app();
+        let node = mount::<Test>(
+            app.world_mut(),
+            label("x").when::<Selected>(accent),
+        );
+
+        app.world_mut().entity_mut(node).insert(Selected);
+        assert_eq!(
+            app.world().resource::<DirtyNodes>().0,
+            vec![node],
+            "the insert observer queued the node"
+        );
+        app.update();
+        assert_eq!(color(&app, node), Color::WHITE);
+        assert!(app.world().resource::<DirtyNodes>().0.is_empty());
+
+        app.world_mut().entity_mut(node).remove::<Selected>();
+        assert_eq!(
+            app.world().resource::<DirtyNodes>().0,
+            vec![node]
+        );
+        app.update();
+        assert_eq!(color(&app, node), BLACK);
+    }
+
+    #[test]
+    fn a_state_the_leaf_has_no_rule_for_does_not_queue_it() {
+        let mut app = app();
+        let node = mount::<Test>(
+            app.world_mut(),
+            label("x").when::<Hovered>(accent),
+        );
+
+        app.world_mut().entity_mut(node).insert(Selected);
+
+        assert!(app.world().resource::<DirtyNodes>().0.is_empty());
     }
 
     #[test]

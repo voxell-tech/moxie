@@ -7,6 +7,8 @@ use bevy_ecs::resource::Resource;
 use bevy_ecs::world::World;
 use bevy_time::Time;
 
+use crate::backend::Unmounted;
+use crate::state::DirtyNodes;
 use crate::transition::ReducedMotion;
 use crate::{Bevy, Theme};
 
@@ -42,7 +44,17 @@ pub(crate) fn update<T: Send + Sync + 'static>(world: &mut World) {
             .get_resource::<ReducedMotion>()
             .is_some_and(|reduced| reduced.0),
     };
+    let gone =
+        core::mem::take(&mut world.resource_mut::<Unmounted>().0);
+    let dirty =
+        core::mem::take(&mut world.resource_mut::<DirtyNodes>().0);
     world.resource_scope::<Mounts<T>, _>(|world, mut mounts| {
+        for node in gone {
+            mounts.unmount(node);
+        }
+        for node in dirty {
+            mounts.mark_dirty(node);
+        }
         world.resource_scope::<Theme<T>, _>(|world, theme| {
             mounts.0.update(world, &theme.0, tick);
         });

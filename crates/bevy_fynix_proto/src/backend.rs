@@ -1,11 +1,28 @@
 //! The Bevy backend of the core.
 
 use bevy_ecs::entity::Entity;
+use bevy_ecs::lifecycle::Despawn;
+use bevy_ecs::observer::On;
+use bevy_ecs::resource::Resource;
+use bevy_ecs::system::ResMut;
 use bevy_ecs::world::World;
 use bevy_ui::Node;
 
 /// Bevy's ECS, with `bevy_ui` doing layout, text and picking.
 pub struct Bevy;
+
+/// The UI nodes despawned since the last update.
+#[derive(Resource, Default, Debug)]
+pub struct Unmounted(pub Vec<Entity>);
+
+/// Queues every despawned [`Node`]. Only a queue, as the mounts are
+/// out of the world while they update, and a despawn can happen then.
+pub(crate) fn queue_unmounted(
+    despawn: On<Despawn, Node>,
+    mut queue: ResMut<Unmounted>,
+) {
+    queue.0.push(despawn.entity);
+}
 
 impl fynix_proto::Backend for Bevy {
     type World = World;
@@ -17,9 +34,5 @@ impl fynix_proto::Backend for Bevy {
             world.entity_mut(parent).add_child(node);
         }
         node
-    }
-
-    fn exists(world: &World, node: Entity) -> bool {
-        world.get_entity(node).is_ok()
     }
 }
