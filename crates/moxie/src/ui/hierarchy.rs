@@ -139,7 +139,7 @@ fn add_button(
     plus: Handle<Image>,
     pad: f32,
 ) -> impl View<Bevy, EditorTheme> {
-    button(icon(plus).tone(Tone::Accent))
+    button(icon(plus))
         .position(PositionType::Absolute)
         .inset(UiRect::new(Val::Auto, px(pad), Val::Auto, px(pad)))
         .padding(UiRect::all(px(4.0)))
