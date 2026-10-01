@@ -641,10 +641,10 @@ mod tests {
 
     #[test]
     fn a_placeholder_dropdown_shows_it_and_picks_past_it() {
-        use crate::tests;
         use bevy::ui::widget::Text;
-        use bevy::ui_widgets::Activate;
-        use bevy::ui_widgets::MenuItem;
+        use bevy::ui_widgets::{Activate, MenuItem};
+
+        use crate::tests;
 
         let mut app = tests::app();
         app.init_resource::<Picked>();

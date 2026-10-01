@@ -8,8 +8,7 @@
 use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy::ui::UiScale;
-use bevy::ui::px;
+use bevy::ui::{UiScale, px};
 use bevy::window::SystemCursorIcon;
 use bevy_fynix::tokens::{TextTokens as _, Tone};
 use bevy_fynix::views::{
