@@ -1,10 +1,10 @@
 //! Picking an enum's variant.
 //!
-//! Not a registered [`Inspect`](super::Inspect) widget: which variants
-//! a type has is something reflection already knows, so this is
-//! dispatched on the shape of the value rather than on its type. That
-//! is also what lets it serve enums from crates the inspector cannot
-//! name.
+//! Not a registered [`Inspect`](super::Inspect) editor: which
+//! variants a type has is something reflection already knows, so this
+//! is dispatched on the shape of the value rather than on its type.
+//! That is also what lets it serve enums from crates the inspector
+//! cannot name.
 //!
 //! Switching into a variant that carries data means inventing that
 //! data: a unit variant needs none, and a variant with fields is
@@ -24,18 +24,11 @@ use bevy::reflect::tuple::DynamicTuple;
 use bevy::reflect::{
     PartialReflect, ReflectRef, TypeInfo, TypeRegistry,
 };
-use bevy_fynix::tag::TagExt as _;
+use bevy_fynix::views::{FrameProps as _, dropdown, frame, label};
+use bevy_fynix::{AnyView, Bevy, ViewExt as _};
 
-use fynix::composer::Composer;
-use fynix::prelude::*;
-
-use super::{ClonableSource, Source, when_changed};
-use crate::elements::{
-    Dropdown, DropdownCursor, DropdownList, DropdownMenu, Frame,
-    Icon, Label, LabelCursor, menu_item,
-};
-use crate::icons;
-use crate::reactive::{BevyUi, FynixHost};
+use super::Binding;
+use crate::theme::EditorTheme;
 
 /// Every variant of `value`'s type, if it is an enum at all.
 ///
@@ -57,6 +50,7 @@ pub(super) fn variants(
 
 /// Whether `value`'s active variant is a one-field tuple variant, the
 /// enum counterpart of a single-field tuple struct.
+#[expect(dead_code, reason = "the tree walk takes it up next")]
 pub(super) fn is_single_tuple_variant(
     value: &dyn PartialReflect,
 ) -> bool {
@@ -147,145 +141,184 @@ fn constructed(
     })
 }
 
-/// Which variant `source` is on.
-fn active(source: &dyn Source, world: &World) -> Option<String> {
-    let value = source.get(world)?;
+/// The name of the variant `binding` is on.
+pub(super) fn active(
+    binding: &Binding,
+    world: &World,
+) -> Option<String> {
+    let value = binding.get(world)?;
     let ReflectRef::Enum(value) = value.reflect_ref() else {
         return None;
     };
     Some(value.variant_name().to_string())
 }
 
-/// The variant, as a dropdown over the rest.
-///
-/// `pick` is false when some variant of the type isn't
-/// [`constructible`], which then only names where it stands. The two
-/// look nothing alike, so they share a [`Frame`] and this comes back
-/// the same either way.
-pub(super) struct VariantPicker<'a> {
-    pub source: &'a dyn Source,
-    pub variants: Vec<String>,
-    pub pick: bool,
-}
-
-impl Composer<FynixHost> for VariantPicker<'_> {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let Self {
-            source,
-            variants,
-            pick,
-        } = self;
-
-        let current = active(source, ui.world)
-            .unwrap_or_else(|| "-".to_string());
-        let source = source.boxed();
-        // Sized to the longest variant, so picking another does not
-        // resize the row.
-        let width = Dropdown::width_for(&variants, 12.0);
-
-        ui.elem(elem!(Frame, align = AlignItems::Center))
-            .with(move |ui| {
-                if !pick {
-                    name(ui, &*source, current);
-                    return;
-                }
-
-                ui.elem(elem!(DropdownMenu)).with(move |ui| {
-                    control(ui, &*source, current, width);
-                    list(ui, &*source, variants, width);
-                });
-            })
-            .handle()
+/// Switches `binding` to `variant`, with whatever data it carries
+/// made up from defaults.
+fn switch(world: &mut World, binding: &Binding, variant: &str) {
+    let Some(value) = binding.get(world) else {
+        return;
+    };
+    let dynamic = {
+        let registry = world.resource::<AppTypeRegistry>().read();
+        constructed(&*value, &registry, variant)
+    };
+    if let Some(dynamic) = dynamic {
+        binding.set(world, &DynamicEnum::new(variant, dynamic));
     }
 }
 
-/// Just the active variant, for an enum that cannot be moved.
-fn name(ui: &mut BevyUi, source: &dyn Source, current: String) {
-    let shown = source.boxed();
-    let text = ui.theme.color.text;
-
-    ui.elem(elem!(Label, text = current, wrap = false, color = text))
-        .bind(
-            |label| label.text(),
-            when_changed(source),
-            move |WorldNodeRef { world, .. }| {
-                active(&*shown, world).unwrap_or_default()
-            },
-        );
+/// How wide a dropdown over `variants` is, so picking another does
+/// not resize the row: the longest one's glyphs, the padding around
+/// them and the chevron beside them.
+fn width_for(variants: &[String], theme: &EditorTheme) -> f32 {
+    const GLYPH: f32 = 0.6;
+    const CHEVRON: f32 = 16.0;
+    let longest = variants
+        .iter()
+        .map(|variant| variant.chars().count())
+        .max()
+        .unwrap_or(0);
+    longest as f32 * theme.text.body * GLYPH
+        + theme.space.md * 2.0
+        + CHEVRON
 }
 
-/// The shut control, showing whichever variant is active.
-fn control(
-    ui: &mut BevyUi,
-    source: &dyn Source,
-    current: String,
-    width: Val,
-) {
-    let shown = source.boxed();
-    let text = ui.theme.color.text;
-    let text_dim = ui.theme.color.text_dim;
-
-    ui.elem(elem!(
-        Dropdown,
-        min_width = width,
-        max_width = width,
-        label =
-            elem!(Label, text = current, wrap = false, color = text),
-        chevron = elem!(
-            Icon,
-            image = icons::CHEVRON,
-            color = text_dim,
-            size = px(9),
-            rotation = 180.0f32
-        )
-    ))
-    .pointer_tags()
-    .bind(
-        |dropdown| dropdown.label().text(),
-        when_changed(source),
-        move |WorldNodeRef { world, .. }| {
-            active(&*shown, world).unwrap_or_default()
-        },
-    );
+/// The variant `binding` is on, as a dropdown over the rest.
+///
+/// When some variant of the type isn't [`constructible`] it only
+/// names where it stands. Anything that is not an enum is an empty
+/// node. Which of the two is settled when this is built.
+pub fn variant_picker(
+    binding: Binding,
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let value = binding.get(cx.world);
+        let options = value.as_deref().and_then(|value| {
+            let variants = variants(value)?;
+            let registry =
+                cx.world.resource::<AppTypeRegistry>().read();
+            Some((variants, constructible(value, &registry)))
+        });
+        let view = match options {
+            Some((variants, true)) => {
+                pick(binding, variants, cx.theme())
+            }
+            Some((_, false)) => {
+                label(binding.derive(|binding, world| {
+                    active(binding, world).unwrap_or_default()
+                }))
+                .wrap(false)
+                .boxed()
+            }
+            None => frame().boxed(),
+        };
+        cx.build(view)
+    })
 }
 
-/// One row per variant. The list closes itself once one is picked.
-fn list(
-    ui: &mut BevyUi,
-    source: &dyn Source,
+/// A dropdown over `variants`, showing the active one.
+fn pick(
+    binding: Binding,
     variants: Vec<String>,
-    width: Val,
-) {
-    let source = source.boxed();
-
-    ui.elem(elem!(DropdownList, width = width)).with(move |ui| {
-        for variant in variants {
-            option(ui, &*source, variant);
+    theme: &EditorTheme,
+) -> AnyView<Bevy, EditorTheme> {
+    let width = px(width_for(&variants, theme));
+    let selected = {
+        let variants = variants.clone();
+        binding.derive(move |binding, world| {
+            active(binding, world)
+                .and_then(|name| {
+                    variants
+                        .iter()
+                        .position(|variant| *variant == name)
+                })
+                .unwrap_or(0)
+        })
+    };
+    let names = variants.clone();
+    dropdown(variants, selected, move |world, at| {
+        if let Some(name) = names.get(at) {
+            switch(world, &binding, name);
         }
-    });
+    })
+    .min_width(width)
+    .max_width(width)
+    .boxed()
 }
 
-fn option(ui: &mut BevyUi, source: &dyn Source, variant: String) {
-    let source = ClonableSource(source.boxed());
+#[cfg(test)]
+mod tests {
+    use bevy::ui_widgets::Activate;
 
-    menu_item(ui, None, variant.clone(), move |world| {
-        let Some(value) = source.get(world) else {
-            return;
-        };
-        let dynamic = {
-            let registry = world.resource::<AppTypeRegistry>().read();
-            constructed(&*value, &registry, &variant)
-        };
-        if let Some(dynamic) = dynamic {
-            source.set(
-                world,
-                &DynamicEnum::new(variant.clone(), dynamic),
-            );
-        }
-    });
+    use super::*;
+    use crate::inspector::Field;
+    use crate::testing::{self, Kind, Probe};
+
+    fn kind_picker(app: &mut App, probe: Entity) -> Entity {
+        let binding =
+            Binding::from(Field::of::<Probe>(probe).child("kind"));
+        testing::show(app, variant_picker(binding))
+    }
+
+    fn kind(app: &App, probe: Entity) -> Kind {
+        app.world().get::<Probe>(probe).unwrap().kind.clone()
+    }
+
+    /// The label in the shut control, which comes first.
+    fn shown(app: &App, root: Entity) -> String {
+        let first = testing::all::<Text>(app, root)[0];
+        app.world().get::<Text>(first).unwrap().0.clone()
+    }
+
+    #[test]
+    fn it_lists_every_variant_and_shows_the_active_one() {
+        let (mut app, probe) = testing::probe_app();
+        let root = kind_picker(&mut app, probe);
+        assert_eq!(shown(&app, root), "Dot");
+
+        let texts: Vec<_> = testing::all::<Text>(&app, root)
+            .into_iter()
+            .map(|node| {
+                app.world().get::<Text>(node).unwrap().0.clone()
+            })
+            .filter(|text| text != "v")
+            .collect();
+        assert_eq!(texts, ["Dot", "Dot", "Circle", "Rect"]);
+    }
+
+    #[test]
+    fn it_follows_the_world_and_picking_writes_it() {
+        let (mut app, probe) = testing::probe_app();
+        let root = kind_picker(&mut app, probe);
+
+        app.world_mut().get_mut::<Probe>(probe).unwrap().kind =
+            Kind::Circle { radius: 2.0 };
+        app.update();
+        assert_eq!(shown(&app, root), "Circle");
+
+        let rows =
+            testing::all::<bevy::ui_widgets::MenuItem>(&app, root);
+        app.world_mut().trigger(Activate { entity: rows[2] });
+        app.update();
+
+        assert_eq!(
+            kind(&app, probe),
+            Kind::Rect {
+                width: 0.0,
+                height: 0.0
+            },
+            "its fields made up from defaults"
+        );
+        assert_eq!(shown(&app, root), "Rect");
+    }
+
+    #[test]
+    fn a_value_that_is_not_an_enum_is_an_empty_node() {
+        let (mut app, probe) = testing::probe_app();
+        let binding =
+            Binding::from(Field::of::<Probe>(probe).child("level"));
+        let root = testing::show(&mut app, variant_picker(binding));
+        assert!(testing::below(&app, root).is_empty());
+    }
 }

@@ -10,6 +10,7 @@
 //! an entity) is the one the walk uses, but anything else the editor
 //! keeps can serve the same editors through a [`Source`].
 
+mod enums;
 mod field;
 mod primitive;
 mod text;
@@ -31,6 +32,7 @@ use moxie_asset::type_data;
 use crate::fold;
 use crate::theme::EditorTheme;
 
+pub use enums::variant_picker;
 pub use field::{Field, Owner};
 
 /// An editor, as the registry stores it: a function from where the
@@ -503,7 +505,7 @@ pub fn inspect_value(binding: Binding) -> AnyView<Bevy, EditorTheme> {
         });
         let view = match drawer {
             Some(drawer) => drawer.build(binding),
-            None => bevy_fynix::views::frame().boxed(),
+            None => variant_picker(binding),
         };
         cx.build(view)
     })
