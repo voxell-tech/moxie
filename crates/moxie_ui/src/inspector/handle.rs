@@ -34,8 +34,9 @@ impl<T: Asset + TypePath> Inspect for Handle<T> {
                 .world
                 .resource::<AssetServer>()
                 .load::<Image>(icons::ASSET);
-            // The label names what is held by its choice's name, so it
-            // follows the list of choices as well as the handle.
+            // The label names what is held by its choice's name, so
+            // it follows the list of choices as well as
+            // the handle.
             let named = binding.clone();
             let shown = changing(move |world: &World| {
                 label_of::<T>(world, &named)
@@ -159,7 +160,7 @@ mod tests {
     use super::*;
     use crate::asset_picker::AssetPickerRoot;
     use crate::inspector::{Field, ReflectInspect};
-    use crate::testing;
+    use crate::tests;
 
     /// A field holding an image, for the row to edit.
     #[derive(Component, Reflect, Default)]
@@ -185,18 +186,18 @@ mod tests {
 
     /// An app with a holder of an image and the row editing it.
     fn setup() -> (App, Entity, Entity) {
-        let mut app = testing::app();
+        let mut app = tests::app();
         app.register_type::<Holder>();
         let holder = app.world_mut().spawn(Holder::default()).id();
         let binding =
             Binding::from(Field::of::<Holder>(holder).child("image"));
         let root =
-            testing::show(&mut app, Handle::<Image>::build(binding));
+            tests::show(&mut app, Handle::<Image>::build(binding));
         (app, holder, root)
     }
 
     fn shown(app: &App, root: Entity) -> String {
-        let text = testing::all::<Text>(app, root)[0];
+        let text = tests::all::<Text>(app, root)[0];
         app.world().get::<Text>(text).unwrap().0.clone()
     }
 
@@ -206,7 +207,7 @@ mod tests {
 
     #[test]
     fn the_four_handle_types_are_registered() {
-        let app = testing::app();
+        let app = tests::app();
         let world = app.world();
         for kind in [
             TypeId::of::<Handle<StandardMaterial>>(),
@@ -229,14 +230,14 @@ mod tests {
 
     #[test]
     fn a_field_that_cannot_be_read_reads_none() {
-        let mut app = testing::app();
+        let mut app = tests::app();
         app.register_type::<Holder>();
         let nowhere = app.world_mut().spawn_empty().id();
         let binding = Binding::from(
             Field::of::<Holder>(nowhere).child("image"),
         );
         let root =
-            testing::show(&mut app, Handle::<Image>::build(binding));
+            tests::show(&mut app, Handle::<Image>::build(binding));
 
         assert_eq!(shown(&app, root), "(none)");
     }
@@ -277,18 +278,15 @@ mod tests {
             .iter(app.world())
             .next()
             .expect("a picker");
-        let sky = testing::all::<Button>(&app, picker)
+        let sky = tests::all::<Button>(&app, picker)
             .into_iter()
             .find(|button| {
-                testing::all::<Text>(&app, *button).iter().any(
-                    |text| {
-                        app.world().get::<Text>(*text).unwrap().0
-                            == "Sky"
-                    },
-                )
+                tests::all::<Text>(&app, *button).iter().any(|text| {
+                    app.world().get::<Text>(*text).unwrap().0 == "Sky"
+                })
             })
             .expect("a Sky cell");
-        testing::click(&mut app, sky, PointerButton::Primary, 1);
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
         assert_eq!(held(&app, holder), uuid(2));
     }
 
@@ -304,7 +302,7 @@ mod tests {
         let (mut app, holder, root) = setup();
         dragging(&mut app, TypeId::of::<Image>());
 
-        testing::drop_on(&mut app, root);
+        tests::drop_on(&mut app, root);
 
         let handle = held(&app, holder);
         let path = app
@@ -320,7 +318,7 @@ mod tests {
         let (mut app, holder, root) = setup();
         dragging(&mut app, TypeId::of::<Mesh>());
 
-        testing::drop_on(&mut app, root);
+        tests::drop_on(&mut app, root);
 
         assert_eq!(held(&app, holder), Handle::default());
     }

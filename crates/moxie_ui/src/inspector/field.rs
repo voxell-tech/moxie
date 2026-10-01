@@ -17,9 +17,9 @@ pub enum Owner {
     Asset(UntypedAssetId),
 }
 
-/// Where an inspector reads and writes: one root value, a component of
-/// an entity or an asset, and the reflect path reaching a leaf inside
-/// it. The empty path is the root itself.
+/// Where an inspector reads and writes: one root value, a component
+/// of an entity or an asset, and the reflect path reaching a leaf
+/// inside it. The empty path is the root itself.
 ///
 /// A resource is a component too. Bevy parks each one on an entity
 /// of its own, so which it was handed never comes up. That entity is
@@ -121,8 +121,8 @@ impl Field {
         moxie_asset::type_data::<D>(world, self.root)
     }
 
-    /// Runs `read` against the whole root, or returns `None` when it is
-    /// gone or its type was never registered with
+    /// Runs `read` against the whole root, or returns `None` when it
+    /// is gone or its type was never registered with
     /// `#[reflect(Component)]` / `#[reflect(Resource)]` /
     /// `#[reflect(Asset)]`.
     pub fn read<R>(
@@ -142,7 +142,8 @@ impl Field {
     }
 
     /// As [`Self::read`], resolved to this field's own leaf rather
-    /// than the component root. Misses if the path no longer resolves.
+    /// than the component root. Misses if the path no longer
+    /// resolves.
     pub fn read_at<R>(
         &self,
         world: &World,
@@ -271,7 +272,10 @@ impl Source for Field {
             match leaf {
                 Ok(leaf) => {
                     if let Err(err) = leaf.try_apply(value) {
-                        warn!("inspector could not write {path}: {err:?}");
+                        warn!(
+                            "inspector could not write {path}: \
+                             {err:?}"
+                        );
                     }
                 }
                 Err(err) => {

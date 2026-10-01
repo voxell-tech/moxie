@@ -1,11 +1,11 @@
 //! [`Inspect`] impls for glam's float, signed, and unsigned vector
 //! types.
 //!
-//! Left to the generic struct walk, a `Vec3` would fold its `x`/`y`/`z`
-//! away behind a header of its own - technically correct, and not how
-//! any engine's inspector shows a vector. This puts the axes on one
-//! row instead, each behind a small tinted letter the way Unity,
-//! Unreal, and Godot all label them.
+//! Left to the generic struct walk, a `Vec3` would fold its
+//! `x`/`y`/`z` away behind a header of its own - technically correct,
+//! and not how any engine's inspector shows a vector. This puts the
+//! axes on one row instead, each behind a small tinted letter the way
+//! Unity, Unreal, and Godot all label them.
 //!
 //! Each input edits the whole vector: it reads one out, replaces a
 //! component, and writes it back. So the editor needs no way to

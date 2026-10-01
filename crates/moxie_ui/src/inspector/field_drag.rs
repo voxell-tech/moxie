@@ -1,9 +1,9 @@
 //! Making an animatable field's label a drag source.
 //!
 //! Whether a field can be animated is the host's call
-//! ([`FieldAnimatable`], set from its scene registry). The drag itself
-//! is generic: it carries a [`Field`] and nothing about what dropping
-//! it somewhere means.
+//! ([`FieldAnimatable`], set from its scene registry). The drag
+//! itself is generic: it carries a [`Field`] and nothing about what
+//! dropping it somewhere means.
 
 use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::PointerButton;
@@ -47,8 +47,8 @@ impl FieldHasAction {
 }
 
 /// The field dragged out of the inspector and the tag following the
-/// cursor. Empty when nothing is being dragged. What a drop does is the
-/// host's concern.
+/// cursor. Empty when nothing is being dragged. What a drop does is
+/// the host's concern.
 #[derive(Resource, Default)]
 pub struct DraggedField {
     pub field: Option<Field>,

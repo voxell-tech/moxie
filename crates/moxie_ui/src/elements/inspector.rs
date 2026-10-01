@@ -32,8 +32,8 @@ use crate::inspector::{
     Binding, Field, FieldAnimatable, ReflectEssential,
     ReflectInspectGroup, ReflectInspectable, draggable_field,
     field_name, field_row, inspect_value, inspector_fields,
+    root_leaf, section_open, toggle_section,
 };
-use crate::inspector::{root_leaf, section_open, toggle_section};
 use crate::theme::EditorTheme;
 
 type Item = AnyView<Bevy, EditorTheme>;
@@ -403,9 +403,9 @@ fn component_card(
     root_card(Field::new(entity, component), name, None).boxed()
 }
 
-/// One root's own card: a title that's always there, above a body that
-/// folds flush under it - no rail, no indent, each field reading like
-/// its own root - like Unity's per-component panel.
+/// One root's own card: a title that's always there, above a body
+/// that folds flush under it - no rail, no indent, each field reading
+/// like its own root - like Unity's per-component panel.
 ///
 /// Whether it is open is an [`Open`] on the card's own node, and is
 /// kept besides in the same store the nested sections use, so it

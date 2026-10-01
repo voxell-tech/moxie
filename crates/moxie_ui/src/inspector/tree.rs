@@ -235,9 +235,9 @@ fn push_entry(
 }
 
 /// As [`push_entry`], but for a value with no field name of its own -
-/// the sole field of a tuple struct or a one-field tuple enum variant.
-/// A struct here is spliced in directly instead of wrapped, the same
-/// as the walk's own root.
+/// the sole field of a tuple struct or a one-field tuple enum
+/// variant. A struct here is spliced in directly instead of wrapped,
+/// the same as the walk's own root.
 fn push_unnamed(
     registry: &TypeRegistry,
     value: &dyn PartialReflect,
@@ -273,7 +273,8 @@ fn variant_children(
     collect_entries(registry, value, path)
 }
 
-/// The entries for `value`'s own fields, one level down from `prefix`.
+/// The entries for `value`'s own fields, one level down from
+/// `prefix`.
 fn collect_entries(
     registry: &TypeRegistry,
     value: &dyn PartialReflect,

@@ -1,6 +1,7 @@
-//! Picking the asset a [`Handle<T>`] field holds, from a window of its
-//! own: a searchable grid of every [`asset_choices`] entry for `T`,
-//! each with a thumbnail when the app registered a way to render one.
+//! Picking the asset a [`Handle<T>`] field holds, from a window of
+//! its own: a searchable grid of every [`asset_choices`] entry for
+//! `T`, each with a thumbnail when the app registered a way to render
+//! one.
 //!
 //! A click assigns at once, so the scene shows the pick while the
 //! window is still open. A double-click or Enter keeps it and closes,
@@ -96,8 +97,8 @@ struct Cancel {
     entity: Entity,
 }
 
-/// Asks the app to bring [`moxie_asset::FoundAssets`] up to date, before a picker
-/// lists them.
+/// Asks the app to bring [`moxie_asset::FoundAssets`] up to date,
+/// before a picker lists them.
 #[derive(Event)]
 pub struct RefreshAssetChoices;
 
@@ -597,7 +598,7 @@ mod tests {
 
     use super::*;
     use crate::inspector::Field;
-    use crate::testing;
+    use crate::tests;
 
     /// A field holding an image, for the picker to edit.
     #[derive(Component, Reflect, Default)]
@@ -621,7 +622,7 @@ mod tests {
     /// An app listing Logo, then Sky and Sea under "Env", with a
     /// holder of an image and its binding.
     fn setup() -> (App, Entity, Binding) {
-        let mut app = testing::app();
+        let mut app = tests::app();
         app.register_type::<Holder>()
             .insert_resource(ReducedMotion(true));
         app.world_mut().resource_mut::<FoundAssets>().0.insert(
@@ -660,7 +661,7 @@ mod tests {
     }
 
     fn texts(app: &App, node: Entity) -> Vec<String> {
-        testing::all::<Text>(app, node)
+        tests::all::<Text>(app, node)
             .into_iter()
             .map(|node| {
                 app.world().get::<Text>(node).unwrap().0.clone()
@@ -670,7 +671,7 @@ mod tests {
 
     /// The button with `text` somewhere in it.
     fn button_with(app: &App, root: Entity, text: &str) -> Entity {
-        testing::all::<Button>(app, root)
+        tests::all::<Button>(app, root)
             .into_iter()
             .find(|node| texts(app, *node).iter().any(|t| t == text))
             .unwrap_or_else(|| panic!("a button with {text}"))
@@ -682,7 +683,7 @@ mod tests {
 
     /// The thumbnail tiles under `root`, which show an image.
     fn tiles(app: &App, root: Entity) -> Vec<Entity> {
-        testing::all::<ImageNode>(app, root)
+        tests::all::<ImageNode>(app, root)
             .into_iter()
             .filter(|node| {
                 app.world().get::<Node>(*node).unwrap().width
@@ -697,7 +698,7 @@ mod tests {
         let root = open(&mut app, &binding);
 
         let wrapping =
-            testing::below(&app, root).into_iter().any(|node| {
+            tests::below(&app, root).into_iter().any(|node| {
                 app.world()
                     .get::<Node>(node)
                     .is_some_and(|ui| ui.flex_wrap == FlexWrap::Wrap)
@@ -709,11 +710,11 @@ mod tests {
     fn the_close_button_turns_critical_under_the_pointer() {
         let (mut app, _, binding) = setup();
         let root = open(&mut app, &binding);
-        let close = testing::all::<Button>(&app, root)
+        let close = tests::all::<Button>(&app, root)
             .into_iter()
             .find(|node| texts(&app, *node).is_empty())
             .expect("a close button");
-        let image = testing::below(&app, close)[0];
+        let image = tests::below(&app, close)[0];
         let theme = EditorTheme::default();
         let tint = |app: &App| {
             app.world().get::<ImageNode>(image).unwrap().color
@@ -781,7 +782,7 @@ mod tests {
         let (mut app, _, binding) = setup();
         let root = open(&mut app, &binding);
 
-        let input = testing::all::<EditableText>(&app, root)[0];
+        let input = tests::all::<EditableText>(&app, root)[0];
         assert_eq!(
             app.world().resource::<InputFocus>().get(),
             Some(input)
@@ -804,7 +805,7 @@ mod tests {
         let logo = button_with(&app, root, "Logo");
         let selection = EditorTheme::default().color.selection;
 
-        testing::click(&mut app, sky, PointerButton::Primary, 1);
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
         app.update();
 
         assert_eq!(held(&app, holder), uuid(2));
@@ -824,7 +825,7 @@ mod tests {
         let root = open(&mut app, &binding);
         let sky = button_with(&app, root, "Sky");
 
-        testing::click(&mut app, sky, PointerButton::Secondary, 1);
+        tests::click(&mut app, sky, PointerButton::Secondary, 1);
 
         assert_eq!(held(&app, holder), Handle::default());
     }
@@ -835,7 +836,7 @@ mod tests {
         let root = open(&mut app, &binding);
         let sea = button_with(&app, root, "Sea");
 
-        testing::click(&mut app, sea, PointerButton::Primary, 2);
+        tests::click(&mut app, sea, PointerButton::Primary, 2);
 
         assert_eq!(held(&app, holder), uuid(3));
         assert!(picker(&mut app).is_none());
@@ -849,7 +850,7 @@ mod tests {
         let root = open(&mut app, &binding);
         let none = button_with(&app, root, "None");
 
-        testing::click(&mut app, none, PointerButton::Primary, 1);
+        tests::click(&mut app, none, PointerButton::Primary, 1);
 
         assert_eq!(held(&app, holder), Handle::default());
     }
@@ -859,9 +860,9 @@ mod tests {
         let (mut app, holder, binding) = setup();
         let root = open(&mut app, &binding);
         let sky = button_with(&app, root, "Sky");
-        testing::click(&mut app, sky, PointerButton::Primary, 1);
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
 
-        testing::key(&mut app, KeyCode::Enter, Key::Enter);
+        tests::key(&mut app, KeyCode::Enter, Key::Enter);
 
         assert_eq!(held(&app, holder), uuid(2));
         assert!(picker(&mut app).is_none());
@@ -874,10 +875,10 @@ mod tests {
             uuid(1);
         let root = open(&mut app, &binding);
         let sky = button_with(&app, root, "Sky");
-        testing::click(&mut app, sky, PointerButton::Primary, 1);
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
         assert_eq!(held(&app, holder), uuid(2));
 
-        testing::key(&mut app, KeyCode::Escape, Key::Escape);
+        tests::key(&mut app, KeyCode::Escape, Key::Escape);
 
         assert_eq!(held(&app, holder), uuid(1));
         assert!(picker(&mut app).is_none());
@@ -888,10 +889,10 @@ mod tests {
         let (mut app, holder, binding) = setup();
         let root = open(&mut app, &binding);
         let sky = button_with(&app, root, "Sky");
-        testing::click(&mut app, sky, PointerButton::Primary, 1);
-        let backdrop = testing::below(&app, root)[0];
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
+        let backdrop = tests::below(&app, root)[0];
 
-        testing::press(&mut app, backdrop);
+        tests::press(&mut app, backdrop);
 
         assert_eq!(held(&app, holder), uuid(2));
         assert!(picker(&mut app).is_none());
@@ -902,8 +903,8 @@ mod tests {
         let (mut app, holder, binding) = setup();
         let root = open(&mut app, &binding);
         let sky = button_with(&app, root, "Sky");
-        testing::click(&mut app, sky, PointerButton::Primary, 1);
-        let close = testing::all::<Button>(&app, root)
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
+        let close = tests::all::<Button>(&app, root)
             .into_iter()
             .find(|node| texts(&app, *node).is_empty())
             .expect("a close button");

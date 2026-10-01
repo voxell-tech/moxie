@@ -140,7 +140,7 @@ fn gallery() -> AnyView<Bevy, Monokai> {
         let panel = cx.theme().panel();
         cx.build(
             column((
-                label("fynix prototype on Bevy").size(20.0),
+                label("Fynix prototype on Bevy").size(20.0),
                 section("Bound values", bound_values()),
                 section("Hover, with a transition", hover_list()),
                 section(

@@ -100,7 +100,8 @@ fn setup(world: &mut World) {
 
     // `Transform` also drags `GlobalTransform` in, but the entity
     // inspector only shows what's registered `register_inspectable` -
-    // `GlobalTransform` is reflected, never opted in, so it stays out.
+    // `GlobalTransform` is reflected, never opted in, so it stays
+    // out.
     let subject = world
         .spawn((
             Transform::from_xyz(1.0, 2.0, 3.0),

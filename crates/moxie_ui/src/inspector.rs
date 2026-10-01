@@ -30,19 +30,18 @@ use bevy::sprite::Anchor;
 use bevy::text::{LetterSpacing, LineHeight};
 use bevy_fynix::views::{FrameProps as _, column, row};
 use bevy_fynix::{AnyView, Bevy, Signal, View, ViewExt as _};
-use moxie_asset::type_data;
-
-use crate::fold;
-use crate::theme::EditorTheme;
-
 pub use enums::variant_picker;
 pub use field::{Field, Owner};
 pub use field_drag::{
     DraggableField, DraggedField, FieldAnimatable, FieldHasAction,
     FieldName, draggable_field, field_name,
 };
+use moxie_asset::type_data;
 pub use tree::{inspector_fields, section, variant_fields};
 pub(crate) use tree::{root_leaf, section_open, toggle_section};
+
+use crate::fold;
+use crate::theme::EditorTheme;
 
 /// An editor, as the registry stores it: a function from where the
 /// value lives to the view that edits it.
