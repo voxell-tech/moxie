@@ -16,8 +16,9 @@ use bevy::reflect::TypeRegistration;
 use bevy::reflect::std_traits::ReflectDefault;
 use bevy_fynix::tokens::{Motion, Tone};
 use bevy_fynix::views::{
-    BehaviorExt as _, ContextMenuExt as _, FrameProps as _, Open,
-    button, column, frame, icon, label, menu_item, row, tint,
+    BehaviorExt as _, ContextMenuExt as _, FrameProps as _,
+    MenuEntry, Open, button, column, frame, icon, label, menu_button,
+    menu_item, row, tint,
 };
 use bevy_fynix::{
     AnyView, Bevy, Cx, ScopedExt as _, View, ViewExt as _, component,
@@ -25,7 +26,7 @@ use bevy_fynix::{
 };
 
 use crate::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
-use crate::gaps::{anchored, changing_under, placeholder_dropdown};
+use crate::gaps::{anchored, changing_under};
 use crate::icons;
 use crate::inspector::{
     Binding, Field, FieldAnimatable, ReflectEssential,
@@ -233,44 +234,41 @@ fn add_component_menu(
     })
 }
 
-/// A dropdown of `options`, each a component to add.
+/// A plus button opening a menu of `options`, each a component to
+/// add, under a heading per group.
 fn add_component_dropdown(
     entity: Entity,
     options: Vec<Inspectable>,
 ) -> Item {
     // A menu popup only opens with a focusable child, so an empty
     // list says why it's empty instead of showing nothing.
-    let prompt = if options.is_empty() {
-        "Nothing left to add"
-    } else {
-        "Add component"
-    };
-    let names: Vec<String> = options
-        .iter()
-        .map(|(_, name, group)| match group {
-            Some(group) => format!("{group} / {name}"),
-            None => name.to_string(),
-        })
-        .collect();
+    let mut entries: Vec<MenuEntry> = Vec::new();
+    let mut group = None;
+    for (_, name, next) in &options {
+        if *next != group {
+            group = *next;
+            if let Some(group) = group {
+                entries.push(MenuEntry::section(group));
+            }
+        }
+        entries.push(name.to_string().into());
+    }
+    if options.is_empty() {
+        entries.push("Nothing left to add".into());
+    }
     let components: Vec<TypeId> =
         options.iter().map(|(component, ..)| *component).collect();
 
     AnyView::new(move |cx: &mut Cx<'_, Bevy, EditorTheme>| {
-        let chevron =
-            cx.world.resource::<AssetServer>().load(icons::CHEVRON);
+        let plus =
+            cx.world.resource::<AssetServer>().load(icons::PLUS);
         cx.build(
-            placeholder_dropdown(
-                prompt,
-                names,
-                chevron,
-                move |world, at| {
-                    if let Some(component) = components.get(at) {
-                        add_component(world, entity, *component);
-                    }
-                },
-            )
-            .min_width(px(160.0))
-            .max_width(px(240.0)),
+            menu_button("", entries, move |world, at| {
+                if let Some(component) = components.get(at) {
+                    add_component(world, entity, *component);
+                }
+            })
+            .icon(plus),
         )
     })
 }
@@ -780,9 +778,12 @@ mod tests {
         let root = tests::show(&mut app, entity_inspector(entity));
 
         let options = labels(&app, root);
-        assert!(options.contains(&"Add component".to_string()));
         assert!(
-            options.contains(&"Cameras / Camera 2d".to_string()),
+            options.contains(&"Cameras".to_string()),
+            "a heading per group: {options:?}"
+        );
+        assert!(
+            options.contains(&"Camera 2d".to_string()),
             "{options:?}"
         );
 
@@ -791,7 +792,7 @@ mod tests {
             .find(|item| {
                 tests::all::<Text>(&app, *item).iter().any(|text| {
                     app.world().get::<Text>(*text).unwrap().0
-                        == "Cameras / Camera 2d"
+                        == "Camera 2d"
                 })
             })
             .expect("a row for Camera 2d");
@@ -799,12 +800,14 @@ mod tests {
         app.update();
 
         assert!(app.world().get::<Camera2d>(entity).is_some());
-        assert!(
-            !labels(&app, root)
-                .contains(&"Cameras / Camera 2d".to_string())
-        );
-        assert!(
-            labels(&app, root).contains(&"Camera 2d".to_string())
+        let after = labels(&app, root);
+        assert_eq!(
+            after
+                .iter()
+                .filter(|label| *label == "Camera 2d")
+                .count(),
+            1,
+            "the card for the new component, and no row left for it"
         );
     }
 
