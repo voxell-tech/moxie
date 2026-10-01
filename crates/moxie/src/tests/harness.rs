@@ -19,7 +19,8 @@ use bevy::render::RenderPlugin;
 use bevy::render::settings::{RenderCreation, WgpuSettings};
 use bevy::render::sync_world::SyncWorldPlugin;
 use bevy::ui_widgets::{
-    Activate, Button as ButtonBehavior, MenuItem,
+    Activate, Button as ButtonBehavior, MenuAction, MenuEvent,
+    MenuItem,
 };
 use bevy::window::{ExitCondition, PrimaryWindow};
 use bevy::winit::WinitPlugin;
@@ -148,6 +149,13 @@ impl Editor {
                 .parent();
         }
         world.trigger(Activate { entity: at });
+        // What a click on a menu row sends after activating it.
+        if world.get::<MenuItem>(at).is_some() {
+            world.trigger(MenuEvent {
+                source: at,
+                action: MenuAction::CloseAll,
+            });
+        }
         self.step(SETTLE);
     }
 
