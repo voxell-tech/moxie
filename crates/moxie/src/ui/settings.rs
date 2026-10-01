@@ -1,71 +1,41 @@
 //! The settings panel: a reflect inspector over [`EditorSettings`],
 //! and the button that writes it back to disk.
 
-use bevy::picking::events::{Click, Pointer};
+use bevy::ecs::system::Command as _;
 use bevy::prelude::*;
 use bevy::settings::SaveSettingsSync;
-use bevy_fynix::WorldEntityMut;
-use fynix::composer::Composer;
-use fynix::prelude::*;
-use moxie_ui::elements::{
-    Button, Frame, Label, Panel, ResourceInspector,
+use bevy_fynix::views::{
+    BehaviorExt as _, FrameProps as _, button, label, row, scroll,
 };
-use moxie_ui::reactive::{BevyUi, FynixHost};
+use bevy_fynix::{AnyView, Bevy};
+use moxie_ui::elements::resource_inspector_of;
+use moxie_ui::theme::EditorTheme;
 
 use crate::EditorSettings;
 
-/// The settings panel, as kernel nodes.
-pub(super) struct SettingsPanel;
-
-impl Composer<FynixHost> for SettingsPanel {
-    type Element = Panel;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Panel> {
-        let pad = ui.theme.space.xl;
-        ui.elem(elem!(
-            Panel,
-            direction = FlexDirection::Column,
-            row_gap = px(8),
-            padding = UiRect::all(px(pad)),
-            scrolls = true
-        ))
-        .with(|ui| {
-            ui.compose(ResourceInspector::of::<EditorSettings>());
-            ui.compose(SaveRow);
-        })
-        .handle()
-    }
+/// The settings panel.
+pub(super) fn panel() -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(|cx| {
+        let pad = cx.theme().space.xl;
+        cx.build(
+            scroll((
+                resource_inspector_of::<EditorSettings>(),
+                save_row(),
+            ))
+            .width(percent(100.0))
+            .height(percent(100.0))
+            .gap(8.0)
+            .padding(UiRect::all(px(pad))),
+        )
+    })
 }
 
 /// The one action the panel has of its own.
-struct SaveRow;
-
-impl Composer<FynixHost> for SaveRow {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        ui.elem(elem!(Frame, direction = FlexDirection::Row))
-            .with(|ui| {
-                ui.elem(elem!(
-                    Button,
-                    label = elem!(Label, text = "Save"),
-                    width = px(64),
-                    height = px(24)
-                ))
-                .observe(
-                    |mut click: On<Pointer<Click>>,
-                     mut commands: Commands| {
-                        click.propagate(false);
-                        commands.queue(SaveSettingsSync::Always);
-                    },
-                );
-            })
-            .handle()
-    }
+fn save_row() -> impl bevy_fynix::View<Bevy, EditorTheme> {
+    row((button(label("Save"))
+        .width(px(64.0))
+        .height(px(24.0))
+        .on_activate(|world| {
+            SaveSettingsSync::Always.apply(world);
+        }),))
 }

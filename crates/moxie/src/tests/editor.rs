@@ -10,11 +10,13 @@ use moxie_asset::{ABSOLUTE_SOURCE, AssetRef, InternalAssets};
 use super::harness::{Editor, SETTLE};
 use crate::{SelectedEntity, presets, project};
 
-/// Adds a cube from the hierarchy's add menu, and hands it back.
+/// Adds a cube as the hierarchy's add menu does, and hands it back.
+///
+/// STUB: goes through the menu again once the hierarchy is ported
+/// in wave 3 step 2.
 fn add_cube(editor: &mut Editor) -> Entity {
-    let add = editor.named("Add");
-    editor.press_entity(add);
-    editor.press("Cube");
+    crate::ui::hierarchy::spawn_mesh(editor.world(), "Cube");
+    editor.step(SETTLE);
     editor
         .world()
         .resource::<SelectedEntity>()
@@ -166,8 +168,9 @@ fn a_field_built_later_has_the_editor_caret() {
     // The inspector builds its fields once something is selected.
     add_cube(&mut editor);
 
-    let base5 =
-        moxie_ui::theme::EditorTheme::default().palette.base[5];
+    // The new text input leaves the caret at Bevy's default, which
+    // is the theme's text colour.
+    let text = moxie_ui::theme::EditorTheme::default().color.text;
     let world = editor.world();
     let carets = world
         .query::<&bevy::text::TextCursorStyle>()
@@ -175,7 +178,32 @@ fn a_field_built_later_has_the_editor_caret() {
         .map(|caret| caret.color)
         .collect::<Vec<_>>();
     assert!(!carets.is_empty());
-    assert!(carets.iter().all(|&color| color == base5), "{carets:?}");
+    assert!(carets.iter().all(|&color| color == text), "{carets:?}");
+}
+
+#[test]
+fn the_shell_shows_the_menu_bar_and_an_empty_inspector() {
+    let mut editor = Editor::new();
+    editor.text("File");
+    editor.text("Nothing selected");
+    // Each stubbed panel is there: its tab, and its placeholder.
+    assert_eq!(editor.texts("Timeline").len(), 2);
+    assert_eq!(editor.texts("Action").len(), 2);
+}
+
+#[test]
+fn the_inspector_follows_the_selection() {
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+    assert!(editor.texts("Nothing selected").is_empty());
+
+    editor.world().insert_resource(SelectedEntity(None));
+    editor.step(SETTLE);
+    editor.text("Nothing selected");
+
+    editor.world().insert_resource(SelectedEntity(Some(cube)));
+    editor.step(SETTLE);
+    assert!(editor.texts("Nothing selected").is_empty());
 }
 
 #[test]
@@ -240,16 +268,16 @@ fn translation_x(editor: &mut Editor) -> (Entity, Entity) {
 }
 
 /// The text of the first number field under `root`, depth first.
+/// A number field keeps its text out of the pointer's way until it
+/// is typed into, which a text field does not.
 fn first_number_input(world: &World, root: Entity) -> Option<Entity> {
-    use bevy::feathers::controls::FeathersNumberInput;
-
     let children = world.get::<Children>(root)?;
     children.iter().find_map(|child| {
-        let in_number =
-            world.get::<FeathersNumberInput>(root).is_some();
-        if in_number
-            && world.get::<bevy::text::EditableText>(child).is_some()
-        {
+        let is_number_input = world
+            .get::<bevy::text::EditableText>(child)
+            .is_some()
+            && world.get::<bevy::picking::Pickable>(child).is_some();
+        if is_number_input {
             return Some(child);
         }
         first_number_input(world, child)

@@ -1,6 +1,6 @@
 mod action;
 mod assets;
-mod hierarchy;
+pub(crate) mod hierarchy;
 mod inspector;
 mod settings;
 pub(crate) mod timeline;
@@ -15,6 +15,17 @@ use bevy::render::render_resource::TextureFormat;
 use bevy::text::EditableText;
 use bevy::ui::widget::ImageNode;
 use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
+use bevy_fynix::dock::{
+    DockAreaStyle, DockLeaf, DockNode, DockRegistry, DockTree,
+    DockWindowKind, Edge, dock,
+};
+use bevy_fynix::views::{FrameProps as _, column, label};
+use bevy_fynix::{AnyView, Bevy, View, mount};
+use bevy_motiongfx::motiongfx::field_path::field;
+use moxie_ui::MoxieUiPlugin;
+use moxie_ui::field_icon::FieldIconAppExt as _;
+use moxie_ui::gaps::{anchored, changing_under};
+use moxie_ui::theme::EditorTheme;
 
 use crate::subject::Target;
 use crate::{
@@ -22,19 +33,8 @@ use crate::{
     ProjectPath, SelectedAction, SelectedEntity, playback, scene,
     view,
 };
-use bevy_fynix::WorldEntityMut;
-use bevy_motiongfx::motiongfx::field_path::field;
-use fynix::prelude::*;
-use moxie_ui::MoxieUiPlugin;
-use moxie_ui::elements::{Frame, FrameCursor, Panel};
-use moxie_ui::field_icon::FieldIconAppExt as _;
-use moxie_ui::reactive::{BevyUi, FynixSet, value_changed};
-use moxie_ui::widgets::dock::{
-    DockAreaStyle, DockLeaf, DockNode, DockTree,
-    DockWindowDescriptor, Edge, WindowRegistry, dock,
-};
 
-/// Wires feathers theming, the editor UI tree, and the per-frame
+/// Wires the editor UI tree and the per-frame
 /// timeline/playback/preview systems.
 pub(crate) struct UiPlugin;
 
@@ -75,7 +75,10 @@ impl Plugin for UiPlugin {
             .init_resource::<assets::AssetFoldState>()
             .init_resource::<hierarchy::Dragging>()
             .init_resource::<scene::EditorScene>()
-            .add_systems(Startup, setup_editor_ui)
+            .add_systems(
+                Startup,
+                (setup_editor_ui, mount_editor_ui).chain(),
+            )
             .add_systems(
                 Update,
                 (
@@ -88,8 +91,7 @@ impl Plugin for UiPlugin {
                     playback::track_playing,
                     view::retarget_scene_cameras,
                 )
-                    .chain()
-                    .before(FynixSet),
+                    .chain(),
             )
             .add_observer(playback::on_toggle_playback);
     }
@@ -116,9 +118,10 @@ pub(crate) struct TrackViewportCamera;
 fn setup_editor_ui(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
-    mut registry: ResMut<WindowRegistry>,
+    mut registry: ResMut<DockRegistry<EditorTheme>>,
     mut tree: ResMut<DockTree>,
     settings: Res<EditorSettings>,
+    assets: Res<AssetServer>,
 ) {
     let size = settings.physical_size.max(UVec2::ONE);
     let preview = images.add(Image::new_target_texture(
@@ -151,7 +154,7 @@ fn setup_editor_ui(
         commands.entity(ui_camera).insert(Hdr);
     }
 
-    register_windows(&mut registry);
+    register_windows(&mut registry, &assets);
 
     //
     // The dock layout.
@@ -192,155 +195,141 @@ fn setup_editor_ui(
     if let Some(hsplit) = tree.parent_of(viewport) {
         tree.set_fraction(hsplit, 0.2);
     }
-
-    // The kernel builds the whole tree under this root. `Commands`
-    // can't reach `World` itself, so the build is queued: it runs
-    // once these commands are applied, by which point `root` exists.
-    let root = commands
-        .spawn((
-            UiTargetCamera(ui_camera),
-            Node {
-                width: percent(100),
-                height: percent(100),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-        ))
-        .id();
-    commands.queue(move |world: &mut World| {
-        moxie_ui::reactive::watch_root(world, root, build_editor_ui);
-    });
 }
 
-/// The app's UI tree. Everything reactive below here is a nested
-/// `ui.watch` / `ui.bind`.
-fn build_editor_ui(ui: &mut BevyUi) {
-    // Non-visual binds live at the root: they hang off a node only for
-    // lifetime, and write to resources or assets.
-    ui.compose(top_bar::TopBar);
-    dock(ui);
+/// Mounts the top bar over the dock, on the UI camera. Runs after
+/// [`setup_editor_ui`] has applied its commands, so the preview image
+/// and the camera exist.
+fn mount_editor_ui(world: &mut World) {
+    let camera = world
+        .query_filtered::<Entity, With<TrackViewportCamera>>()
+        .single(world)
+        .expect("the UI camera was just spawned");
+    let root = mount::<EditorTheme>(
+        world,
+        column((
+            top_bar::top_bar(),
+            column((dock::<EditorTheme>(),))
+                .width(percent(100.0))
+                .grow(1.0)
+                .min_height(px(0.0)),
+        ))
+        .gap(0.0)
+        .width(percent(100.0))
+        .height(percent(100.0)),
+    );
+    world.entity_mut(root).insert(UiTargetCamera(camera));
+}
+
+/// A titled placeholder in the place of a panel not yet ported to
+/// the new fynix.
+fn stub_panel(title: &'static str) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let pad = cx.theme().space.xl;
+        cx.build(
+            column((label(title),))
+                .width(percent(100.0))
+                .height(percent(100.0))
+                .padding(UiRect::all(px(pad))),
+        )
+    })
 }
 
 /// Register the editor's dockable windows.
-fn register_windows(registry: &mut WindowRegistry) {
-    registry.register(DockWindowDescriptor {
-        id: "viewport".into(),
-        name: "Viewport".into(),
-        icon: Some(crate::icons::VIEWPORT.into()),
-        build: |ui: &mut BevyUi| {
-            let preview =
-                ui.world.resource::<PreviewImage>().0.clone();
-            ui.elem(elem!(
-                Panel,
-                justify = JustifyContent::Center,
-                align = AlignItems::Center
-            ))
-            .with(move |ui| {
-                let fit =
-                    crate::view::preview_fit(ui.world, ui.parent());
-                let shown = fit.is_some();
+fn register_windows(
+    registry: &mut DockRegistry<EditorTheme>,
+    assets: &AssetServer,
+) {
+    let kind =
+        |name: &'static str,
+         icon: &'static str,
+         build: fn() -> AnyView<Bevy, EditorTheme>| {
+            DockWindowKind::new(name, build).icon(assets.load(icon))
+        };
 
-                // Letterboxed to fit the area above. Hidden until that
-                // area has a size: at a fresh `ComputedNode` it does
-                // not, and `Auto` would flash at the image's native
-                // size for a frame.
-                ui.elem(elem!(
-                    Frame,
-                    width = fit.map_or(Val::ZERO, |(width, _)| width),
-                    height =
-                        fit.map_or(Val::ZERO, |(_, height)| height),
-                    display = if shown {
-                        Display::Flex
-                    } else {
-                        Display::None
-                    }
-                ))
-                .insert(ImageNode::new(preview.clone()))
-                .bind(
-                    |frame| frame.width(),
-                    value_changed(crate::view::preview_fit),
-                    |WorldNodeRef { world, node }| {
-                        crate::view::preview_fit(world, node)
-                            .map_or(Val::ZERO, |(width, _)| width)
-                    },
-                )
-                .bind(
-                    |frame| frame.height(),
-                    value_changed(crate::view::preview_fit),
-                    |WorldNodeRef { world, node }| {
-                        crate::view::preview_fit(world, node)
-                            .map_or(Val::ZERO, |(_, height)| height)
-                    },
-                )
-                .bind(
-                    |frame| frame.display(),
-                    value_changed(crate::view::preview_fit),
-                    |WorldNodeRef { world, node }| {
-                        if crate::view::preview_fit(world, node)
-                            .is_some()
-                        {
-                            Display::Flex
-                        } else {
-                            Display::None
-                        }
-                    },
-                );
-            });
-        },
-    });
+    registry
+        .register(
+            "viewport",
+            kind("Viewport", crate::icons::VIEWPORT, viewport),
+        )
+        .register(
+            "timeline",
+            kind("Timeline", crate::icons::TIMELINE, timeline::panel),
+        )
+        .register(
+            "hierarchy",
+            kind(
+                "Hierarchy",
+                crate::icons::HIERARCHY,
+                hierarchy::panel,
+            ),
+        )
+        .register(
+            "action",
+            kind("Action", crate::icons::ACTION, action::panel),
+        )
+        .register(
+            "inspector",
+            kind(
+                "Inspector",
+                crate::icons::INSPECTOR,
+                inspector::panel,
+            ),
+        )
+        .register(
+            "settings",
+            kind("Settings", crate::icons::SETTINGS, settings::panel),
+        )
+        .register(
+            "assets",
+            kind("Assets", crate::icons::ASSETS, assets::panel),
+        );
+}
 
-    registry.register(DockWindowDescriptor {
-        id: "timeline".into(),
-        name: "Timeline".into(),
-        icon: Some(crate::icons::TIMELINE.into()),
-        build: |ui: &mut BevyUi| {
-            ui.compose(timeline::TimelinePanel);
-        },
-    });
+/// The composition's preview, letterboxed to the area it sits in.
+fn viewport() -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(|cx| {
+        let preview = cx.world.resource::<PreviewImage>().0.clone();
+        cx.build(
+            column((anchored::<EditorTheme, _>(move |area| {
+                preview_frame(preview, area)
+            }),))
+            .width(percent(100.0))
+            .height(percent(100.0))
+            .justify(JustifyContent::Center)
+            .align(AlignItems::Center),
+        )
+    })
+}
 
-    registry.register(DockWindowDescriptor {
-        id: "hierarchy".into(),
-        name: "Hierarchy".into(),
-        icon: Some(crate::icons::HIERARCHY.into()),
-        build: |ui: &mut BevyUi| {
-            ui.compose(hierarchy::HierarchyPanel);
-        },
-    });
-
-    registry.register(DockWindowDescriptor {
-        id: "action".into(),
-        name: "Action".into(),
-        icon: Some(crate::icons::ACTION.into()),
-        build: |ui: &mut BevyUi| {
-            ui.compose(action::ActionPanel);
-        },
-    });
-
-    registry.register(DockWindowDescriptor {
-        id: "inspector".into(),
-        name: "Inspector".into(),
-        icon: Some(crate::icons::INSPECTOR.into()),
-        build: |ui: &mut BevyUi| {
-            ui.compose(inspector::InspectorPanel);
-        },
-    });
-
-    // Settings: a reflect inspector over `EditorSettings` + Save.
-    registry.register(DockWindowDescriptor {
-        id: "settings".into(),
-        name: "Settings".into(),
-        icon: Some(crate::icons::SETTINGS.into()),
-        build: |ui: &mut BevyUi| {
-            ui.compose(settings::SettingsPanel);
-        },
-    });
-
-    registry.register(DockWindowDescriptor {
-        id: "assets".into(),
-        name: "Assets".into(),
-        icon: Some(crate::icons::ASSETS.into()),
-        build: |ui: &mut BevyUi| {
-            ui.compose(assets::AssetsPanel);
-        },
-    });
+/// The preview image, sized to fit `area`. Hidden until that area has
+/// a size: at a fresh `ComputedNode` it does not, and `Auto` would
+/// flash at the image's native size for a frame.
+fn preview_frame(
+    preview: Handle<Image>,
+    area: Option<Entity>,
+) -> impl View<Bevy, EditorTheme> {
+    let fit = move || {
+        changing_under(area, move |world: &World| {
+            area.and_then(|area| view::preview_fit(world, area))
+        })
+    };
+    column(())
+        .width(
+            fit()
+                .map(|fit| fit.map_or(Val::ZERO, |(width, _)| width)),
+        )
+        .height(
+            fit().map(|fit| {
+                fit.map_or(Val::ZERO, |(_, height)| height)
+            }),
+        )
+        .display(fit().map(|fit| {
+            if fit.is_some() {
+                Display::Flex
+            } else {
+                Display::None
+            }
+        }))
+        .with(ImageNode::new(preview))
 }

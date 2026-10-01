@@ -1,37 +1,22 @@
 //! Bookmarked-folder asset browser.
 //!
-//! Bookmarks and the folders under them expand in place, the same
-//! [`Foldable`] the hierarchy panel builds its own tree from - a
-//! chevron per row, an indent rail marking depth, and a body read
-//! only the first time a row opens, since unlike an entity's children
-//! a folder's are a real filesystem read.
-//!
-//! A recognized file can be dragged onto an inspector's `Handle<T>`
+//! Bookmarks and the folders under them expand in place. A
+//! recognized file can be dragged onto an inspector's `Handle<T>`
 //! field; see `moxie_ui::asset`.
+
+// STUB: ported in wave 3 step 2. Only the panel's view is a
+// placeholder; what it will call is kept below.
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
-use bevy::feathers::cursor::EntityCursor;
 use bevy::prelude::*;
-use bevy::ui_widgets::Activate;
-use bevy::window::SystemCursorIcon;
-use bevy_fynix::WorldEntityMut;
-use fynix::composer::Composer;
-use fynix::prelude::*;
-use moxie_asset::AssetTypes;
-use moxie_ui::asset::draggable;
-use moxie_ui::elements::{
-    Button, Frame, Icon, Label, Panel, ScrollArea, TintButton,
-};
-use moxie_ui::fold::{CHEVRON_SHUT, Foldable, FoldsOn};
-use moxie_ui::reactive::{
-    BevyUi, FynixHost, either, resource_changed,
-};
+use bevy_fynix::{AnyView, Bevy};
+use moxie_ui::theme::EditorTheme;
 
-use crate::{ProjectBookmarks, ProjectPath};
+use crate::ProjectBookmarks;
 
 /// Room below the last row for the button that floats over it.
 const BUTTON_CLEARANCE: f32 = 34.0;
@@ -44,54 +29,10 @@ const BUTTON_CLEARANCE: f32 = 34.0;
 #[derive(Resource, Default)]
 pub(super) struct AssetFoldState(BTreeSet<PathBuf>);
 
-pub(super) struct AssetsPanel;
-
-impl Composer<FynixHost> for AssetsPanel {
-    type Element = Panel;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Panel> {
-        ui.elem(elem!(Panel))
-            .with(|ui| {
-                ui.compose(Listing);
-                ui.compose(AddButton);
-            })
-            .handle()
-    }
-}
-
-/// Floated over the corner, so it stays put however far the list is
-/// scrolled.
-struct AddButton;
-
-impl Composer<FynixHost> for AddButton {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let pad = ui.theme.space.xl;
-        ui.elem(elem!(
-            Frame,
-            position = PositionType::Absolute,
-            inset = UiRect::new(auto(), px(pad), auto(), px(pad))
-        ))
-        .with(move |ui| {
-            ui.elem(elem!(
-                !TintButton::default(),
-                icon = elem!(Icon, image = crate::icons::PLUS)
-            ))
-            .observe(
-                |_: On<Activate>, mut commands: Commands| {
-                    commands.queue(add_bookmark);
-                },
-            );
-        })
-        .handle()
-    }
+/// The assets panel.
+pub(super) fn panel() -> AnyView<Bevy, EditorTheme> {
+    // STUB: ported in wave 3 step 2
+    super::stub_panel("Assets")
 }
 
 /// Prompts for a folder and bookmarks it. Dropped silently if the
@@ -112,160 +53,6 @@ fn add_bookmark(world: &mut World) {
         return;
     }
     bookmarks.0.push(folder);
-}
-
-struct Listing;
-
-impl Composer<FynixHost> for Listing {
-    type Element = ScrollArea;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, ScrollArea> {
-        let pad = ui.theme.space.xl;
-        ui.elem(elem!(
-            ScrollArea,
-            width = percent(100),
-            flex_grow = 1.0f32,
-            padding = UiRect::new(
-                px(pad),
-                px(pad),
-                px(pad),
-                px(BUTTON_CLEARANCE)
-            ),
-            scroll_x = false
-        ))
-        .watch(
-            either(
-                resource_changed::<ProjectBookmarks>(),
-                resource_changed::<ProjectPath>(),
-            ),
-            build_bookmarks,
-        )
-        .handle()
-    }
-}
-
-fn build_bookmarks(ui: &mut BevyUi) {
-    let project = ui
-        .world
-        .resource::<ProjectPath>()
-        .0
-        .as_deref()
-        .and_then(Path::parent)
-        .map(Path::to_path_buf);
-    if let Some(path) = project {
-        ui.compose(BookmarkRow { index: None, path });
-    }
-
-    let paths = ui.world.resource::<ProjectBookmarks>().0.clone();
-    for (index, path) in paths.into_iter().enumerate() {
-        ui.compose(BookmarkRow {
-            index: Some(index),
-            path,
-        });
-    }
-}
-
-/// One bookmark: its folder name, expanding its contents in place,
-/// and, unless it's the open project's own folder, a button to drop
-/// it.
-struct BookmarkRow {
-    index: Option<usize>,
-    path: PathBuf,
-}
-
-impl Composer<FynixHost> for BookmarkRow {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let Self { index, path } = self;
-        let name = display_name(&path);
-        let enabled = has_entries(&path);
-        let open =
-            ui.world.resource::<AssetFoldState>().0.contains(&path);
-        let toggle_path = path.clone();
-
-        let muted = ui.theme.color.text_dim;
-        let primary = ui.theme.color.text;
-
-        ui.compose(Foldable {
-            header: elem!(
-                !TintButton::default(),
-                width = percent(100),
-                justify = JustifyContent::FlexStart,
-                icon = elem!(
-                    Icon,
-                    image = moxie_ui::icons::CHEVRON,
-                    color = muted,
-                    rotation = CHEVRON_SHUT
-                ),
-                label = elem!(
-                    Label,
-                    text = name.clone(),
-                    color = primary,
-                    wrap = false
-                )
-            ),
-            folds_on: FoldsOn::Header,
-            enabled,
-            on_header: move |mut header: ElementMut<FynixHost, Button>| {
-                // Nothing to drop for the project's own folder.
-                let Some(index) = index else {
-                    return;
-                };
-
-                // A delete button beside the label, injected as an
-                // extra child rather than one of `Button`'s own
-                // icon/label slots. It takes its own click for
-                // itself, so the header's fold never hears it.
-                header.with(move |ui| {
-                    let critical = ui.theme.color.critical;
-                    // Eats whatever room icon and label leave, so
-                    // the delete button lands flush against the far
-                    // end.
-                    ui.elem(elem!(Frame, flex_grow = 1.0f32));
-
-                    ui.elem(elem!(
-                        !TintButton {
-                            tint: Some(critical)
-                        },
-                        width = px(14),
-                        height = px(14),
-                        padding = UiRect::ZERO,
-                        radius = px(2),
-                        icon = elem!(
-                            Icon,
-                            image = crate::icons::TRASH,
-                            size = px(10)
-                        )
-                    ))
-                    .observe(
-                        move |_: On<Activate>, mut commands: Commands| {
-                            commands.queue(remove_bookmark(index));
-                        },
-                    );
-                });
-            },
-            body: move |ui: &mut BevyUi| {
-                build_children(ui, &path);
-            },
-            open,
-            on_toggle: move |world: &mut World, open: bool| {
-                let mut state = world.resource_mut::<AssetFoldState>();
-                if open {
-                    state.0.insert(toggle_path.clone());
-                } else {
-                    state.0.remove(&toggle_path);
-                }
-            },
-        })
-        .handle()
-    }
 }
 
 /// Drops the bookmark at `index`, and every fold state key under the
@@ -292,100 +79,11 @@ fn remove_bookmark(index: usize) -> impl FnOnce(&mut World) {
     }
 }
 
-/// One subfolder: its name, expanding its own contents in place.
-struct FolderRow {
-    path: PathBuf,
-}
-
-impl Composer<FynixHost> for FolderRow {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let path = self.path;
-        let name = display_name(&path);
-        let enabled = has_entries(&path);
-        let open =
-            ui.world.resource::<AssetFoldState>().0.contains(&path);
-        let toggle_path = path.clone();
-
-        let muted = ui.theme.color.text_dim;
-        let primary = ui.theme.color.text;
-
-        ui.compose(Foldable {
-            header: elem!(
-                !TintButton::default(),
-                justify = JustifyContent::FlexStart,
-                icon = elem!(
-                    Icon,
-                    image = moxie_ui::icons::CHEVRON,
-                    color = muted,
-                    rotation = CHEVRON_SHUT
-                ),
-                label = elem!(
-                    Label,
-                    text = name.clone(),
-                    color = primary,
-                    wrap = false
-                )
-            ),
-            folds_on: FoldsOn::Header,
-            enabled,
-            on_header: |_: ElementMut<FynixHost, Button>| {},
-            body: move |ui: &mut BevyUi| {
-                build_children(ui, &path);
-            },
-            open,
-            on_toggle: move |world: &mut World, open: bool| {
-                let mut state =
-                    world.resource_mut::<AssetFoldState>();
-                if open {
-                    state.0.insert(toggle_path.clone());
-                } else {
-                    state.0.remove(&toggle_path);
-                }
-            },
-        })
-        .handle()
-    }
-}
-
 /// Whether `path` has anything in it, without collecting it. A row
 /// only needs to know there is something to fold.
 fn has_entries(path: &Path) -> bool {
     fs::read_dir(path)
         .is_ok_and(|mut entries| entries.next().is_some())
-}
-
-/// `path`'s direct entries, directories before files.
-fn build_children(ui: &mut BevyUi, path: &Path) {
-    let Ok(entries) = fs::read_dir(path) else {
-        return;
-    };
-
-    let mut dirs = Vec::new();
-    let mut files = Vec::new();
-    for entry in entries.flatten() {
-        let entry_path = entry.path();
-        if entry_path.is_dir() {
-            dirs.push(entry_path);
-        } else {
-            files.push(entry_path);
-        }
-    }
-    dirs.sort();
-    files.sort();
-
-    prune_fold_state(ui.world, path, &dirs);
-
-    for dir in dirs {
-        ui.compose(FolderRow { path: dir });
-    }
-    for file in files {
-        file_row(ui, &file);
-    }
 }
 
 /// Drops every open-state key under a direct child of `path` that
@@ -427,40 +125,6 @@ fn prune_fold_state(
         for open in gone {
             state.0.remove(&open);
         }
-    }
-}
-
-/// One file. A recognized asset type (see `AssetTypes`) can be
-/// dragged onto an inspector's `Handle<T>` field, in the theme's
-/// accent with a grab cursor to say so. Anything else shows dimmer,
-/// to read as inert.
-fn file_row(ui: &mut BevyUi, path: &Path) {
-    let name = display_name(path);
-    let label = name.clone();
-    let kind = ui.world.resource::<AssetTypes>().kind_of(path);
-    let color = if kind.is_some() {
-        ui.theme.palette.purple
-    } else {
-        ui.theme.color.text_dim
-    };
-
-    let mut row = ui.elem(elem!(
-        Frame,
-        width = percent(100),
-        padding = UiRect::vertical(px(3))
-    ));
-    row.with(move |ui| {
-        ui.elem(elem!(
-            Label,
-            text = name,
-            color = color,
-            wrap = false
-        ));
-    });
-
-    if let Some(kind) = kind {
-        row.insert(EntityCursor::System(SystemCursorIcon::Grab));
-        draggable(&mut row, path.to_path_buf(), kind, label);
     }
 }
 

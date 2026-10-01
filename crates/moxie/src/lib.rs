@@ -4,6 +4,11 @@
     clippy::too_many_arguments,
     reason = "Inherent to Bevy ECS: systems take many params and query tuples."
 )]
+// STUB: remove once the four panels are ported in wave 3 step 2.
+#![allow(
+    dead_code,
+    reason = "Used only by the panels still stubbed."
+)]
 
 mod catalog;
 mod icons;
