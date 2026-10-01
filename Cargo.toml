@@ -24,6 +24,9 @@ motiongfx_scene = "0.3.1"
 fynix = { git = "https://github.com/voxell-tech/fynix" }
 bevy_fynix = { git = "https://github.com/voxell-tech/fynix" }
 
+# fynix macros
+lenz = { version = "0.1.0", default-features = false }
+
 # bevy
 bevy = { version = "0.19", default-features = false }
 

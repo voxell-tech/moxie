@@ -2,10 +2,10 @@
 //! something is being dragged, and the grab cursor held for the
 //! drag's duration.
 
-use bevy::feathers::cursor::{EntityCursor, OverrideCursor};
 use bevy::prelude::*;
 use bevy::window::SystemCursorIcon;
 
+use crate::gaps::OverrideCursor;
 use crate::theme::EditorTheme;
 
 /// Where the ghost sits relative to the cursor, so the pointer lands
@@ -48,8 +48,8 @@ pub fn ghost(
     )
 }
 
-/// Tag on a node being dragged.
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// State of a node being dragged, for `when::<Dragged, _>` rules.
+#[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Dragged;
 
 /// Moves a [`ghost`]'s node to `cursor`, in logical screen space.
@@ -58,8 +58,7 @@ pub fn follow(node: &mut Node, cursor: Vec2) {
     node.top = px(cursor.y + GHOST_OFFSET.y);
 }
 
-const GRABBING: EntityCursor =
-    EntityCursor::System(SystemCursorIcon::Grabbing);
+const GRABBING: SystemCursorIcon = SystemCursorIcon::Grabbing;
 
 /// Shows the grabbing cursor for the drag, over whatever the pointer
 /// crosses. A no-op if something else already overrides the cursor.

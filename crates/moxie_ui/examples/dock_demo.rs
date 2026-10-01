@@ -1,5 +1,4 @@
-//! Demonstrates the standalone docking system in
-//! [`moxie_ui::widgets::dock`].
+//! Demonstrates the docking system in [`moxie_ui::widgets::dock`].
 //!
 //! Three trivial panels ("Panel A/B/C") start as tabs in one full-window
 //! area. Try:
@@ -10,13 +9,13 @@
 //! - pressing Escape mid-drag to cancel.
 
 use bevy::prelude::*;
-use fynix::elem;
+use bevy_fynix::views::{FrameProps, column, label};
+use bevy_fynix::{AnyView, Bevy, ViewExt, mount};
 use moxie_ui::MoxieUiPlugin;
-use moxie_ui::elements::{Frame, Label};
-use moxie_ui::reactive::BevyUi;
+use moxie_ui::theme::EditorTheme;
 use moxie_ui::widgets::dock::{
-    DockAreaStyle, DockLeaf, DockTree, DockWindowBuildFn,
-    DockWindowDescriptor, WindowRegistry, dock,
+    DockAreaStyle, DockLeaf, DockRegistry, DockTree, DockWindowKind,
+    dock,
 };
 
 fn main() {
@@ -34,32 +33,24 @@ fn main() {
         .run();
 }
 
-fn setup(
-    mut commands: Commands,
-    mut registry: ResMut<WindowRegistry>,
-    mut tree: ResMut<DockTree>,
-) {
-    commands.spawn(Camera2d);
+fn setup(world: &mut World) {
+    world.spawn(Camera2d);
 
-    // Register three trivial window kinds, each filling its content
-    // area with a colored label. A builder is a bare `fn`, so what a
-    // panel shows cannot be captured at registration - hence one
-    // function per kind.
-    for (id, name, build) in [
-        ("panel_a", "Panel A", panel_a as DockWindowBuildFn),
-        ("panel_b", "Panel B", panel_b),
-        ("panel_c", "Panel C", panel_c),
+    let mut registry =
+        world.resource_mut::<DockRegistry<EditorTheme>>();
+    for (id, name) in [
+        ("panel_a", "Panel A"),
+        ("panel_b", "Panel B"),
+        ("panel_c", "Panel C"),
     ] {
-        registry.register(DockWindowDescriptor {
-            id: id.to_string(),
-            name: name.to_string(),
-            icon: None,
-            build,
-        });
+        registry.register(
+            id,
+            DockWindowKind::new(name, move || panel(name)),
+        );
     }
 
-    // Seed the layout: one root leaf holding all three panels as tabs.
-    tree.set_root_leaf(
+    // One root leaf holding all three panels as tabs.
+    world.resource_mut::<DockTree>().set_root_leaf(
         DockLeaf::new("root", DockAreaStyle::TabBar).with_windows(
             vec![
                 "panel_a".into(),
@@ -69,55 +60,15 @@ fn setup(
         ),
     );
 
-    // The kernel builds the dock under this full-window root. Queued:
-    // `Commands` can't reach `World` itself, so this runs once these
-    // commands are applied, by which point `root` exists.
-    let root = commands
-        .spawn(Node {
-            position_type: PositionType::Absolute,
-            left: px(0),
-            top: px(0),
-            width: percent(100),
-            height: percent(100),
-            flex_direction: FlexDirection::Column,
-            ..default()
-        })
-        .id();
-    commands.queue(move |world: &mut World| {
-        moxie_ui::reactive::watch_root(world, root, dock);
-    });
+    mount::<EditorTheme>(
+        world,
+        column((dock::<EditorTheme>(),))
+            .width(percent(100.0))
+            .height(percent(100.0)),
+    );
 }
 
-fn panel_a(ui: &mut BevyUi) {
-    filled(ui, "Panel A", Color::srgb(0.20, 0.28, 0.40));
-}
-
-fn panel_b(ui: &mut BevyUi) {
-    filled(ui, "Panel B", Color::srgb(0.28, 0.20, 0.34));
-}
-
-fn panel_c(ui: &mut BevyUi) {
-    filled(ui, "Panel C", Color::srgb(0.20, 0.34, 0.26));
-}
-
-/// A panel's whole content: its name, centred on its own colour.
-fn filled(ui: &mut BevyUi, label: &str, color: Color) {
-    let label = label.to_string();
-
-    ui.elem(elem!(
-        Frame,
-        width = percent(100),
-        height = percent(100),
-        align = AlignItems::Center,
-        justify = JustifyContent::Center,
-        background = color
-    ))
-    .with(move |ui| {
-        ui.elem(elem!(
-            Label,
-            text = label,
-            size = 20.0f32,
-            color = Color::srgb(0.9, 0.9, 0.92)
-        ));
-    });
+/// A panel's whole content: its name.
+fn panel(name: &'static str) -> AnyView<Bevy, EditorTheme> {
+    label(name).size(20.0).boxed()
 }

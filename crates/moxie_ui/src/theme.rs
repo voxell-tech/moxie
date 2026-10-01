@@ -8,7 +8,13 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use fynix::prelude::motiongfx_interp::ease::{self, EaseFn};
+use bevy_fynix::tokens::{
+    Curve, Motion as MotionKind, MotionTokens, SpacingTokens,
+    SurfaceTokens, TextTokens, Tone,
+};
+use bevy_motiongfx::motiongfx::motiongfx_interp::ease::{
+    self, EaseFn,
+};
 
 /// The editor's ground colour, also [`Colors::bg`].
 pub const BG: Color = Color::srgb_u8(0x19, 0x18, 0x1A);
@@ -128,10 +134,8 @@ pub struct Spacing {
     pub fold_toggle: f32,
     /// How far a fold's rail sets its body in from the header.
     pub fold_indent: f32,
-    /// A menu row's own corner ([`DropdownItem`](
-    /// crate::elements::DropdownItem), [`menu_item`](
-    /// crate::elements::menu_item)), fixed rather than set per call
-    /// site so every menu rounds the same.
+    /// A menu row's own corner, fixed rather than set per call site
+    /// so every menu rounds the same.
     pub menu_item_radius: f32,
     /// A menu's own padding around its rows.
     pub menu_padding: f32,
@@ -241,6 +245,148 @@ impl Default for EditorTheme {
                 tooltip: 300,
             },
             palette,
+        }
+    }
+}
+
+impl TextTokens for EditorTheme {
+    fn tone(&self, tone: Tone) -> Color {
+        match tone {
+            Tone::Body => self.color.text,
+            Tone::Dim => self.color.text_dim,
+            Tone::Faint => self.color.text_faint,
+            Tone::Accent => self.color.accent,
+            Tone::Critical => self.color.critical,
+        }
+    }
+
+    fn body_size(&self) -> f32 {
+        self.text.body
+    }
+
+    fn small_size(&self) -> f32 {
+        self.text.small
+    }
+}
+
+impl SurfaceTokens for EditorTheme {
+    fn fill(&self) -> Color {
+        self.color.fill
+    }
+
+    fn hover(&self) -> Color {
+        self.color.hover
+    }
+
+    fn panel(&self) -> Color {
+        self.color.panel
+    }
+
+    fn hairline(&self) -> Color {
+        self.color.hairline
+    }
+
+    fn selection(&self) -> Color {
+        self.color.selection
+    }
+
+    fn accent(&self) -> Color {
+        self.color.accent
+    }
+}
+
+impl SpacingTokens for EditorTheme {
+    fn gap(&self) -> f32 {
+        self.space.md
+    }
+
+    fn row(&self) -> f32 {
+        self.space.row
+    }
+
+    fn radius(&self) -> f32 {
+        self.space.radius
+    }
+
+    fn menu_radius(&self) -> f32 {
+        self.space.menu_radius
+    }
+
+    fn menu_padding(&self) -> f32 {
+        self.space.menu_padding
+    }
+
+    fn menu_item_radius(&self) -> f32 {
+        self.space.menu_item_radius
+    }
+
+    fn menu_margin(&self) -> f32 {
+        self.space.menu_margin
+    }
+}
+
+/// Every kind of motion follows the one interaction curve, since the
+/// theme has no other.
+impl MotionTokens for EditorTheme {
+    fn motion(&self, motion: MotionKind) -> Curve {
+        match motion {
+            MotionKind::Interact | MotionKind::Expand => Curve {
+                duration: self.motion.interact,
+                ease: self.motion.ease,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tones_map_to_their_colors() {
+        let theme = EditorTheme::default();
+        let color = theme.color;
+        assert_eq!(theme.tone(Tone::Body), color.text);
+        assert_eq!(theme.tone(Tone::Dim), color.text_dim);
+        assert_eq!(theme.tone(Tone::Faint), color.text_faint);
+        assert_eq!(theme.tone(Tone::Accent), color.accent);
+        assert_eq!(theme.tone(Tone::Critical), color.critical);
+        assert_eq!(theme.body_size(), theme.text.body);
+        assert_eq!(theme.small_size(), theme.text.small);
+    }
+
+    #[test]
+    fn surfaces_map_to_their_colors() {
+        let theme = EditorTheme::default();
+        let color = theme.color;
+        assert_eq!(SurfaceTokens::fill(&theme), color.fill);
+        assert_eq!(SurfaceTokens::hover(&theme), color.hover);
+        assert_eq!(SurfaceTokens::panel(&theme), color.panel);
+        assert_eq!(SurfaceTokens::hairline(&theme), color.hairline);
+        assert_eq!(SurfaceTokens::selection(&theme), color.selection);
+        assert_eq!(SurfaceTokens::accent(&theme), color.accent);
+    }
+
+    #[test]
+    fn spacing_maps_to_its_scale() {
+        let theme = EditorTheme::default();
+        let space = theme.space;
+        assert_eq!(theme.gap(), space.md);
+        assert_eq!(theme.row(), space.row);
+        assert_eq!(SpacingTokens::radius(&theme), space.radius);
+        assert_eq!(theme.menu_radius(), space.menu_radius);
+        assert_eq!(theme.menu_padding(), space.menu_padding);
+        assert_eq!(theme.menu_item_radius(), space.menu_item_radius);
+        assert_eq!(theme.menu_margin(), space.menu_margin);
+    }
+
+    #[test]
+    fn every_motion_uses_the_interaction_curve() {
+        let theme = EditorTheme::default();
+        for motion in [MotionKind::Interact, MotionKind::Expand] {
+            let curve = theme.motion(motion);
+            assert_eq!(curve.duration, theme.motion.interact);
+            assert_eq!((curve.ease)(0.5), (theme.motion.ease)(0.5));
         }
     }
 }
