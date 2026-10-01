@@ -3,13 +3,11 @@
 
 use core::time::Duration;
 
-use bevy::input_focus::InputFocus;
 use bevy::picking::events::{
     Cancel, Drag, DragEnd, Pointer, Press, Release,
 };
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
-use bevy::ui_widgets::ValueChange;
 use bevy_motiongfx::prelude::*;
 use moxie_ui::cursor::PointerEventExt as _;
 
@@ -266,20 +264,20 @@ pub(crate) fn track_playing(
     }
 }
 
-/// Seek to a time typed into the control bar's readout.
-/// Only a finished edit moves the playhead.
-pub(crate) fn on_time_entered(
-    change: On<ValueChange<f32>>,
+/// Command to seek to a time, in seconds, dispatched from the control
+/// bar's readout and handled in [`on_seek`].
+#[derive(Event)]
+pub(crate) struct SeekTo(pub(crate) f32);
+
+/// Seek to a time given in the control bar's readout, dragged or
+/// typed. The number field takes the focus back itself.
+pub(crate) fn on_seek(
+    seek: On<SeekTo>,
     state: Res<EditorState>,
-    mut focus: ResMut<InputFocus>,
     mut manager: ResMut<MotionGfxManager>,
     mut q_players: Query<&mut RealtimePlayer>,
 ) {
-    if !change.is_final {
-        return;
-    }
-    focus.clear();
-    let secs = change.value.clamp(0.0, state.duration.as_secs_f32());
+    let secs = seek.0.clamp(0.0, state.duration.as_secs_f32());
     let Ok(time) = Duration::try_from_secs_f32(secs) else {
         return;
     };

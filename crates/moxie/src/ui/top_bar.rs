@@ -3,7 +3,7 @@
 
 use bevy::prelude::*;
 use bevy_fynix::views::{FrameProps as _, dropdown, row};
-use bevy_fynix::{AnyView, Bevy, Cx, View, ViewExt as _};
+use bevy_fynix::{AnyView, Bevy, Cx, View};
 use moxie_ui::icons;
 use moxie_ui::theme::EditorTheme;
 
