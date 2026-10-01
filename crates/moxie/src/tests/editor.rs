@@ -185,25 +185,27 @@ fn a_field_built_later_has_the_editor_caret() {
 fn the_shell_shows_the_menu_bar_and_an_empty_inspector() {
     let mut editor = Editor::new();
     editor.text("File");
-    editor.text("Nothing selected");
+    // The inspector and the action panel each say it.
+    assert_eq!(editor.texts("Nothing selected").len(), 2);
     // Each stubbed panel is there: its tab, and its placeholder.
     assert_eq!(editor.texts("Timeline").len(), 2);
-    assert_eq!(editor.texts("Action").len(), 2);
+    editor.text("Action");
 }
 
 #[test]
 fn the_inspector_follows_the_selection() {
     let mut editor = Editor::new();
     let cube = add_cube(&mut editor);
-    assert!(editor.texts("Nothing selected").is_empty());
+    // The action panel keeps its own, whatever the hierarchy picks.
+    assert_eq!(editor.texts("Nothing selected").len(), 1);
 
     editor.world().insert_resource(SelectedEntity(None));
     editor.step(SETTLE);
-    editor.text("Nothing selected");
+    assert_eq!(editor.texts("Nothing selected").len(), 2);
 
     editor.world().insert_resource(SelectedEntity(Some(cube)));
     editor.step(SETTLE);
-    assert!(editor.texts("Nothing selected").is_empty());
+    assert_eq!(editor.texts("Nothing selected").len(), 1);
 }
 
 #[test]
