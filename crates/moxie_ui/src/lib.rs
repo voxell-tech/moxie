@@ -5,21 +5,22 @@
     reason = "Inherent to Bevy ECS: systems take many params and query tuples."
 )]
 
-// Not ported yet: asset
 // Not ported yet: asset_picker
-// Not ported yet: fold
 // Not ported yet: inspector
+pub mod asset;
 pub mod context_menu;
 pub mod cursor;
 pub mod drag;
 pub mod elements;
 pub mod field_icon;
+pub mod fold;
 pub mod gaps;
 pub mod icons;
 pub mod layout;
 pub mod theme;
 pub mod widgets;
 
+use asset::AssetDragging;
 use bevy::prelude::*;
 use bevy_fynix::dock::DockPlugin;
 use bevy_fynix::{FynixPlugin, Theme};
@@ -43,7 +44,8 @@ impl Plugin for MoxieUiPlugin {
         ))
         .insert_resource(Theme(EditorTheme::default()))
         .init_resource::<AssetTypes>()
-        .init_resource::<FoundAssets>();
+        .init_resource::<FoundAssets>()
+        .init_resource::<AssetDragging>();
     }
 }
 
