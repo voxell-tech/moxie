@@ -19,7 +19,7 @@ use bevy_fynix::{
 };
 
 use super::placement::Placement;
-use super::timeline_block::Selected;
+use super::timeline_block::{Selected, snap_selected_border};
 use crate::drag::Dragged;
 use crate::theme::EditorTheme;
 
@@ -83,7 +83,6 @@ pub fn timeline_action(
                 .overflow(Overflow::clip())
                 .radius(theme.space.radius)
                 .fill(fill)
-                .border(1.0)
                 .border_color(border)
                 .when::<Hovered, _>(|frame, theme: &EditorTheme| {
                     frame.fill(theme.color.clip_hover)
@@ -91,26 +90,25 @@ pub fn timeline_action(
                 .when::<Pressed, _>(|frame, theme: &EditorTheme| {
                     frame.fill(theme.color.clip_press)
                 })
-                .when::<Selected, _>(|frame, theme: &EditorTheme| {
-                    frame.border(3.0).border_color(theme.color.accent)
-                })
                 .when::<Dragged, _>(move |frame, _: &EditorTheme| {
                     frame
                         .fill(fill.with_alpha(DRAGGED_FILL_ALPHA))
                         .border_color(
                             border.with_alpha(DRAGGED_FILL_ALPHA),
                         )
+                })
+                // After the dragged rule, so a selected clip keeps
+                // its coloured border while it is dragged.
+                .when::<Selected, _>(|frame, theme: &EditorTheme| {
+                    frame.border_color(theme.color.accent)
                 }),
         );
-        let mut entity = cx.world.entity_mut(action);
-        entity.insert((
+        cx.world.entity_mut(action).insert((
             ButtonBehavior,
             EntityCursor(SystemCursorIcon::Pointer),
             ActionClip,
         ));
-        if selected {
-            entity.insert(Selected);
-        }
+        snap_selected_border(cx.world, action, selected);
         cx.under(action, |cx| {
             if let Some(image) = image {
                 cx.build(
@@ -488,6 +486,45 @@ mod tests {
         let ui = app.world().get::<Node>(node).unwrap();
         assert_eq!(ui.border, UiRect::all(px(1.0)));
         assert_eq!(edge(&app, node), BorderColor::all(Color::NONE));
+    }
+
+    #[test]
+    fn a_selected_clip_keeps_its_border_colour_while_dragged() {
+        let mut app = app();
+        let node = mounted(&mut app, false, true);
+        let accent = EditorTheme::default().color.accent;
+
+        app.world_mut().entity_mut(node).insert(Dragged);
+        app.update();
+
+        assert_eq!(edge(&app, node), BorderColor::all(accent));
+        assert_eq!(
+            fill(&app, node),
+            EditorTheme::default()
+                .color
+                .clip
+                .with_alpha(DRAGGED_FILL_ALPHA)
+        );
+    }
+
+    #[test]
+    fn the_border_width_snaps_where_the_colour_eases() {
+        let mut app = app();
+        app.insert_resource(ReducedMotion(false));
+        let node = mounted(&mut app, false, false);
+        app.update();
+
+        app.world_mut().entity_mut(node).insert(Selected);
+        app.update();
+
+        let ui = app.world().get::<Node>(node).unwrap();
+        assert_eq!(ui.border, UiRect::all(px(3.0)));
+        let accent = EditorTheme::default().color.accent;
+        assert_ne!(
+            edge(&app, node),
+            BorderColor::all(accent),
+            "the colour is still on its way"
+        );
     }
 
     #[test]

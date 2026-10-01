@@ -12,8 +12,8 @@ use bevy_fynix::tokens::{
     Tone,
 };
 use bevy_fynix::views::{
-    BehaviorExt as _, Frame, FrameProps as _, Icon, Label, Open,
-    button, frame, icon, tint,
+    BehaviorExt as _, Dropdown, Frame, FrameProps as _, Icon, Label,
+    Open, button, dropdown, frame, icon, tint,
 };
 use bevy_fynix::{
     AnyView, Bevy, Cx, Hovered, Prop, ScopedExt as _, Signal, View,
@@ -587,6 +587,28 @@ where
     }
 }
 
+/// Upstream: a dropdown that is a menu of actions, showing
+/// `placeholder` rather than a choice.
+///
+/// The placeholder is the control's first row, which only says what
+/// the menu is for and does nothing when picked, so the list is never
+/// empty and always has a row to focus. `on_pick` runs with the index
+/// into `options`. Replace the first row with `Dropdown::placeholder`
+/// once `bevy_fynix` has it.
+pub fn placeholder_dropdown<S: Into<String>>(
+    placeholder: impl Into<String>,
+    options: impl IntoIterator<Item = S>,
+    on_pick: impl Fn(&mut World, usize) + Send + Sync + 'static,
+) -> Dropdown {
+    let rows = std::iter::once(placeholder.into())
+        .chain(options.into_iter().map(Into::into));
+    dropdown(rows, 0, move |world, at| {
+        if let Some(at) = at.checked_sub(1) {
+            on_pick(world, at);
+        }
+    })
+}
+
 /// Upstream: the placement of a surface hung off a zero-size anchor
 /// at a point, below it or above it, flipping toward whichever corner
 /// has room and keeping `window_margin` from the window's edge.
@@ -613,6 +635,45 @@ mod tests {
 
     #[derive(Resource)]
     struct Pair(u32, u32);
+
+    #[derive(Resource, Default)]
+    struct Picked(Vec<usize>);
+
+    #[test]
+    fn a_placeholder_dropdown_shows_it_and_picks_past_it() {
+        use crate::tests;
+        use bevy::ui::widget::Text;
+        use bevy::ui_widgets::Activate;
+        use bevy::ui_widgets::MenuItem;
+
+        let mut app = tests::app();
+        app.init_resource::<Picked>();
+        let root = tests::show(
+            &mut app,
+            placeholder_dropdown(
+                "Add",
+                ["one", "two"],
+                |world, at| world.resource_mut::<Picked>().0.push(at),
+            ),
+        );
+
+        let text = |app: &App, node| {
+            app.world().get::<Text>(node).unwrap().0.clone()
+        };
+        let texts = tests::all::<Text>(&app, root)
+            .into_iter()
+            .map(|node| text(&app, node))
+            .collect::<Vec<_>>();
+        assert_eq!(texts[0], "Add", "the control shows it");
+
+        let items = tests::all::<MenuItem>(&app, root);
+        assert_eq!(items.len(), 3);
+        for item in &items {
+            app.world_mut().trigger(Activate { entity: *item });
+        }
+        app.update();
+        assert_eq!(app.world().resource::<Picked>().0, [0, 1]);
+    }
 
     #[test]
     fn changing_fires_on_first_read_and_on_difference() {

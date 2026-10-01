@@ -1,6 +1,11 @@
 use bevy::color::{Alpha as _, Luminance as _};
 use bevy::ecs::component::Component;
-use bevy::ui::{AlignItems, Overflow};
+use bevy::ecs::entity::Entity;
+use bevy::ecs::lifecycle::{Add, Remove};
+use bevy::ecs::observer::On;
+use bevy::ecs::system::Query;
+use bevy::ecs::world::World;
+use bevy::ui::{AlignItems, Node, Overflow, UiRect, px};
 use bevy_fynix::tokens::Motion;
 use bevy_fynix::views::frame;
 use bevy_fynix::{AnyView, Bevy, ScopedExt as _, View, ViewSeq};
@@ -37,12 +42,10 @@ where
                 .align(AlignItems::Start)
                 .overflow(Overflow::clip())
                 .radius(theme.space.card_radius)
-                .border(1.0)
                 .fill(text.with_alpha(0.03))
                 .border_color(text.with_alpha(0.5))
                 .when::<Selected, _>(move |frame, _: &EditorTheme| {
                     frame
-                        .border(3.0)
                         .fill(
                             purple
                                 .with_luminance(0.3)
@@ -54,13 +57,53 @@ where
                     frame.border_color(text.with_alpha(0.2))
                 }),
         );
-        if selected {
-            cx.world.entity_mut(block).insert(Selected);
-        }
+        snap_selected_border(cx.world, block, selected);
         cx.under(block, |cx| children.build_each(cx));
         block
     })
     .transition(Motion::Interact)
+}
+
+/// A selected box's border width, in logical pixels.
+pub(super) const SELECTED_BORDER: f32 = 3.0;
+/// An unselected box's border width.
+pub(super) const REST_BORDER: f32 = 1.0;
+
+/// Gives `node` a border that is [`SELECTED_BORDER`] wide while it
+/// holds [`Selected`] and [`REST_BORDER`] otherwise, and inserts
+/// `Selected` if `selected`.
+///
+/// The width is written straight to the node rather than through a
+/// frame's `border` prop: a transition blends every prop that can
+/// blend, so a width set by a rule would ease between the two.
+pub(super) fn snap_selected_border(
+    world: &mut World,
+    node: Entity,
+    selected: bool,
+) {
+    let mut entity = world.entity_mut(node);
+    if let Some(mut ui) = entity.get_mut::<Node>() {
+        ui.border = UiRect::all(px(REST_BORDER));
+    }
+    entity
+        .observe(
+            |add: On<Add, Selected>, mut nodes: Query<&mut Node>| {
+                if let Ok(mut ui) = nodes.get_mut(add.entity) {
+                    ui.border = UiRect::all(px(SELECTED_BORDER));
+                }
+            },
+        )
+        .observe(
+            |remove: On<Remove, Selected>,
+             mut nodes: Query<&mut Node>| {
+                if let Ok(mut ui) = nodes.get_mut(remove.entity) {
+                    ui.border = UiRect::all(px(REST_BORDER));
+                }
+            },
+        );
+    if selected {
+        entity.insert(Selected);
+    }
 }
 
 #[cfg(test)]
@@ -193,6 +236,29 @@ mod tests {
         app.update();
         let ui = app.world().get::<Node>(node).unwrap();
         assert_eq!(ui.border, UiRect::all(px(1.0)));
+    }
+
+    #[test]
+    fn the_border_width_snaps_where_the_fill_eases() {
+        let mut app = app();
+        app.insert_resource(ReducedMotion(false));
+        let node = mount::<EditorTheme>(
+            app.world_mut(),
+            timeline_block(placed(), false, ()),
+        );
+        app.update();
+
+        app.world_mut().entity_mut(node).insert(Selected);
+        app.update();
+
+        let ui = app.world().get::<Node>(node).unwrap();
+        assert_eq!(ui.border, UiRect::all(px(3.0)));
+        let target = EditorTheme::default()
+            .palette
+            .purple
+            .with_luminance(0.3)
+            .with_alpha(0.8);
+        assert_ne!(fill(&app, node), target);
     }
 
     #[test]
