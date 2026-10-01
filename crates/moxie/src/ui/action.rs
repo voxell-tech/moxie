@@ -1237,7 +1237,8 @@ mod tests {
             Some(vec![0]),
         );
         editor.text("Type");
-        editor.text("Chain");
+        // The timeline names the block too, so there is more than one.
+        assert!(!editor.texts("Chain").is_empty());
         assert!(editor.texts("Stagger").is_empty());
 
         editor.press("Flow");
