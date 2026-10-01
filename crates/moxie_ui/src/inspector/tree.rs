@@ -383,8 +383,7 @@ fn leaf_name(path: &str) -> &str {
 /// `field`'s own editable value, when the whole thing reflects a
 /// single, nameless leaf - `Name`, say - rather than a set of fields.
 /// Its card's title stands in for that missing name, so it needs the
-/// same drag source a genuine field's [`field_name`](
-/// super::field_name) label carries.
+/// same drag source a genuine field's [`field_name`] label carries.
 pub(crate) fn root_leaf(
     world: &World,
     field: &Field,

@@ -191,7 +191,7 @@ fn width_for(variants: &[String], theme: &EditorTheme) -> f32 {
 
 /// The variant `binding` is on, as a dropdown over the rest.
 ///
-/// When some variant of the type isn't [`constructible`] it only
+/// When some variant of the type can't be switched into it only
 /// names where it stands. Anything that is not an enum is an empty
 /// node. Which of the two is settled when this is built.
 pub fn variant_picker(

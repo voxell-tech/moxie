@@ -1,6 +1,6 @@
 //! Folding something away.
 //!
-//! [`Foldable`] is [`gaps::Fold`] with moxie's chevron icon, rail
+//! [`Foldable`] is [`Fold`](crate::gaps::Fold) with moxie's chevron icon, rail
 //! and sizes. Its state is an [`Open`](bevy_fynix::views::Open)
 //! on its root node, or on an entity the caller keeps (see
 //! [`Foldable::state_on`]), so a row rebuilt around it can keep its
