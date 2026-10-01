@@ -10,13 +10,11 @@ use moxie_asset::{ABSOLUTE_SOURCE, AssetRef, InternalAssets};
 use super::harness::{Editor, SETTLE};
 use crate::{SelectedEntity, presets, project};
 
-/// Adds a cube as the hierarchy's add menu does, and hands it back.
-///
-/// STUB: goes through the menu again once the hierarchy is ported
-/// in wave 3 step 2.
+/// Adds a cube from the hierarchy's add menu, and hands it back.
 fn add_cube(editor: &mut Editor) -> Entity {
-    crate::ui::hierarchy::spawn_mesh(editor.world(), "Cube");
-    editor.step(SETTLE);
+    let add = editor.named("Add");
+    editor.press_entity(add);
+    editor.press("Cube");
     editor
         .world()
         .resource::<SelectedEntity>()
