@@ -9,16 +9,24 @@ use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::UiScale;
+use bevy::ui::px;
 use bevy::window::SystemCursorIcon;
 use bevy_fynix::tokens::{TextTokens as _, Tone};
-use bevy_fynix::views::{HasAction, label};
-use bevy_fynix::{Bevy, Cx, EntityCursor, Prop, Theme, View};
+use bevy_fynix::views::{
+    FrameProps as _, HasAction, frame, label, row,
+};
+use bevy_fynix::{
+    AnyView, Bevy, Cx, EntityCursor, Prop, Theme, View,
+};
 
 use super::Field;
 use crate::cursor::PointerEventExt as _;
 use crate::drag::{follow, ghost};
 use crate::gaps::{changing, set_ink};
 use crate::theme::EditorTheme;
+
+/// The keyframe diamond's side, in logical pixels.
+const DIAMOND: f32 = 6.0;
 
 /// The host's answer to "can this field be animated?", set from the
 /// editor's scene registry. `None` (the default) leaves every field
@@ -56,9 +64,10 @@ pub struct DraggedField {
 }
 
 /// A field's name in an inspector row: a plain label, or - when the
-/// field is animatable ([`FieldAnimatable`]) - a label that is also a
-/// drag source creating an action on the timeline, and turns the
-/// accent tone while the field already has one ([`FieldHasAction`]).
+/// field is animatable ([`FieldAnimatable`]) - a keyframe diamond and
+/// the label, the pair a drag source creating an action on the
+/// timeline. The diamond fills with the accent while the field
+/// already has one ([`FieldHasAction`]).
 ///
 /// With no field, as for a value the editor keeps elsewhere, it is
 /// always a plain label.
@@ -105,52 +114,83 @@ impl FieldName {
 
 impl View<Bevy, EditorTheme> for FieldName {
     fn build(self, cx: &mut Cx<'_, Bevy, EditorTheme>) -> Entity {
-        let theme = cx.theme();
-        let base = self.ink.unwrap_or_else(|| theme.tone(self.tone));
-        let accent = theme.tone(Tone::Accent);
+        let Self {
+            field,
+            text,
+            tone,
+            ink,
+            bold,
+        } = self;
+        let name = {
+            let text = text.clone();
+            AnyView::<Bevy, EditorTheme>::new(move |cx| {
+                let node = cx.build(
+                    label(text.as_str())
+                        .tone(tone)
+                        .bold(bold)
+                        .wrap(false),
+                );
+                if let Some(ink) = ink {
+                    set_ink(cx.world, node, ink);
+                }
+                node
+            })
+        };
 
-        let node = cx.build(
-            label(self.text.as_str())
-                .tone(self.tone)
-                .bold(self.bold)
-                .wrap(false),
-        );
-        if let Some(ink) = self.ink {
-            set_ink(cx.world, node, ink);
-        }
-
-        let Some(field) = self.field.filter(|field| {
+        let Some(field) = field.filter(|field| {
             cx.world
                 .resource::<FieldAnimatable>()
                 .allows(cx.world, field)
         }) else {
-            return node;
+            return cx.build(name);
         };
 
         let probe = field.clone();
-        cx.effect(
-            node,
-            Prop::from(changing(move |world: &World| {
-                world
-                    .resource::<FieldHasAction>()
-                    .check(world, &probe)
-            })),
-            move |world, node, &has_action| {
-                if let Ok(mut entity) = world.get_entity_mut(node) {
+        let diamond = AnyView::<Bevy, EditorTheme>::new(move |cx| {
+            let theme = cx.theme();
+            let accent = theme.tone(Tone::Accent);
+            let node = cx.build(
+                frame()
+                    .width(px(DIAMOND))
+                    .height(px(DIAMOND))
+                    .margin(UiRect::horizontal(px(2.0)))
+                    .fill(theme.color.fill)
+                    .when::<HasAction, _>(
+                        move |frame, _: &EditorTheme| {
+                            frame.fill(accent)
+                        },
+                    ),
+            );
+            cx.world.entity_mut(node).insert(
+                UiTransform::from_rotation(Rot2::degrees(45.0)),
+            );
+            let probe = probe.clone();
+            cx.effect(
+                node,
+                Prop::from(changing(move |world: &World| {
+                    world
+                        .resource::<FieldHasAction>()
+                        .check(world, &probe)
+                })),
+                |world, node, &has_action| {
+                    let Ok(mut entity) = world.get_entity_mut(node)
+                    else {
+                        return;
+                    };
                     if has_action {
                         entity.insert(HasAction);
                     } else {
                         entity.remove::<HasAction>();
                     }
-                }
-                set_ink(
-                    world,
-                    node,
-                    if has_action { accent } else { base },
-                );
-            },
+                },
+            );
+            node
+        });
+
+        let node = cx.build(
+            row((diamond, name)).align(AlignItems::Center).gap(3.0),
         );
-        draggable(cx.world, node, field, self.text);
+        draggable(cx.world, node, field, text);
         node
     }
 }
@@ -274,29 +314,66 @@ mod tests {
     }
 
     fn ink(app: &App, node: Entity) -> Color {
-        app.world().get::<TextColor>(node).unwrap().0
+        let label = tests::all::<TextColor>(app, node)[0];
+        app.world().get::<TextColor>(label).unwrap().0
+    }
+
+    fn diamond(app: &App, node: Entity) -> Entity {
+        app.world().get::<Children>(node).unwrap()[0]
+    }
+
+    fn diamond_fill(app: &App, node: Entity) -> Color {
+        let diamond = diamond(app, node);
+        app.world().get::<BackgroundColor>(diamond).unwrap().0
     }
 
     #[test]
-    fn a_has_action_field_turns_its_label_accent() {
+    fn an_animatable_field_has_a_keyframe_diamond() {
+        let (mut app, probe) = tests::probe_app();
+        let node = named(&mut app, probe, "level");
+
+        let diamond = diamond(&app, node);
+        let ui = app.world().get::<Node>(diamond).unwrap();
+        assert_eq!((ui.width, ui.height), (px(DIAMOND), px(DIAMOND)));
+        assert_eq!(
+            app.world().get::<UiTransform>(diamond).unwrap().rotation,
+            Rot2::degrees(45.0)
+        );
+        assert_eq!(tests::all::<TextColor>(&app, node).len(), 1);
+    }
+
+    #[test]
+    fn a_plain_field_is_a_bare_label() {
+        let (mut app, probe) = tests::probe_app();
+        let node = named(&mut app, probe, "name");
+
+        assert!(app.world().get::<TextColor>(node).is_some());
+        assert!(app.world().get::<Children>(node).is_none());
+    }
+
+    #[test]
+    fn the_diamond_fills_with_the_accent_while_the_field_has_an_action()
+     {
         let (mut app, probe) = tests::probe_app();
         let node = named(&mut app, probe, "level");
         let theme = EditorTheme::default();
-        assert_eq!(ink(&app, node), theme.color.text);
+        assert_eq!(diamond_fill(&app, node), theme.color.fill);
 
         app.world_mut().resource_mut::<Host>().has_action = true;
         app.update();
-        assert_eq!(ink(&app, node), theme.color.accent);
-        assert!(app.world().get::<HasAction>(node).is_some());
+        assert_eq!(diamond_fill(&app, node), theme.color.accent);
+        let diamond = diamond(&app, node);
+        assert!(app.world().get::<HasAction>(diamond).is_some());
+        assert_eq!(ink(&app, node), theme.color.text);
 
         app.world_mut().resource_mut::<Host>().has_action = false;
         app.update();
-        assert_eq!(ink(&app, node), theme.color.text);
-        assert!(app.world().get::<HasAction>(node).is_none());
+        assert_eq!(diamond_fill(&app, node), theme.color.fill);
+        assert!(app.world().get::<HasAction>(diamond).is_none());
     }
 
     #[test]
-    fn a_label_keeps_its_own_colour_when_the_action_goes() {
+    fn a_label_keeps_its_own_colour() {
         let (mut app, probe) = tests::probe_app();
         app.init_resource::<Host>();
         app.world_mut().resource_mut::<FieldAnimatable>().0 =
@@ -312,9 +389,6 @@ mod tests {
         assert_eq!(ink(&app, node), red);
 
         app.world_mut().resource_mut::<Host>().has_action = true;
-        app.update();
-        assert_ne!(ink(&app, node), red);
-        app.world_mut().resource_mut::<Host>().has_action = false;
         app.update();
         assert_eq!(ink(&app, node), red);
     }

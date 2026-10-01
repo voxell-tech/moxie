@@ -22,10 +22,10 @@ use moxie_ui::widgets::dock::{
 fn main() {
     App::new()
         .add_plugins((
-            // `../assets`: the editor crates share one asset folder
-            // (`editor/assets`) rather than each carrying its own.
+            // `../../assets`: the crates share the workspace's asset
+            // folder rather than each carrying its own.
             DefaultPlugins.set(AssetPlugin {
-                file_path: "../assets".into(),
+                file_path: "../../assets".into(),
                 ..default()
             }),
             MoxieUiPlugin,

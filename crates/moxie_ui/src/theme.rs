@@ -180,6 +180,10 @@ pub struct Motion {
     pub interact: Duration,
     /// The curve an interaction fade follows.
     pub ease: EaseFn,
+    /// How long something opening or growing takes.
+    pub expand: Duration,
+    /// The curve an expansion follows.
+    pub expand_ease: EaseFn,
 }
 
 impl Default for EditorTheme {
@@ -237,6 +241,8 @@ impl Default for EditorTheme {
             motion: Motion {
                 interact: Duration::from_millis(120),
                 ease: ease::cubic::ease_out,
+                expand: Duration::from_millis(240),
+                expand_ease: ease::cubic::ease_in_out,
             },
             layer: Layers {
                 drop_hint: 150,
@@ -328,14 +334,16 @@ impl SpacingTokens for EditorTheme {
     }
 }
 
-/// Every kind of motion follows the one interaction curve, since the
-/// theme has no other.
 impl MotionTokens for EditorTheme {
     fn motion(&self, motion: MotionKind) -> Curve {
         match motion {
-            MotionKind::Interact | MotionKind::Expand => Curve {
+            MotionKind::Interact => Curve {
                 duration: self.motion.interact,
                 ease: self.motion.ease,
+            },
+            MotionKind::Expand => Curve {
+                duration: self.motion.expand,
+                ease: self.motion.expand_ease,
             },
         }
     }
@@ -384,12 +392,19 @@ mod tests {
     }
 
     #[test]
-    fn every_motion_uses_the_interaction_curve() {
+    fn interact_and_expand_have_their_own_curves() {
         let theme = EditorTheme::default();
-        for motion in [MotionKind::Interact, MotionKind::Expand] {
-            let curve = theme.motion(motion);
-            assert_eq!(curve.duration, theme.motion.interact);
-            assert_eq!((curve.ease)(0.5), (theme.motion.ease)(0.5));
-        }
+        let motion = theme.motion;
+
+        let interact = theme.motion(MotionKind::Interact);
+        assert_eq!(interact.duration, motion.interact);
+        assert_eq!((interact.ease)(0.25), (motion.ease)(0.25));
+
+        let expand = theme.motion(MotionKind::Expand);
+        assert_eq!(expand.duration, motion.expand);
+        assert_eq!((expand.ease)(0.25), (motion.expand_ease)(0.25));
+
+        assert!(expand.duration > interact.duration);
+        assert_ne!((expand.ease)(0.25), (interact.ease)(0.25));
     }
 }

@@ -17,8 +17,7 @@ use bevy::reflect::std_traits::ReflectDefault;
 use bevy_fynix::tokens::{Motion, Tone};
 use bevy_fynix::views::{
     BehaviorExt as _, ContextMenuExt as _, FrameProps as _, Open,
-    button, column, dropdown, frame, icon, label, menu_item, row,
-    tint,
+    button, column, frame, icon, label, menu_item, row, tint,
 };
 use bevy_fynix::{
     AnyView, Bevy, ScopedExt as _, View, ViewExt as _, component,
@@ -26,7 +25,7 @@ use bevy_fynix::{
 };
 
 use crate::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
-use crate::gaps::{anchored, changing_under};
+use crate::gaps::{anchored, changing_under, placeholder_dropdown};
 use crate::icons;
 use crate::inspector::{
     Binding, Field, FieldAnimatable, ReflectEssential,
@@ -246,20 +245,15 @@ fn add_component_dropdown(
     } else {
         "Add component"
     };
-    let names = std::iter::once(prompt.to_string()).chain(
-        options.iter().map(|(_, name, group)| match group {
-            Some(group) => format!("{group} / {name}"),
-            None => name.to_string(),
-        }),
-    );
+    let names = options.iter().map(|(_, name, group)| match group {
+        Some(group) => format!("{group} / {name}"),
+        None => name.to_string(),
+    });
     let components: Vec<TypeId> =
         options.iter().map(|(component, ..)| *component).collect();
 
-    dropdown(names, 0, move |world, at| {
-        // The first row is the prompt.
-        if let Some(component) =
-            at.checked_sub(1).and_then(|at| components.get(at))
-        {
+    placeholder_dropdown(prompt, names, move |world, at| {
+        if let Some(component) = components.get(at) {
             add_component(world, entity, *component);
         }
     })
