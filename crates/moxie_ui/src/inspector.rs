@@ -13,6 +13,7 @@
 mod enums;
 mod field;
 mod field_drag;
+mod handle;
 mod primitive;
 mod text;
 mod tree;
@@ -80,11 +81,11 @@ impl Plugin for InspectPlugin {
             .register_inspect::<UVec4>()
             .register_inspect::<Quat>()
             .register_inspect::<String>()
-            .register_inspect::<Name>();
-        // Not ported yet: the `Handle<T>` editors, for
-        // `Handle<StandardMaterial>`, `Handle<Mesh>`,
-        // `Handle<ColorMaterial>` and `Handle<Font>`
-        // (`inspector/handle.rs`).
+            .register_inspect::<Name>()
+            .register_inspect::<Handle<StandardMaterial>>()
+            .register_inspect::<Handle<Mesh>>()
+            .register_inspect::<Handle<ColorMaterial>>()
+            .register_inspect::<Handle<Font>>();
 
         app.register_inspectable::<Name>()
             .register_inspectable::<Visibility>()
