@@ -38,6 +38,7 @@ use bevy_motiongfx::prelude::TimelineId;
 use bevy_motiongfx::scene::id::EntityUid;
 
 use moxie_asset::{MoxieAssetPlugin, register_absolute_source};
+pub use project::open_path;
 pub use scene::EditorScene;
 
 /// Bevy's [`DefaultPlugins`], with assets set up the way the editor

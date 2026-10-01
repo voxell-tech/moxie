@@ -67,6 +67,17 @@ pub(crate) fn load_scene(world: &mut World) {
     open(world, &text, path);
 }
 
+/// Replaces whatever is loaded with the project file at `path`, as
+/// `File > Open` does once a path is picked.
+pub fn open_path(world: &mut World, path: PathBuf) {
+    match std::fs::read_to_string(&path) {
+        Ok(text) => open(world, &text, path),
+        Err(err) => {
+            error!("could not read {}: {err}", path.display());
+        }
+    }
+}
+
 /// Replaces whatever is loaded with the project `text` holds, read
 /// from `path`.
 pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
