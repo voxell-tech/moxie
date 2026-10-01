@@ -188,7 +188,8 @@ fn the_shell_shows_the_menu_bar_and_an_empty_inspector() {
     // The inspector and the action panel each say it.
     assert_eq!(editor.texts("Nothing selected").len(), 2);
     // Each stubbed panel is there: its tab, and its placeholder.
-    assert_eq!(editor.texts("Timeline").len(), 2);
+    // The timeline is real now: its tab alone carries the name.
+    assert_eq!(editor.texts("Timeline").len(), 1);
     editor.text("Action");
 }
 
