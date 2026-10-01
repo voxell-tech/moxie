@@ -77,6 +77,16 @@ impl Field {
         }
     }
 
+    /// The item at `index` of the list or array this is, which is how
+    /// the walk descends into one.
+    pub fn item(&self, index: usize) -> Self {
+        Self {
+            owner: self.owner,
+            root: self.root,
+            path: format!("{}[{index}]", self.path).into_boxed_str(),
+        }
+    }
+
     /// The same root, back at the empty path.
     pub fn root(&self) -> Self {
         Self {
@@ -222,6 +232,26 @@ impl Field {
     }
 }
 
+/// Fires when the tick `read` returns differs from the last poll, and
+/// on the first poll.
+///
+/// A write made without a system running in between gets the tick
+/// already seen, so a tick that could still be written to counts as
+/// changed until the next one.
+pub(super) fn tick_changed(
+    read: impl Fn(&World) -> Option<Tick> + Send + Sync + 'static,
+) -> impl FnMut(&World) -> bool + Send + Sync + 'static {
+    let mut seen: Option<Option<Tick>> = None;
+    let mut open = false;
+    move |world| {
+        let tick = read(world);
+        let fires = open || seen != Some(tick);
+        seen = Some(tick);
+        open = tick == Some(world.read_change_tick());
+        fires
+    }
+}
+
 /// The leaf, read and written through reflection.
 ///
 /// Change detection rides the component's tick rather than the value,
@@ -259,9 +289,7 @@ impl Source for Field {
         &self,
     ) -> Box<dyn FnMut(&World) -> bool + Send + Sync> {
         let field = self.clone();
-        Box::new(crate::reactive::tick_changed(move |world| {
-            field.changed_tick(world)
-        }))
+        Box::new(tick_changed(move |world| field.changed_tick(world)))
     }
 
     fn boxed(&self) -> Box<dyn Source> {

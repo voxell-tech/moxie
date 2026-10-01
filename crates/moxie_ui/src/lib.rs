@@ -7,7 +7,6 @@
 )]
 
 // Not ported yet: asset_picker
-// Not ported yet: inspector
 pub mod asset;
 pub mod context_menu;
 pub mod cursor;
@@ -17,7 +16,10 @@ pub mod field_icon;
 pub mod fold;
 pub mod gaps;
 pub mod icons;
+pub mod inspector;
 pub mod layout;
+#[cfg(test)]
+mod testing;
 pub mod theme;
 pub mod widgets;
 
@@ -25,6 +27,7 @@ use asset::AssetDragging;
 use bevy::prelude::*;
 use bevy_fynix::dock::DockPlugin;
 use bevy_fynix::{FynixPlugin, Theme};
+use inspector::InspectPlugin;
 use moxie_asset::{AssetTypes, FoundAssets};
 use theme::EditorTheme;
 
@@ -41,6 +44,7 @@ impl Plugin for MoxieUiPlugin {
         app.add_plugins((
             FynixPlugin::<EditorTheme>::default(),
             DockPlugin::<EditorTheme>::default(),
+            InspectPlugin,
         ))
         .insert_resource(Theme(EditorTheme::default()))
         .add_systems(Update, elements::fit_action_icons)
