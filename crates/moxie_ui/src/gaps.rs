@@ -13,8 +13,8 @@ use bevy_fynix::views::{
     icon, tint,
 };
 use bevy_fynix::{
-    Bevy, Cx, Prop, ScopedExt as _, Signal, View, ViewExt as _,
-    component, keyed,
+    AnyView, Bevy, Cx, Prop, ScopedExt as _, Signal, View,
+    ViewExt as _, component, keyed,
 };
 use fynix::Transition;
 
@@ -29,13 +29,55 @@ pub fn changing<T>(
 where
     T: PartialEq + Send + Sync + 'static,
 {
+    changing_under(None, read)
+}
+
+/// Upstream: as [`changing`], but silent once `anchor` is despawned.
+///
+/// For the key of a `keyed` or `each` nested in something that
+/// another one drops: the nodes it builds into go in the same update
+/// pass, ahead of the check that forgets it, and what it reads from
+/// them reads as a change. [`anchored`] gives the anchor.
+pub fn changing_under<T>(
+    anchor: Option<Entity>,
+    read: impl Fn(&World) -> T + Clone + Send + Sync + 'static,
+) -> Signal<T>
+where
+    T: PartialEq + Send + Sync + 'static,
+{
     let mut seen: Option<T> = None;
     let peek = read.clone();
     Signal::new(read, move |world: &World| {
+        if !alive(world, anchor) {
+            return false;
+        }
         let current = peek(world);
         let fired = seen.as_ref() != Some(&current);
         seen = Some(current);
         fired
+    })
+}
+
+/// Whether `anchor` is still in the world, which no anchor is.
+pub fn alive(world: &World, anchor: Option<Entity>) -> bool {
+    anchor.is_none_or(|node| world.get_entity(node).is_ok())
+}
+
+/// Upstream: the view `make` returns, given the node it will hang
+/// from, which is `None` at the root.
+///
+/// The node is what a nested `keyed` or `each` uses as the anchor of
+/// its key; see [`changing_under`].
+pub fn anchored<T, V>(
+    make: impl FnOnce(Option<Entity>) -> V + 'static,
+) -> AnyView<Bevy, T>
+where
+    T: 'static,
+    V: View<Bevy, T>,
+{
+    AnyView::new(move |cx| {
+        let anchor = cx.parent();
+        cx.build(make(anchor))
     })
 }
 
@@ -462,7 +504,9 @@ where
 
             let body = self.body;
             let shown = keyed::<T, bool>(
-                component::<Open, _>(state, |on| on.is_some()),
+                changing_under(Some(root), move |world: &World| {
+                    world.get::<Open>(state).is_some()
+                }),
                 move |open| {
                     if *open {
                         body().boxed()
@@ -510,6 +554,25 @@ mod tests {
         world.resource_mut::<Pair>().0 = 2;
         assert!(signal.changed(&world));
         assert_eq!(signal.get(&world), 2);
+    }
+
+    #[test]
+    fn changing_under_goes_quiet_once_its_anchor_is_despawned() {
+        let mut world = World::new();
+        world.insert_resource(Pair(1, 1));
+        let anchor = world.spawn_empty().id();
+        let mut signal =
+            changing_under(Some(anchor), |world: &World| {
+                world.resource::<Pair>().0
+            });
+
+        assert!(signal.changed(&world));
+        world.resource_mut::<Pair>().0 = 2;
+        assert!(signal.changed(&world));
+
+        world.despawn(anchor);
+        world.resource_mut::<Pair>().0 = 3;
+        assert!(!signal.changed(&world));
     }
 
     #[test]

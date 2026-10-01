@@ -34,6 +34,7 @@ use super::{
     field_row, variant_picker,
 };
 use crate::fold::{self, Chevron, Foldable, FoldsOn};
+use crate::gaps::{alive, anchored};
 use crate::theme::EditorTheme;
 
 /// Which of an inspected entity's sections were folded shut, keyed by
@@ -384,13 +385,6 @@ fn leaf_name(path: &str) -> &str {
 /// Its card's title stands in for that missing name, so it needs the
 /// same drag source a genuine field's [`field_name`](
 /// super::field_name) label carries.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the entity inspector's cards take it up"
-    )
-)]
 pub(crate) fn root_leaf(
     world: &World,
     field: &Field,
@@ -437,8 +431,10 @@ fn variant_entries(world: &World, field: &Field) -> Vec<Entry> {
 /// differs from the last time.
 ///
 /// The component's tick is checked first, so the read only runs when
-/// something touched the component.
+/// something touched the component. It goes quiet once `anchor` is
+/// despawned; see [`changing_under`](crate::gaps::changing_under).
 fn watch<T>(
+    anchor: Option<Entity>,
     field: Field,
     read: impl Fn(&World, &Field) -> T + Clone + Send + Sync + 'static,
 ) -> Signal<T>
@@ -454,6 +450,9 @@ where
     Signal::new(
         move |world: &World| read(world, &reader),
         move |world: &World| {
+            if !alive(world, anchor) {
+                return false;
+            }
             let tick = field.changed_tick(world);
             if seen.is_some() && !open && tick == seen_tick {
                 return false;
@@ -484,18 +483,20 @@ pub fn inspector_fields(
     root: Field,
     depth: u32,
 ) -> impl View<Bevy, EditorTheme> {
-    let walked = root.clone();
-    each::<EditorTheme, Entry, Entry>(
-        watch(root, entries),
-        |entry| entry.clone(),
-        move |entry| entry_view(&walked, entry, depth),
-    )
-    .within(
-        frame()
-            .direction(FlexDirection::Column)
-            .width(percent(100.0))
-            .gap(4.0),
-    )
+    anchored::<EditorTheme, _>(move |anchor| {
+        let walked = root.clone();
+        each::<EditorTheme, Entry, Entry>(
+            watch(anchor, root, entries),
+            |entry| entry.clone(),
+            move |entry| entry_view(&walked, entry, depth),
+        )
+        .within(
+            frame()
+                .direction(FlexDirection::Column)
+                .width(percent(100.0))
+                .gap(4.0),
+        )
+    })
 }
 
 /// The fields of the active variant of the enum at `field`, built
@@ -507,28 +508,30 @@ pub fn variant_fields(
     field: Field,
     depth: u32,
 ) -> impl View<Bevy, EditorTheme> {
-    let walked = field.clone();
-    keyed::<EditorTheme, Option<String>>(
-        watch(field, |world, field| {
-            field.read_at(world, enums::active_in).flatten()
-        }),
-        move |_| {
-            let field = walked.clone();
-            AnyView::<Bevy, EditorTheme>::new(move |cx| {
-                let rows = variant_entries(cx.world, &field)
-                    .iter()
-                    .map(|entry| entry_view(&field, entry, depth))
-                    .collect::<Vec<_>>();
-                cx.build(column(rows).gap(4.0))
-            })
-        },
-    )
-    .within(
-        frame()
-            .direction(FlexDirection::Column)
-            .width(percent(100.0))
-            .gap(0.0),
-    )
+    anchored::<EditorTheme, _>(move |anchor| {
+        let walked = field.clone();
+        keyed::<EditorTheme, Option<String>>(
+            watch(anchor, field, |world, field| {
+                field.read_at(world, enums::active_in).flatten()
+            }),
+            move |_| {
+                let field = walked.clone();
+                AnyView::<Bevy, EditorTheme>::new(move |cx| {
+                    let rows = variant_entries(cx.world, &field)
+                        .iter()
+                        .map(|entry| entry_view(&field, entry, depth))
+                        .collect::<Vec<_>>();
+                    cx.build(column(rows).gap(4.0))
+                })
+            },
+        )
+        .within(
+            frame()
+                .direction(FlexDirection::Column)
+                .width(percent(100.0))
+                .gap(0.0),
+        )
+    })
 }
 
 /// The view of one entry found under `root`.

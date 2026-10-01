@@ -12,6 +12,7 @@ pub use bevy_fynix::views::{
     overlay, row, scroll, segment, segmented, text_field, tint,
 };
 
+mod inspector;
 mod placement;
 mod playhead;
 mod time_label;
@@ -22,6 +23,11 @@ mod timeline_gap;
 mod timeline_link;
 mod timeline_track;
 
+pub use inspector::{
+    asset_card, component_inspector, component_inspector_of,
+    display_name, entity_inspector, resource_inspector,
+    resource_inspector_of, root_inspector,
+};
 pub use placement::Placement;
 pub use playhead::playhead_line;
 pub use time_label::time_label;

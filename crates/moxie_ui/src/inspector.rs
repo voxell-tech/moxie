@@ -41,6 +41,7 @@ pub use field_drag::{
     FieldName, draggable_field, field_name,
 };
 pub use tree::{inspector_fields, section, variant_fields};
+pub(crate) use tree::{root_leaf, section_open, toggle_section};
 
 /// An editor, as the registry stores it: a function from where the
 /// value lives to the view that edits it.
