@@ -2,9 +2,8 @@
 //! whole rather than on anything a panel is showing.
 
 use bevy::prelude::*;
-use bevy_fynix::views::{FrameProps as _, dropdown, row};
-use bevy_fynix::{AnyView, Bevy, Cx, View};
-use moxie_ui::icons;
+use bevy_fynix::views::{FrameProps as _, menu_button, row};
+use bevy_fynix::{Bevy, View};
 use moxie_ui::theme::EditorTheme;
 
 use crate::project;
@@ -24,31 +23,17 @@ pub(super) fn top_bar() -> impl View<Bevy, EditorTheme> {
 }
 
 /// One menu: its name in the bar, and what picking an entry runs.
-///
-/// The name is the dropdown's placeholder, so the control keeps it
-/// whichever entry was picked.
 fn menu(
     name: &'static str,
     entries: Vec<(&'static str, fn(&mut World))>,
-) -> AnyView<Bevy, EditorTheme> {
-    AnyView::new(move |cx: &mut Cx<'_, Bevy, EditorTheme>| {
-        let chevron =
-            cx.world.resource::<AssetServer>().load(icons::CHEVRON);
-        cx.build(
-            dropdown(
-                entries
-                    .iter()
-                    .map(|(entry, _)| *entry)
-                    .collect::<Vec<_>>(),
-                usize::MAX,
-                chevron,
-                move |world, at| {
-                    if let Some((_, run)) = entries.get(at) {
-                        run(world);
-                    }
-                },
-            )
-            .placeholder(name),
-        )
-    })
+) -> impl View<Bevy, EditorTheme> {
+    menu_button(
+        name,
+        entries.iter().map(|(entry, _)| *entry).collect::<Vec<_>>(),
+        move |world, at| {
+            if let Some((_, run)) = entries.get(at) {
+                run(world);
+            }
+        },
+    )
 }

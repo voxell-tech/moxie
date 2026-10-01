@@ -25,7 +25,7 @@ pub mod widgets;
 
 use asset::AssetDragging;
 use bevy::prelude::*;
-use bevy_fynix::dock::DockPlugin;
+use bevy_fynix::dock::{DockIcons, DockPlugin};
 use bevy_fynix::{FynixPlugin, Theme};
 use inspector::InspectPlugin;
 use moxie_asset::{AssetTypes, FoundAssets};
@@ -51,6 +51,23 @@ impl Plugin for MoxieUiPlugin {
         .add_systems(Update, elements::fit_action_icons)
         .init_resource::<AssetTypes>()
         .init_resource::<FoundAssets>()
-        .init_resource::<AssetDragging>();
+        .init_resource::<AssetDragging>()
+        .add_systems(PreStartup, dock_icons);
     }
+}
+
+/// Gives the dock the editor's icons for its tab buttons, before
+/// anything builds a dock. Nothing in an app without image assets.
+fn dock_icons(
+    mut commands: Commands,
+    assets: Option<Res<AssetServer>>,
+    images: Option<Res<Assets<Image>>>,
+) {
+    let (Some(assets), Some(_)) = (assets, images) else {
+        return;
+    };
+    commands.insert_resource(DockIcons {
+        close: Some(assets.load(icons::CLOSE)),
+        add: Some(assets.load(icons::PLUS)),
+    });
 }
