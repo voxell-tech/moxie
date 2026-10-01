@@ -3,150 +3,54 @@
 //! What counts as one is an [`EntityUid`], the id a scene refers to
 //! its subjects by. The panel lists exactly what the animation can
 //! address, nothing the editor spawned for itself.
-//!
-//! Each subject watches only its own children, so adding one rebuilds
-//! that branch. Depth is the nesting: a subtree indents what it
-//! holds.
 
-mod drag;
-
-pub(crate) use drag::Dragging;
+// STUB: ported in wave 3 step 2. Only the panel's view is a
+// placeholder; what it will call is kept below.
 
 use bevy::ecs::query::QueryState;
 use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
-use bevy::ui_widgets::Activate;
-use bevy_fynix::WorldEntityMut;
+use bevy_fynix::{AnyView, Bevy};
 use bevy_motiongfx::scene::id::EntityUid;
-use fynix::composer::Composer;
-use fynix::prelude::*;
-use moxie_ui::context_menu::{
-    ContextMenuBuilder, context_menu, open_context_menu,
-};
-use moxie_ui::cursor::Cursor;
-use moxie_ui::elements::{
-    Button, ButtonCursor, Frame, FrameCursor, GhostButton, Icon,
-    Label, LabelCursor, Panel, ScrollArea, TintButton,
-};
-use moxie_ui::fold::{Foldable, FoldsOn};
 use moxie_ui::inspector::ReflectEssential;
-use moxie_ui::reactive::{
-    BevyUi, FynixHost, component_changed_on, value_changed,
-};
-use moxie_ui::widgets::tooltip::TooltipExt as _;
+use moxie_ui::theme::EditorTheme;
 
 use crate::subject::Caption;
 use crate::{SceneRoot, SelectedEntity, presets};
 
-/// The [`tail`]'s least height: room below the last row for the
-/// floating button, and a drop target even when the list is full.
-const TAIL_MIN: f32 = 34.0;
+/// The hierarchy panel.
+pub(super) fn panel() -> AnyView<Bevy, EditorTheme> {
+    // STUB: ported in wave 3 step 2
+    super::stub_panel("Hierarchy")
+}
 
-/// Every scene subject, as nested rows, under what acts on the list
-/// as a whole.
-pub(super) struct HierarchyPanel;
+/// The subject being dragged, where a drop would land it, and what is
+/// following the cursor meanwhile. Empty whenever nothing is being
+/// dragged.
+#[derive(Resource, Default)]
+pub(crate) struct Dragging {
+    /// The subject: a pointer event names whichever node it hit,
+    /// which may be a row's label, and neither is the thing being
+    /// moved.
+    subject: Option<Entity>,
+    target: Option<(Entity, At)>,
+    ghost: Option<Entity>,
+}
 
-impl Composer<FynixHost> for HierarchyPanel {
-    type Element = Panel;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Panel> {
-        ui.elem(elem!(Panel))
-            .with(|ui| {
-                ui.compose(Roots);
-                ui.compose(AddButton);
-            })
-            .handle()
+impl Dragging {
+    /// Whether a drop would land at `at` relative to `row`.
+    pub(crate) fn shows(&self, row: Entity, at: At) -> bool {
+        self.target == Some((row, at))
     }
 }
 
-/// The one thing that acts on the list.
-///
-/// Floated over the corner, so it stays put however far the list is
-/// scrolled.
-struct AddButton;
-
-impl Composer<FynixHost> for AddButton {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let pad = ui.theme.space.xl;
-        ui.elem(elem!(
-            Frame,
-            position = PositionType::Absolute,
-            inset = UiRect::new(auto(), px(pad), auto(), px(pad))
-        ))
-        .with(move |ui| {
-            let mut add = ui.elem(elem!(
-                !TintButton::default(),
-                icon = elem!(Icon, image = crate::icons::PLUS)
-            ));
-            add.tooltip("Add").observe(
-                |_: On<Activate>,
-                 cursor: Cursor,
-                 mut commands: Commands| {
-                    // Pressed with no pointer, from the keyboard: the
-                    // corner, where placement pushes it on screen.
-                    let at = cursor.position().unwrap_or_default();
-                    commands.queue(move |world: &mut World| {
-                        open_context_menu(world, at, add_menu);
-                    });
-                },
-            );
-        })
-        .handle()
-    }
-}
-
-/// The subjects themselves, scrolling under the button.
-struct Roots;
-
-impl Composer<FynixHost> for Roots {
-    type Element = ScrollArea;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, ScrollArea> {
-        let pad = ui.theme.space.xl;
-        // Roots only: a branch minds itself. The query is kept
-        // because this polls every flush, and the build (which
-        // makes its own) runs far less often.
-        let mut query = None;
-        let mut seen: Option<Vec<Entity>> = None;
-
-        ui.elem(elem!(
-            ScrollArea,
-            width = percent(100),
-            flex_grow = 1.0f32,
-            padding = UiRect::all(px(pad)),
-            scroll_x = false
-        ))
-        .watch(
-            move |WorldNodeRef { world, .. }| {
-                let query = match &mut query {
-                    Some(query) => query,
-                    slot => match QueryState::try_new(world) {
-                        Some(query) => slot.insert(query),
-                        None => return false,
-                    },
-                };
-                query.update_archetypes(world);
-
-                let current = roots(world, query);
-                let changed = seen.as_ref() != Some(&current);
-                seen = Some(current);
-                changed
-            },
-            build_roots,
-        )
-        .handle()
-    }
+/// Where a drop would put what is being dragged, relative to the row
+/// it is aimed at.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum At {
+    Before,
+    Into,
+    After,
 }
 
 /// Spawns a subject at the top level, and selects it so the inspector
@@ -176,28 +80,8 @@ const ADD_MESHES: &[&str] = &[
     "Cube", "Sphere", "Plane", "Cylinder", "Cone", "Torus", "Monkey",
 ];
 
-/// What the add button offers: an empty subject, or one that already
-/// shows something.
-fn add_menu(menu: &mut ContextMenuBuilder) {
-    menu.item(None, "Empty", |world| {
-        spawn_new_entity(world);
-    });
-    for &name in ADD_MESHES {
-        menu.item(None, name, move |world| spawn_mesh(world, name));
-    }
-    menu.item(None, "Point Light", |world| {
-        spawn_named(world, "Point Light", PointLight::default());
-    });
-    menu.item(None, "Directional Light", |world| {
-        spawn_named(
-            world,
-            "Directional Light",
-            DirectionalLight::default(),
-        );
-    });
-}
-
-fn spawn_mesh(world: &mut World, name: &str) {
+/// Spawns the mesh preset `name`, selected.
+pub(crate) fn spawn_mesh(world: &mut World, name: &str) {
     let Some(&(_, path)) =
         presets::MESHES.iter().find(|(preset, _)| *preset == name)
     else {
@@ -273,307 +157,6 @@ fn under(world: &World, ancestor: Entity, entity: Entity) -> bool {
     }
     world.get::<Children>(ancestor).is_some_and(|children| {
         children.iter().any(|child| under(world, child, entity))
-    })
-}
-
-fn build_roots(ui: &mut BevyUi) {
-    let roots = {
-        let Some(mut query) = QueryState::try_new(ui.world) else {
-            return;
-        };
-        roots(ui.world, &mut query)
-    };
-
-    let last = listing(ui, &roots);
-    tail(ui, last);
-}
-
-/// A list of subtrees with a seam before each, returning the last one.
-/// The caller closes the list off: a nested one with a plain seam, the
-/// root with a [`tail`].
-fn listing(ui: &mut BevyUi, entities: &[Entity]) -> Option<Entity> {
-    let mut prev = None;
-    for &entity in entities {
-        seam(ui, prev, Some(entity));
-        ui.compose(Subtree { entity });
-        prev = Some(entity);
-    }
-    prev
-}
-
-/// The strip below the last root row, filling whatever height is left.
-/// A drop anywhere on it lands the row at the top level after the last
-/// one, clear of any open branch.
-fn tail(ui: &mut BevyUi, last: Option<Entity>) {
-    let accent = ui.theme.color.accent;
-    let thickness = ui.theme.space.edge;
-
-    let mut zone = ui.elem(elem!(
-        Frame,
-        width = percent(100),
-        flex_grow = 1.0f32,
-        min_height = px(TAIL_MIN),
-        direction = FlexDirection::Column
-    ));
-    drag::aim_below(&mut zone, last);
-    zone.with(move |ui| {
-        ui.elem(elem!(
-            Frame,
-            width = percent(100),
-            height = px(thickness)
-        ))
-        .bind(
-            |line| line.background(),
-            seam_changed(last, None),
-            move |WorldNodeRef { world, .. }| {
-                if seam_lit(world, last, None) {
-                    accent
-                } else {
-                    Color::NONE
-                }
-            },
-        );
-    });
-}
-
-/// The seam between two rows, and the line a drop lights on it. Full
-/// width of the list, so the line is exactly as wide as the rows.
-///
-/// One seam answers for both sides of it: a drop after `above` and one
-/// before `below` land in the same place, so either lights this line.
-fn seam(
-    ui: &mut BevyUi,
-    above: Option<Entity>,
-    below: Option<Entity>,
-) {
-    let accent = ui.theme.color.accent;
-    let thickness = ui.theme.space.edge;
-
-    ui.elem(elem!(
-        Frame,
-        width = percent(100),
-        // No height, and the line overflows it: the seam then adds
-        // nothing to the list, and the indent rails, which stretch to
-        // the list's height, are not dragged past its last row.
-        height = px(0),
-        // Or a flex item's auto floor grows it back to the line's own
-        // height.
-        min_height = px(0),
-        justify = JustifyContent::Center,
-        direction = FlexDirection::Column
-    ))
-    .with(move |ui| {
-        ui.elem(elem!(
-            Frame,
-            width = percent(100),
-            height = px(thickness)
-        ))
-        .bind(
-            |line| line.background(),
-            seam_changed(above, below),
-            move |WorldNodeRef { world, .. }| {
-                if seam_lit(world, above, below) {
-                    accent
-                } else {
-                    Color::NONE
-                }
-            },
-        );
-    });
-}
-
-/// Whether a drop is aimed at the seam between `above` and `below`.
-fn seam_lit(
-    world: &World,
-    above: Option<Entity>,
-    below: Option<Entity>,
-) -> bool {
-    let dragging = world.resource::<drag::Dragging>();
-    above.is_some_and(|e| dragging.shows(e, drag::At::After))
-        || below.is_some_and(|e| dragging.shows(e, drag::At::Before))
-}
-
-/// Fires when whether the seam between `above` and `below` is aimed at
-/// moves.
-fn seam_changed(
-    above: Option<Entity>,
-    below: Option<Entity>,
-) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool {
-    value_changed(move |world, _| seam_lit(world, above, below))
-}
-
-/// One subject, and everything under it.
-struct Subtree {
-    entity: Entity,
-}
-
-impl Composer<FynixHost> for Subtree {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let entity = self.entity;
-        let name = name_of(ui.world, entity);
-        let text = ui.theme.color.text;
-        let text_dim = ui.theme.color.text_dim;
-        let name_color = if is_unnamed(ui.world, entity) {
-            text_dim
-        } else {
-            text
-        };
-        let accent = ui.theme.color.accent;
-        let select = ui.theme.color.selection;
-
-        ui.compose(Foldable {
-            header: elem!(
-                !GhostButton,
-                width = percent(100),
-                height = px(18),
-                justify = JustifyContent::FlexStart,
-                padding = UiRect::axes(px(4), Val::ZERO),
-                radius = px(3),
-                label = elem!(
-                    Label,
-                    text = name,
-                    wrap = false,
-                    color = name_color
-                )
-            ),
-            // The row is the subject's, to select; only the
-            // chevron beside it folds.
-            folds_on: FoldsOn::Chevron,
-            enabled: has_children(ui.world, entity),
-            on_header: move |mut header: ElementMut<
-                '_,
-                '_,
-                FynixHost,
-                Button,
-            >| {
-                drag::rows(&mut header, entity)
-                    .observe(
-                        move |_: On<Activate>,
-                              mut selected: ResMut<
-                            SelectedEntity,
-                        >| {
-                            selected.0 = Some(entity);
-                        },
-                    )
-                    // One bind: a second on the same field would
-                    // fight this one every flush.
-                    .bind(
-                        |button| button.fill(),
-                        highlight_changed(entity),
-                        move |WorldNodeRef { world, .. }| {
-                            highlight(world, entity, accent, select)
-                        },
-                    )
-                    .bind(
-                        |button| button.label().text(),
-                        component_changed_on::<Name>(entity),
-                        move |WorldNodeRef { world, .. }| {
-                            name_of(world, entity)
-                        },
-                    )
-                    .bind(
-                        |button| button.label().color(),
-                        component_changed_on::<Name>(entity),
-                        move |WorldNodeRef { world, .. }| {
-                            if is_unnamed(world, entity) {
-                                text_dim
-                            } else {
-                                text
-                            }
-                        },
-                    );
-
-                context_menu(&mut header, move |menu| {
-                    let critical = menu.theme().color.critical;
-                    menu.item(
-                        Some((moxie_ui::icons::TRASH, critical)),
-                        "Delete",
-                        move |world| {
-                            despawn_entity(world, entity);
-                        },
-                    );
-                });
-            },
-            body: move |ui: &mut BevyUi| {
-                ui.elem(elem!(
-                    Frame,
-                    width = percent(100),
-                    direction = FlexDirection::Column
-                ))
-                .watch(
-                    component_changed_on::<Children>(entity),
-                    move |ui| {
-                        let kids = children_of(ui.world, entity);
-                        let last = listing(ui, &kids);
-                        seam(ui, last, None);
-                    },
-                );
-            },
-            // Read off the subject's own entity. The row rebuilds
-            // fresh on a reorder or a sibling added, but the entity,
-            // and `Collapsed` on it, does not. Nothing to clean up
-            // when a subject is deleted either. `Collapsed` goes with
-            // it.
-            open: ui.world.get::<Collapsed>(entity).is_none(),
-            on_toggle: move |world: &mut World, open: bool| {
-                let Ok(mut entity) = world.get_entity_mut(entity)
-                else {
-                    return;
-                };
-                if open {
-                    entity.remove::<Collapsed>();
-                } else {
-                    entity.insert(Collapsed);
-                }
-            },
-        })
-        .handle()
-    }
-}
-
-/// On a subject's own entity while its hierarchy row is collapsed.
-/// Nothing removes this when the row's own node is despawned and
-/// rebuilt, since it was never on that node. It goes when the
-/// subject itself does.
-#[derive(Component)]
-struct Collapsed;
-
-/// What a row's own surface says: a drop landing inside it beats
-/// whether it is selected, and most rows are neither.
-fn highlight(
-    world: &World,
-    entity: Entity,
-    accent: Color,
-    select: Color,
-) -> Color {
-    if world
-        .resource::<drag::Dragging>()
-        .shows(entity, drag::At::Into)
-    {
-        accent.with_alpha(0.35)
-    } else if world.resource::<SelectedEntity>().0 == Some(entity) {
-        select
-    } else {
-        Color::NONE
-    }
-}
-
-/// Fires when either half of what [`highlight`] reads moves.
-fn highlight_changed(
-    entity: Entity,
-) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool {
-    value_changed(move |world, _| {
-        (
-            world.resource::<SelectedEntity>().0 == Some(entity),
-            world
-                .resource::<drag::Dragging>()
-                .shows(entity, drag::At::Into),
-        )
     })
 }
 
