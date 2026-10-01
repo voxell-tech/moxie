@@ -2,8 +2,9 @@
 //! whole rather than on anything a panel is showing.
 
 use bevy::prelude::*;
-use bevy_fynix::views::{Dropdown, FrameProps as _, dropdown, row};
-use bevy_fynix::{Bevy, View};
+use bevy_fynix::views::{FrameProps as _, dropdown, row};
+use bevy_fynix::{AnyView, Bevy, Cx, View, ViewExt as _};
+use moxie_ui::icons;
 use moxie_ui::theme::EditorTheme;
 
 use crate::project;
@@ -29,15 +30,25 @@ pub(super) fn top_bar() -> impl View<Bevy, EditorTheme> {
 fn menu(
     name: &'static str,
     entries: Vec<(&'static str, fn(&mut World))>,
-) -> Dropdown {
-    dropdown(
-        entries.iter().map(|(entry, _)| *entry).collect::<Vec<_>>(),
-        usize::MAX,
-        move |world, at| {
-            if let Some((_, run)) = entries.get(at) {
-                run(world);
-            }
-        },
-    )
-    .placeholder(name)
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::new(move |cx: &mut Cx<'_, Bevy, EditorTheme>| {
+        let chevron =
+            cx.world.resource::<AssetServer>().load(icons::CHEVRON);
+        cx.build(
+            dropdown(
+                entries
+                    .iter()
+                    .map(|(entry, _)| *entry)
+                    .collect::<Vec<_>>(),
+                usize::MAX,
+                chevron,
+                move |world, at| {
+                    if let Some((_, run)) = entries.get(at) {
+                        run(world);
+                    }
+                },
+            )
+            .placeholder(name),
+        )
+    })
 }
