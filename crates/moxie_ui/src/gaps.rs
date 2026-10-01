@@ -3,17 +3,20 @@
 use bevy::ecs::resource::Resource;
 use bevy::ecs::world::World;
 use bevy::prelude::*;
+use bevy::ui_widgets::popover::{
+    Popover, PopoverAlign, PopoverPlacement, PopoverSide,
+};
 use bevy_fynix::patch::Paint;
 use bevy_fynix::tokens::{
     Motion, MotionTokens, SpacingTokens, SurfaceTokens, TextTokens,
     Tone,
 };
 use bevy_fynix::views::{
-    BehaviorExt as _, FrameProps as _, Icon, Open, button, frame,
-    icon, tint,
+    BehaviorExt as _, Frame, FrameProps as _, Icon, Label, Open,
+    button, frame, icon, tint,
 };
 use bevy_fynix::{
-    AnyView, Bevy, Cx, Prop, ScopedExt as _, Signal, View,
+    AnyView, Bevy, Cx, Hovered, Prop, ScopedExt as _, Signal, View,
     ViewExt as _, component, keyed,
 };
 use fynix::Transition;
@@ -532,6 +535,75 @@ where
             cx.build(rail)
         });
         root
+    }
+}
+
+/// Upstream: a view whose root node wraps its children onto new
+/// lines, packed from the top.
+pub struct Wrapping<V>(V);
+
+/// `inner`, wrapping its children onto new lines.
+pub fn wrapping<V>(inner: V) -> Wrapping<V> {
+    Wrapping(inner)
+}
+
+impl<T, V: View<Bevy, T>> View<Bevy, T> for Wrapping<V> {
+    fn build(self, cx: &mut Cx<'_, Bevy, T>) -> Entity {
+        let node = self.0.build(cx);
+        if let Some(mut layout) = cx.world.get_mut::<Node>(node) {
+            layout.flex_wrap = FlexWrap::Wrap;
+            layout.align_content = AlignContent::FlexStart;
+        }
+        node
+    }
+}
+
+/// Upstream: the rules of [`tint`] with tones of the caller's
+/// choosing: a button with no surface whose labels and icons are
+/// `rest` until the pointer is on it, then `hover`. Their call sites
+/// must leave the tone unset. Apply with
+/// `.rules(tint_to(rest, hover))`.
+pub fn tint_to<T>(
+    rest: Tone,
+    hover: Tone,
+) -> impl Fn(&mut Cx<'_, Bevy, T>) + Send + Sync + 'static
+where
+    T: MotionTokens + 'static,
+{
+    move |cx: &mut Cx<'_, Bevy, T>| {
+        cx.root(|cx| {
+            cx.set::<Frame>(|frame, _| frame.fill(Color::NONE));
+            cx.when::<bevy_fynix::State<Hovered>>(|cx| {
+                cx.set::<Frame>(|frame, _| frame.fill(Color::NONE));
+            });
+        });
+        cx.set::<Label>(move |label, _| label.tone(rest));
+        cx.set::<Icon>(move |icon, _| icon.tone(rest));
+        cx.when::<bevy_fynix::State<Hovered>>(move |cx| {
+            cx.set::<Label>(move |label, _| label.tone(hover));
+            cx.set::<Icon>(move |icon, _| icon.tone(hover));
+        });
+        cx.transition(Motion::Interact);
+    }
+}
+
+/// Upstream: the placement of a surface hung off a zero-size anchor
+/// at a point, below it or above it, flipping toward whichever corner
+/// has room and keeping `window_margin` from the window's edge.
+pub fn at_point(window_margin: f32) -> Popover {
+    let placement = |side, align| PopoverPlacement {
+        side,
+        align,
+        gap: 0.0,
+    };
+    Popover {
+        positions: vec![
+            placement(PopoverSide::Bottom, PopoverAlign::Start),
+            placement(PopoverSide::Bottom, PopoverAlign::End),
+            placement(PopoverSide::Top, PopoverAlign::Start),
+            placement(PopoverSide::Top, PopoverAlign::End),
+        ],
+        window_margin,
     }
 }
 

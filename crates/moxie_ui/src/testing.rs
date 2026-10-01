@@ -5,13 +5,16 @@
 use core::time::Duration;
 
 use bevy::app::{App, TaskPoolPlugin};
-use bevy::asset::AssetPlugin;
+use bevy::asset::{AssetPlugin, UnapprovedPathMode};
 use bevy::camera::NormalizedRenderTarget;
 use bevy::ecs::hierarchy::Children;
-use bevy::input::InputPlugin;
+use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::input::{ButtonState, InputPlugin};
 use bevy::input_focus::{InputDispatchPlugin, InputFocusPlugin};
 use bevy::picking::backend::HitData;
-use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
+use bevy::picking::events::{
+    Click, Drag, DragDrop, DragEnd, DragStart, Pointer, Press,
+};
 use bevy::picking::pointer::{Location, PointerButton, PointerId};
 use bevy::prelude::*;
 use bevy::text::EditableText;
@@ -27,10 +30,16 @@ use crate::theme::EditorTheme;
 /// update.
 pub fn app() -> App {
     let mut app = App::new();
+    // Before `AssetPlugin`, which builds the sources.
+    moxie_asset::register_absolute_source(&mut app);
     app.add_plugins((
         TaskPoolPlugin::default(),
         TimePlugin,
-        AssetPlugin::default(),
+        // As the editor sets it, for a file from anywhere on disk.
+        AssetPlugin {
+            unapproved_path_mode: UnapprovedPathMode::Deny,
+            ..AssetPlugin::default()
+        },
         InputPlugin,
         InputFocusPlugin,
         InputDispatchPlugin,
@@ -159,6 +168,63 @@ pub fn drag_stop(app: &mut App, on: Entity) {
         distance: Vec2::ZERO,
     };
     fire(app, on, event);
+}
+
+/// A click of `on` with `button`, the `count`th in a row.
+pub fn click(
+    app: &mut App,
+    on: Entity,
+    button: PointerButton,
+    count: u8,
+) {
+    let hit = HitData::new(Entity::PLACEHOLDER, 0.0, None, None);
+    let event = Click {
+        button,
+        hit,
+        duration: Duration::ZERO,
+        count,
+    };
+    fire(app, on, event);
+}
+
+/// A primary-button press of `on`.
+pub fn press(app: &mut App, on: Entity) {
+    let hit = HitData::new(Entity::PLACEHOLDER, 0.0, None, None);
+    let event = Press {
+        button: PointerButton::Primary,
+        hit,
+        count: 1,
+    };
+    fire(app, on, event);
+}
+
+/// A primary-button drop of something on `on`.
+pub fn drop_on(app: &mut App, on: Entity) {
+    let hit = HitData::new(Entity::PLACEHOLDER, 0.0, None, None);
+    let event = DragDrop {
+        button: PointerButton::Primary,
+        dropped: Entity::PLACEHOLDER,
+        hit,
+    };
+    fire(app, on, event);
+}
+
+/// A press of the key `code`, which types `key`.
+pub fn key(app: &mut App, code: KeyCode, key: Key) {
+    let window = app
+        .world_mut()
+        .query_filtered::<Entity, With<PrimaryWindow>>()
+        .single(app.world())
+        .unwrap();
+    app.world_mut().write_message(KeyboardInput {
+        key_code: code,
+        logical_key: key,
+        state: ButtonState::Pressed,
+        text: None,
+        repeat: false,
+        window,
+    });
+    app.update();
 }
 
 /// A pair of fields, for a struct to nest.

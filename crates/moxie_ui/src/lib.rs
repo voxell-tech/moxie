@@ -6,8 +6,8 @@
               query tuples."
 )]
 
-// Not ported yet: asset_picker
 pub mod asset;
+pub mod asset_picker;
 pub mod context_menu;
 pub mod cursor;
 pub mod drag;
@@ -45,6 +45,7 @@ impl Plugin for MoxieUiPlugin {
             FynixPlugin::<EditorTheme>::default(),
             DockPlugin::<EditorTheme>::default(),
             InspectPlugin,
+            asset_picker::plugin,
         ))
         .insert_resource(Theme(EditorTheme::default()))
         .add_systems(Update, elements::fit_action_icons)
