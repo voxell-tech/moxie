@@ -13,6 +13,7 @@
 mod field;
 mod primitive;
 mod text;
+mod vector;
 
 use core::time::Duration;
 use std::any::TypeId;
@@ -54,6 +55,16 @@ impl Plugin for InspectPlugin {
             .register_inspect::<u32>()
             .register_inspect::<u64>()
             .register_inspect::<Duration>()
+            .register_inspect::<Vec2>()
+            .register_inspect::<Vec3>()
+            .register_inspect::<Vec4>()
+            .register_inspect::<IVec2>()
+            .register_inspect::<IVec3>()
+            .register_inspect::<IVec4>()
+            .register_inspect::<UVec2>()
+            .register_inspect::<UVec3>()
+            .register_inspect::<UVec4>()
+            .register_inspect::<Quat>()
             .register_inspect::<String>()
             .register_inspect::<Name>();
         // Not ported yet: the `Handle<T>` editors, for

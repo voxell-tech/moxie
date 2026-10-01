@@ -3,6 +3,7 @@
 use bevy::ecs::resource::Resource;
 use bevy::ecs::world::World;
 use bevy::prelude::*;
+use bevy_fynix::patch::Paint;
 use bevy_fynix::tokens::{
     Motion, MotionTokens, SpacingTokens, SurfaceTokens, TextTokens,
     Tone,
@@ -57,6 +58,38 @@ pub fn state_of<S: States>() -> Signal<Option<S>> {
     changing(|world: &World| {
         world.get_resource::<State<S>>().map(|s| s.get().clone())
     })
+}
+
+/// Upstream: a view whose root node, a label or an icon, is drawn in
+/// a colour of its own rather than a [`Tone`].
+///
+/// For a colour no tone names, like an axis's red. The colour is
+/// kept in the node's paint, so a later repaint writes it back.
+pub struct Inked<V> {
+    inner: V,
+    color: Color,
+}
+
+/// `inner`, drawn in `color`.
+pub fn inked<V>(inner: V, color: Color) -> Inked<V> {
+    Inked { inner, color }
+}
+
+impl<T, V: View<Bevy, T>> View<Bevy, T> for Inked<V> {
+    fn build(self, cx: &mut Cx<'_, Bevy, T>) -> Entity {
+        let node = self.inner.build(cx);
+        let mut entity = cx.world.entity_mut(node);
+        if let Some(mut paint) = entity.get_mut::<Paint>() {
+            paint.ink = self.color;
+        }
+        if let Some(mut text) = entity.get_mut::<TextColor>() {
+            text.0 = self.color;
+        }
+        if let Some(mut image) = entity.get_mut::<ImageNode>() {
+            image.color = self.color;
+        }
+        node
+    }
 }
 
 /// Upstream: the width of a [`Rail`]'s line.

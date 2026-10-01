@@ -156,6 +156,7 @@ pub struct Probe {
     pub name: String,
     pub time: Duration,
     pub offset: Vec3,
+    pub size: UVec2,
     pub inner: Inner,
     pub kind: Kind,
     pub items: Vec<f32>,
