@@ -12,8 +12,6 @@ mod drag;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use drag::Dragging;
-
 use bevy::asset::AssetServer;
 use bevy::camera::NormalizedRenderTarget;
 use bevy::ecs::query::QueryState;
@@ -35,6 +33,7 @@ use bevy_fynix::{
     component, each, keyed,
 };
 use bevy_motiongfx::scene::id::EntityUid;
+pub(crate) use drag::Dragging;
 use moxie_ui::fold::{Chevron, Foldable, FoldsOn};
 use moxie_ui::gaps::{anchored, changing, changing_under};
 use moxie_ui::inspector::ReflectEssential;
@@ -140,7 +139,7 @@ fn add_button(
     plus: Handle<Image>,
     pad: f32,
 ) -> impl View<Bevy, EditorTheme> {
-    button(icon(plus))
+    button(icon(plus).tone(Tone::Accent))
         .position(PositionType::Absolute)
         .inset(UiRect::new(Val::Auto, px(pad), Val::Auto, px(pad)))
         .padding(UiRect::all(px(4.0)))
@@ -329,8 +328,8 @@ fn children(entity: Entity) -> AnyView<Bevy, EditorTheme> {
 /// The button that selects `entity`, can be picked up and dropped on,
 /// and has a menu of its own.
 ///
-/// A leaf, with no chevron before it, is set in by the width of one so
-/// its name lines up with its siblings'.
+/// A leaf, with no chevron before it, is set in by the width of one
+/// so its name lines up with its siblings'.
 fn header(
     entity: Entity,
     enabled: bool,
@@ -419,9 +418,10 @@ struct Collapsed;
 /// Spawns a subject at the top level, and selects it so the inspector
 /// is already pointed at what was just made.
 ///
-/// Nothing of the animation changes: a [`Stage`](motiongfx_scene::scene::Stage)
-/// seeds the fields an action drives, and a subject with no action on
-/// it keeps whatever it was spawned holding.
+/// Nothing of the animation changes: a
+/// [`Stage`](motiongfx_scene::scene::Stage) seeds the fields an
+/// action drives, and a subject with no action on it keeps whatever
+/// it was spawned holding.
 fn spawn_new_entity(world: &mut World) -> Option<Entity> {
     let Ok(root) = world
         .query_filtered::<Entity, With<SceneRoot>>()

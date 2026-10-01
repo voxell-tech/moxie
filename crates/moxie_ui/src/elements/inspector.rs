@@ -268,7 +268,8 @@ fn add_component_dropdown(
                     add_component(world, entity, *component);
                 }
             })
-            .icon(plus),
+            .icon(plus)
+            .icon_tone(Tone::Accent),
         )
     })
 }
