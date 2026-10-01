@@ -8,6 +8,9 @@ use moxie_ui::theme::EditorTheme;
 
 use crate::project;
 
+/// How tall the bar is.
+const BAR_HEIGHT: f32 = 26.0;
+
 /// The bar: one menu per heading.
 pub(super) fn top_bar() -> impl View<Bevy, EditorTheme> {
     row((menu(
@@ -19,6 +22,7 @@ pub(super) fn top_bar() -> impl View<Bevy, EditorTheme> {
         ],
     ),))
     .width(percent(100.0))
+    .height(px(BAR_HEIGHT))
     .align(AlignItems::Center)
 }
 
