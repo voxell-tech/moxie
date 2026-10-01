@@ -1,287 +1,425 @@
 //! Folding something away.
 //!
-//! The chevron and body key off a marker on the row's own node, but
-//! that node gets despawned and rebuilt on a list-level change. So
-//! [`Foldable::open`]/`on_toggle` let the caller keep that state
-//! somewhere that survives, such as a component on the entity a row
-//! stands for.
+//! [`Foldable`] is [`gaps::Fold`] with moxie's chevron icon, rail
+//! and sizes. Its state is an [`Open`](bevy_fynix::views::Open)
+//! on its root node, or on an entity the caller keeps (see
+//! [`Foldable::state_on`]), so a row rebuilt around it can keep its
+//! state somewhere that survives.
 //!
-//! The body builds lazily, only the first time a row opens, so a fold
-//! over something expensive (a filesystem read, say) never pays for
-//! what nobody has looked at.
+//! The body is built each time the fold opens and dropped when it
+//! shuts, so a fold over something expensive (a filesystem read, say)
+//! never pays for what nobody has looked at.
 
-use bevy::prelude::*;
-use bevy::ui_widgets::Activate;
-use bevy_fynix::WorldEntityMut;
-use fynix::composer::Composer;
-use fynix::prelude::*;
-use fynix::records::BuildFn;
+use bevy::asset::AssetServer;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::world::World;
+use bevy_fynix::{Bevy, Cx, View};
 
-use crate::elements::{
-    Button, ButtonCursor, Frame, FrameCursor, Icon, IconCursor,
-    TintButton,
-};
+pub use crate::gaps::{Chevron, FoldOn as FoldsOn, RAIL_WIDTH};
+use crate::gaps::{Fold, fold, rail};
 use crate::icons;
-use crate::reactive::{BevyUi, FynixHost, component_changed_on};
+use crate::theme::EditorTheme;
 
 /// The chevron's rotation, clockwise from the asset's resting
 /// up-pointing orientation. Right when shut, down when open.
 pub const CHEVRON_SHUT: f32 = 90.0;
 pub const CHEVRON_OPEN: f32 = 180.0;
 
-/// The rail's own width, one level of a body's indent.
-pub const RAIL_WIDTH: f32 = 1.0;
+/// The rail and indent a [`Foldable`]'s body sits under, for other
+/// nested-but-unfoldable content to share.
+pub fn indent<B>(body: B) -> impl View<Bevy, EditorTheme>
+where
+    B: View<Bevy, EditorTheme> + 'static,
+{
+    bevy_fynix::AnyView::new(
+        move |cx: &mut Cx<'_, Bevy, EditorTheme>| {
+            let theme = cx.theme();
+            let view = rail(
+                theme.space.fold_toggle / 2.0,
+                theme.space.fold_indent,
+                body,
+            )
+            .color(theme.palette.base[2]);
+            cx.build(view)
+        },
+    )
+}
 
-/// The rail and indent a [`Foldable`]'s body sits under - what
-/// [`Foldable`] itself draws its own body with, and what any other
-/// nested-but-unfoldable content can share.
+/// A header that folds away the body under it.
 ///
-/// `node`'s [`Folded`] marker hides this and delays building `body`
-/// until first shown; `None` builds immediately and never hides, for
-/// content with nothing to fold.
-pub(crate) fn indent(
-    ui: &mut BevyUi,
-    node: Option<Entity>,
-    body: impl BuildFn<FynixHost>,
-) {
-    let toggle_size = ui.theme.space.fold_toggle;
-    let step = ui.theme.space.fold_indent;
+/// `header` is called once with the [`Chevron`], so a section and a
+/// tree row can look nothing alike and still fold the same way. This
+/// owns the click that toggles, the chevron that turns, the body that
+/// goes, and the rail marking how deep that body sits. `body` is
+/// called each time the fold opens.
+pub struct Foldable<H, B, F = fn(&mut World, bool)>(Fold<H, B, F>);
 
-    let mut row = ui.elem(elem!(
-        Frame,
-        width = percent(100),
-        direction = FlexDirection::Row,
-        align = AlignItems::Stretch,
-        padding = UiRect::left(px(toggle_size / 2.0))
-    ));
-    if let Some(node) = node {
-        row.bind(
-            |frame| frame.display(),
-            component_changed_on::<Folded>(node),
-            move |WorldNodeRef { world, .. }| {
-                if is_folded(world, node) {
-                    Display::None
-                } else {
-                    Display::Flex
-                }
-            },
-        );
+impl<H, B> Foldable<H, B> {
+    /// A fold of `header` over `body`, open and folded by its header
+    /// (see [`FoldsOn`]).
+    pub fn new(header: H, body: B) -> Self {
+        let chevron = Chevron::new(
+            Default::default(),
+            CHEVRON_SHUT,
+            CHEVRON_OPEN,
+        )
+        .size(8.0);
+        Self(fold(chevron, header, body))
+    }
+}
+
+impl<H, B, F> Foldable<H, B, F> {
+    /// What a click has to land on to fold: the header itself, or a
+    /// chevron beside it that leaves the header free to mean
+    /// something else, like selecting the row.
+    pub fn folds_on(self, on: FoldsOn) -> Self {
+        Self(self.0.on(on))
     }
 
-    row.with(move |ui| {
-        let rail = ui.theme.palette.base[2];
-        ui.elem(elem!(
-            Frame,
-            width = px(RAIL_WIDTH),
-            background = rail
-        ));
+    /// Whether there is anything to fold. A header with nothing under
+    /// it neither turns nor toggles, and has no chevron of its own.
+    pub fn enabled(self, enabled: bool) -> Self {
+        Self(self.0.enabled(enabled))
+    }
 
-        let mut content = ui.elem(elem!(
-            Frame,
-            direction = FlexDirection::Column,
-            flex_grow = 1.0f32,
-            padding = UiRect::left(px(step))
-        ));
-        match node {
-            Some(node) => {
-                content.watch(
-                    component_changed_on::<Folded>(node),
-                    move |ui| {
-                        if is_folded(ui.world, node) {
-                            return;
-                        }
-                        body(ui);
-                    },
-                );
-            }
-            None => {
-                content.with(body);
-            }
-        }
-    });
+    /// Whether it starts open, as last left by the caller. Ignored
+    /// under [`state_on`](Self::state_on).
+    pub fn open(self, open: bool) -> Self {
+        Self(self.0.open(open))
+    }
+
+    /// Keeps the state as `Open` on `entity`, which anything may
+    /// change, instead of on the fold's own node.
+    pub fn state_on(self, entity: Entity) -> Self {
+        Self(self.0.state_on(entity))
+    }
+
+    /// Mirrors each click's new state into the caller's own store.
+    /// A component on the entity a row stands for cleans itself up
+    /// when the entity does.
+    pub fn on_toggle<G>(self, on_toggle: G) -> Foldable<H, B, G>
+    where
+        G: Fn(&mut World, bool) + Send + Sync + 'static,
+    {
+        Foldable(self.0.on_toggle(on_toggle))
+    }
 }
 
-/// On a [`Foldable`]'s own node while its body is hidden. Private to
-/// this row's own reactivity. A caller after something that survives
-/// this node being rebuilt wants [`Foldable::open`]/`on_toggle`
-/// instead.
-#[derive(Component)]
-struct Folded;
-
-fn is_folded(world: &World, node: Entity) -> bool {
-    world.get::<Folded>(node).is_some()
+impl<H, HV, B, BV, F> View<Bevy, EditorTheme> for Foldable<H, B, F>
+where
+    H: FnOnce(Chevron) -> HV,
+    HV: View<Bevy, EditorTheme>,
+    B: Fn() -> BV + Send + Sync + 'static,
+    BV: View<Bevy, EditorTheme> + 'static,
+    F: Fn(&mut World, bool) + Send + Sync + 'static,
+{
+    fn build(self, cx: &mut Cx<'_, Bevy, EditorTheme>) -> Entity {
+        let image =
+            cx.world.resource::<AssetServer>().load(icons::CHEVRON);
+        let theme = cx.theme();
+        let fold = self
+            .0
+            .image(image)
+            .layout(theme.space.fold_toggle, theme.space.fold_indent)
+            .rail_color(theme.palette.base[2]);
+        cx.build(fold)
+    }
 }
 
-fn toggle_folded(world: &mut World, node: Entity) {
-    let Ok(mut node) = world.get_entity_mut(node) else {
-        return;
+#[cfg(test)]
+mod tests {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    use core::time::Duration;
+
+    use bevy::app::TaskPoolPlugin;
+    use bevy::asset::AssetPlugin;
+    use bevy::image::Image;
+    use bevy::math::Rot2;
+    use bevy::prelude::*;
+    use bevy::time::{TimePlugin, TimeUpdateStrategy};
+    use bevy::ui::widget::ImageNode;
+    use bevy::ui_widgets::{Activate, Button as ButtonBehavior};
+    use bevy_fynix::mount;
+    use bevy_fynix::views::{
+        BehaviorExt as _, Open, button, label, row,
     };
 
-    if node.contains::<Folded>() {
-        node.remove::<Folded>();
-    } else {
-        node.insert(Folded);
-    }
-}
+    use super::*;
+    use crate::MoxieUiPlugin;
 
-/// What a click has to land on to fold.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum FoldsOn {
-    /// The header itself, turning the chevron already in its icon
-    /// slot. For a header that has nothing else to mean.
-    Header,
-    /// A chevron of its own beside the header, leaving the header
-    /// free to mean something else, like selecting the row.
-    Chevron,
-}
+    #[derive(Component)]
+    struct Header;
 
-/// A header that folds away what is built under it.
-///
-/// The header is passed in whole rather than described, so a section
-/// and a tree row can look nothing alike and still fold the same way.
-/// All this owns is the click that toggles, the chevron that turns,
-/// the body that goes, and the rail marking how deep that body sits.
-pub struct Foldable<
-    S: FnOnce(&<FynixHost as Host>::Theme) -> Button,
-    B: BuildFn<FynixHost>,
-    H: for<'u, 'a> FnOnce(ElementMut<'u, 'a, FynixHost, Button>),
-    T: Fn(&mut World, bool) + Clone + Send + Sync + 'static,
-> {
-    /// Anything built on a [`Button`]. Under [`FoldsOn::Header`]
-    /// its icon slot is the chevron, so it has to carry one.
-    pub header: S,
-    pub folds_on: FoldsOn,
-    /// Whether there is anything to fold. A header with nothing under
-    /// it neither turns nor toggles, and its chevron is left out
-    /// rather than dimmed, since a hover would light it up again.
-    pub enabled: bool,
-    /// Run on the header once it's built, after folding is wired to
-    /// it under [`FoldsOn::Header`], so a header that also means
-    /// something of its own, like selecting a row, can still say so.
-    pub on_header: H,
-    pub body: B,
-    /// Whatever this row was last left as, from wherever the caller
-    /// keeps that. This row's own node carries nothing across a
-    /// rebuild of the list around it.
-    pub open: bool,
-    /// Mirrors a toggle into the caller's own store. Where that lives
-    /// is entirely the caller's call. A component on the entity a row
-    /// stands for cleans itself up when the entity does, and nothing
-    /// here needs to know either way.
-    pub on_toggle: T,
-}
+    #[derive(Component)]
+    struct Body;
 
-impl<S, B, H, T> Composer<FynixHost> for Foldable<S, B, H, T>
-where
-    S: FnOnce(&<FynixHost as Host>::Theme) -> Button,
-    B: BuildFn<FynixHost>,
-    H: for<'u, 'a> FnOnce(ElementMut<'u, 'a, FynixHost, Button>),
-    T: Fn(&mut World, bool) + Clone + Send + Sync + 'static,
-{
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let Self {
-            header,
-            folds_on,
-            enabled,
-            on_header,
-            body,
-            open,
-            on_toggle,
-        } = self;
-
-        let muted = ui.theme.color.text_dim;
-        let toggle_size = ui.theme.space.fold_toggle;
-        let chevron = enabled && folds_on == FoldsOn::Chevron;
-
-        let mut root = ui.elem(elem!(
-            Frame,
-            width = percent(100),
-            direction = FlexDirection::Column,
-            row_gap = px(2)
-        ));
-        // Every part reads the fold off this one node, so the chevron
-        // can turn and the body can go. A fresh node takes whatever
-        // `open` says.
-        let node = root.id();
-        if !open {
-            root.insert(Folded);
-        }
-
-        root.with(move |ui| {
-            ui.elem(elem!(
-                Frame,
-                width = percent(100),
-                direction = FlexDirection::Row,
-                align = AlignItems::Center
-            ))
-            .with(move |ui| {
-                if chevron {
-                    let mut toggle = ui.elem(elem!(
-                        !TintButton::default(),
-                        width = px(toggle_size),
-                        height = px(toggle_size),
-                        radius = px(3),
-                        icon = elem!(
-                            Icon,
-                            image = icons::CHEVRON,
-                            size = px(8),
-                            color = muted,
-                            rotation = CHEVRON_OPEN
-                        )
-                    ));
-                    folds(&mut toggle, node, on_toggle.clone());
-                }
-
-                // Takes the rest of the row, so a header asking for
-                // its full width gets what is left beside a chevron.
-                ui.elem(elem!(Frame, flex_grow = 1.0f32)).with(
-                    move |ui| {
-                        let mut header = ui.elem(header);
-                        if enabled && !chevron {
-                            folds(&mut header, node, on_toggle);
-                        }
-                        on_header(header);
-                    },
-                );
-            });
-
-            indent(ui, Some(node), body);
-        })
-        .handle()
-    }
-}
-
-/// Makes `button` the one that folds `node`, turning its chevron with
-/// the state and mirroring the result through `on_toggle`.
-fn folds<T>(
-    button: &mut ElementMut<FynixHost, Button>,
-    node: Entity,
-    on_toggle: T,
-) where
-    T: Fn(&mut World, bool) + Clone + Send + Sync + 'static,
-{
-    button
-        .observe(move |_: On<Activate>, mut commands: Commands| {
-            let on_toggle = on_toggle.clone();
-            commands.queue(move |world: &mut World| {
-                toggle_folded(world, node);
-                on_toggle(world, !is_folded(world, node));
-            });
-        })
-        .bind(
-            |button| button.icon().rotation(),
-            component_changed_on::<Folded>(node),
-            move |WorldNodeRef { world, .. }| {
-                if is_folded(world, node) {
-                    CHEVRON_SHUT
-                } else {
-                    CHEVRON_OPEN
-                }
-            },
+    fn app() -> App {
+        let mut app = App::new();
+        app.add_plugins((
+            TaskPoolPlugin::default(),
+            TimePlugin,
+            AssetPlugin::default(),
+            MoxieUiPlugin,
+        ))
+        .init_asset::<Image>()
+        .insert_resource(
+            TimeUpdateStrategy::ManualDuration(
+                Duration::from_millis(50),
+            ),
         );
+        app.update();
+        app
+    }
+
+    fn fold_of(
+        app: &mut App,
+        on: FoldsOn,
+        open: bool,
+    ) -> (Entity, Entity) {
+        let root = mount::<EditorTheme>(
+            app.world_mut(),
+            Foldable::new(
+                |chevron: Chevron| {
+                    button(row((chevron.icon(), label("head"))))
+                        .tagged(Header)
+                },
+                || label("body").tagged(Body),
+            )
+            .folds_on(on)
+            .open(open),
+        );
+        app.update();
+        (root, header(app))
+    }
+
+    fn header(app: &mut App) -> Entity {
+        app.world_mut()
+            .query_filtered::<Entity, With<Header>>()
+            .single(app.world())
+            .unwrap()
+    }
+
+    fn bodies(app: &mut App) -> usize {
+        app.world_mut()
+            .query_filtered::<Entity, With<Body>>()
+            .iter(app.world())
+            .count()
+    }
+
+    /// The nodes drawing a chevron, one per icon.
+    fn chevrons(app: &mut App) -> Vec<Entity> {
+        app.world_mut()
+            .query_filtered::<Entity, With<ImageNode>>()
+            .iter(app.world())
+            .collect()
+    }
+
+    fn click(app: &mut App, entity: Entity) {
+        app.world_mut().trigger(Activate { entity });
+        app.update();
+    }
+
+    /// Runs the interact transition out.
+    fn settle(app: &mut App) {
+        for _ in 0..20 {
+            app.update();
+        }
+    }
+
+    fn rotation(app: &App, icon: Entity) -> Rot2 {
+        app.world().get::<UiTransform>(icon).unwrap().rotation
+    }
+
+    fn shown(app: &App, root: Entity) -> bool {
+        app.world().get::<Open>(root).is_some()
+    }
+
+    #[test]
+    fn it_starts_open_or_shut_as_asked() {
+        let mut open = app();
+        let (root, _) = fold_of(&mut open, FoldsOn::Header, true);
+        assert!(shown(&open, root));
+        assert_eq!(bodies(&mut open), 1);
+
+        let mut shut = app();
+        let (root, _) = fold_of(&mut shut, FoldsOn::Header, false);
+        assert!(!shown(&shut, root));
+        assert_eq!(bodies(&mut shut), 0);
+    }
+
+    #[test]
+    fn toggling_shows_and_hides_the_body_with_the_same_header() {
+        let mut app = app();
+        let (root, header) =
+            fold_of(&mut app, FoldsOn::Header, false);
+
+        click(&mut app, header);
+        assert_eq!(bodies(&mut app), 1);
+        assert_eq!(self::header(&mut app), header);
+
+        click(&mut app, header);
+        assert_eq!(bodies(&mut app), 0);
+        assert!(!shown(&app, root));
+        assert_eq!(self::header(&mut app), header);
+    }
+
+    #[test]
+    fn a_shut_body_is_built_when_it_opens_and_each_time_after() {
+        static BUILT: AtomicUsize = AtomicUsize::new(0);
+
+        let mut app = app();
+        let root = mount::<EditorTheme>(
+            app.world_mut(),
+            Foldable::new(
+                |chevron: Chevron| {
+                    button(chevron.icon()).tagged(Header)
+                },
+                || {
+                    BUILT.fetch_add(1, Ordering::SeqCst);
+                    label("body").tagged(Body)
+                },
+            )
+            .open(false),
+        );
+        app.update();
+        assert_eq!(BUILT.load(Ordering::SeqCst), 0);
+
+        let header = header(&mut app);
+        click(&mut app, header);
+        assert_eq!(BUILT.load(Ordering::SeqCst), 1);
+        click(&mut app, header);
+        click(&mut app, header);
+        assert_eq!(BUILT.load(Ordering::SeqCst), 2);
+        assert!(shown(&app, root));
+    }
+
+    #[test]
+    fn the_chevron_button_folds_when_it_is_the_one_asked() {
+        let mut app = app();
+        let (root, header) =
+            fold_of(&mut app, FoldsOn::Chevron, true);
+
+        // The header is not wired to fold.
+        click(&mut app, header);
+        assert!(shown(&app, root));
+
+        // The chevron is the one image in the header's row and the
+        // one the fold built beside it.
+        let toggle = chevrons(&mut app)
+            .into_iter()
+            .map(|icon| app.world().get::<ChildOf>(icon).unwrap().0)
+            .find(|parent| *parent != header)
+            .and_then(|parent| {
+                // The icon in the header sits under the header's
+                // row; the toggle's own icon sits directly under its
+                // button.
+                app.world()
+                    .get::<ButtonBehavior>(parent)
+                    .map(|_| parent)
+            });
+        let toggle = toggle.expect("a chevron button");
+        click(&mut app, toggle);
+        assert!(!shown(&app, root));
+        assert_eq!(bodies(&mut app), 0);
+    }
+
+    #[test]
+    fn state_driven_from_outside_is_followed() {
+        let mut app = app();
+        let state = app.world_mut().spawn_empty().id();
+        mount::<EditorTheme>(
+            app.world_mut(),
+            Foldable::new(
+                |chevron: Chevron| {
+                    button(row((chevron.icon(), label("head"))))
+                        .tagged(Header)
+                },
+                || label("body").tagged(Body),
+            )
+            .state_on(state),
+        );
+        app.update();
+        assert_eq!(bodies(&mut app), 0);
+
+        app.world_mut().entity_mut(state).insert(Open);
+        app.update();
+        assert_eq!(bodies(&mut app), 1);
+
+        // A click flips the outside state, not the root's.
+        let header = header(&mut app);
+        click(&mut app, header);
+        assert!(app.world().get::<Open>(state).is_none());
+        assert_eq!(bodies(&mut app), 0);
+    }
+
+    #[test]
+    fn toggles_are_reported_to_the_caller() {
+        #[derive(Resource, Default)]
+        struct Last(Option<bool>);
+
+        let mut app = app();
+        app.init_resource::<Last>();
+        mount::<EditorTheme>(
+            app.world_mut(),
+            Foldable::new(
+                |chevron: Chevron| {
+                    button(chevron.icon()).tagged(Header)
+                },
+                || label("body"),
+            )
+            .open(false)
+            .on_toggle(|world, open| {
+                world.resource_mut::<Last>().0 = Some(open);
+            }),
+        );
+        app.update();
+        let header = header(&mut app);
+        click(&mut app, header);
+        assert_eq!(app.world().resource::<Last>().0, Some(true));
+        click(&mut app, header);
+        assert_eq!(app.world().resource::<Last>().0, Some(false));
+    }
+
+    #[test]
+    fn the_chevron_turns_with_the_state() {
+        let mut app = app();
+        let (_, header) = fold_of(&mut app, FoldsOn::Header, false);
+        let icon = chevrons(&mut app)[0];
+        assert_eq!(rotation(&app, icon), Rot2::degrees(CHEVRON_SHUT));
+
+        click(&mut app, header);
+        // It travels rather than jumping.
+        assert_ne!(rotation(&app, icon), Rot2::degrees(CHEVRON_SHUT));
+        assert_ne!(rotation(&app, icon), Rot2::degrees(CHEVRON_OPEN));
+        settle(&mut app);
+        assert_eq!(rotation(&app, icon), Rot2::degrees(CHEVRON_OPEN));
+
+        click(&mut app, header);
+        settle(&mut app);
+        assert_eq!(rotation(&app, icon), Rot2::degrees(CHEVRON_SHUT));
+    }
+
+    #[test]
+    fn a_fold_with_nothing_in_it_does_not_toggle() {
+        let mut app = app();
+        let root = mount::<EditorTheme>(
+            app.world_mut(),
+            Foldable::new(
+                |chevron: Chevron| {
+                    button(chevron.icon()).tagged(Header)
+                },
+                || label("body"),
+            )
+            .enabled(false)
+            .open(false),
+        );
+        app.update();
+        let header = header(&mut app);
+        click(&mut app, header);
+
+        assert!(!shown(&app, root));
+        settle(&mut app);
+        let icon = chevrons(&mut app)[0];
+        assert_eq!(rotation(&app, icon), Rot2::degrees(CHEVRON_SHUT));
+    }
 }
