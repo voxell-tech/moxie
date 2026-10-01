@@ -6,7 +6,6 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "./README.md"
-# `inspector_demo` waits for the inspector to be ported.
 autoexamples = false
 
 [dependencies]
@@ -26,3 +25,7 @@ workspace = true
 [[example]]
 name = "dock_demo"
 path = "examples/dock_demo.rs"
+
+[[example]]
+name = "inspector_demo"
+path = "examples/inspector_demo.rs"
