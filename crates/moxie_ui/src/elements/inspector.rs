@@ -20,7 +20,7 @@ use bevy_fynix::views::{
     button, column, frame, icon, label, menu_item, row, tint,
 };
 use bevy_fynix::{
-    AnyView, Bevy, ScopedExt as _, View, ViewExt as _, component,
+    AnyView, Bevy, Cx, ScopedExt as _, View, ViewExt as _, component,
     each, keyed,
 };
 
@@ -245,21 +245,34 @@ fn add_component_dropdown(
     } else {
         "Add component"
     };
-    let names = options.iter().map(|(_, name, group)| match group {
-        Some(group) => format!("{group} / {name}"),
-        None => name.to_string(),
-    });
+    let names: Vec<String> = options
+        .iter()
+        .map(|(_, name, group)| match group {
+            Some(group) => format!("{group} / {name}"),
+            None => name.to_string(),
+        })
+        .collect();
     let components: Vec<TypeId> =
         options.iter().map(|(component, ..)| *component).collect();
 
-    placeholder_dropdown(prompt, names, move |world, at| {
-        if let Some(component) = components.get(at) {
-            add_component(world, entity, *component);
-        }
+    AnyView::new(move |cx: &mut Cx<'_, Bevy, EditorTheme>| {
+        let chevron =
+            cx.world.resource::<AssetServer>().load(icons::CHEVRON);
+        cx.build(
+            placeholder_dropdown(
+                prompt,
+                names,
+                chevron,
+                move |world, at| {
+                    if let Some(component) = components.get(at) {
+                        add_component(world, entity, *component);
+                    }
+                },
+            )
+            .min_width(px(160.0))
+            .max_width(px(240.0)),
+        )
     })
-    .min_width(px(160.0))
-    .max_width(px(240.0))
-    .boxed()
 }
 
 /// Every [`register_inspectable`](

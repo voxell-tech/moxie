@@ -598,11 +598,12 @@ where
 pub fn placeholder_dropdown<S: Into<String>>(
     placeholder: impl Into<String>,
     options: impl IntoIterator<Item = S>,
+    chevron: Handle<Image>,
     on_pick: impl Fn(&mut World, usize) + Send + Sync + 'static,
 ) -> Dropdown {
     let rows = std::iter::once(placeholder.into())
         .chain(options.into_iter().map(Into::into));
-    dropdown(rows, 0, move |world, at| {
+    dropdown(rows, 0, chevron, move |world, at| {
         if let Some(at) = at.checked_sub(1) {
             on_pick(world, at);
         }
@@ -653,6 +654,7 @@ mod tests {
             placeholder_dropdown(
                 "Add",
                 ["one", "two"],
+                Handle::default(),
                 |world, at| world.resource_mut::<Picked>().0.push(at),
             ),
         );

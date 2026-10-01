@@ -25,9 +25,10 @@ use bevy::reflect::{
     PartialReflect, ReflectRef, TypeInfo, TypeRegistry,
 };
 use bevy_fynix::views::{FrameProps as _, dropdown, frame, label};
-use bevy_fynix::{AnyView, Bevy, ViewExt as _};
+use bevy_fynix::{AnyView, Bevy, Cx, ViewExt as _};
 
 use super::Binding;
+use crate::icons;
 use crate::theme::EditorTheme;
 
 /// Every variant of `value`'s type, if it is an enum at all.
@@ -242,14 +243,24 @@ fn pick(
         })
     };
     let names = variants.clone();
-    dropdown(variants, selected, move |world, at| {
-        if let Some(name) = names.get(at) {
-            switch(world, &binding, name);
-        }
+    AnyView::new(move |cx: &mut Cx<'_, Bevy, EditorTheme>| {
+        let chevron =
+            cx.world.resource::<AssetServer>().load(icons::CHEVRON);
+        cx.build(
+            dropdown(
+                variants,
+                selected,
+                chevron,
+                move |world, at| {
+                    if let Some(name) = names.get(at) {
+                        switch(world, &binding, name);
+                    }
+                },
+            )
+            .min_width(width)
+            .max_width(width),
+        )
     })
-    .min_width(width)
-    .max_width(width)
-    .boxed()
 }
 
 #[cfg(test)]
