@@ -14,6 +14,7 @@ mod enums;
 mod field;
 mod primitive;
 mod text;
+mod tree;
 mod vector;
 
 use core::time::Duration;
@@ -34,6 +35,7 @@ use crate::theme::EditorTheme;
 
 pub use enums::variant_picker;
 pub use field::{Field, Owner};
+pub use tree::{inspector_fields, section, variant_fields};
 
 /// An editor, as the registry stores it: a function from where the
 /// value lives to the view that edits it.

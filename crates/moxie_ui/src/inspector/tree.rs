@@ -4,25 +4,37 @@
 //! A struct with no [`ReflectInspect`] of its own is not a leaf: its
 //! fields become a group, shown under a header that folds them away.
 //! Only a registered type stops the walk and becomes an editable row.
+//!
+//! What a level is made of is structure, and is kept as such: a
+//! level's rows are an [`each`] over the entries the walk finds, so a
+//! list gaining an item builds one row and leaves the rest alone, and
+//! an enum's own fields are a [`keyed`] on its variant, so only they
+//! are built again when it switches. Values ride on bound props, so a
+//! number scrubbed under a focused input rebuilds nothing.
 
 use std::any::TypeId;
 
+use bevy::asset::UntypedAssetId;
 use bevy::ecs::change_detection::Tick;
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::reflect::{PartialReflect, ReflectRef, TypeRegistry};
-use fynix::composer::Composer;
-use fynix::prelude::*;
-use fynix::records::BuildFn;
+use bevy_fynix::tokens::Tone;
+use bevy_fynix::views::{
+    FrameProps as _, button, column, frame, label, row, tint,
+};
+use bevy_fynix::{
+    AnyView, Bevy, ScopedExt as _, Signal, View, ViewExt as _, each,
+    keyed,
+};
 use moxie_asset::type_data;
 
-use bevy::asset::UntypedAssetId;
-
-use super::{Field, FieldRow, Owner, ReflectInspect, enums};
-use crate::elements::{Button, Frame, Icon, Label, TintButton};
-use crate::fold::{self, CHEVRON_SHUT, Foldable, FoldsOn};
-use crate::icons;
-use crate::reactive::{BevyUi, FynixHost};
+use super::{
+    Binding, Field, Owner, ReflectInspect, enums, field_row,
+    variant_picker,
+};
+use crate::fold::{self, Chevron, Foldable, FoldsOn};
+use crate::theme::EditorTheme;
 
 /// Which of an inspected entity's sections were folded shut, keyed by
 /// component and path. A section absent here is open. Goes when the
@@ -100,38 +112,33 @@ pub(crate) fn toggle_section(
     }
 }
 
-/// One row the walk found.
+/// One row the walk found, as far as what makes it a different row.
+/// Paths are relative to the field the walk started at.
 #[derive(Clone, PartialEq)]
 enum Entry {
-    /// A registered widget draws it.
+    /// A registered editor draws it.
     Leaf {
         path: String,
         name: String,
         type_id: TypeId,
     },
-    /// A struct, its fields under a folding header.
-    Group {
-        path: String,
-        name: String,
-        children: Vec<Entry>,
-    },
+    /// A struct, tuple or list, its fields under a folding header.
+    Group { path: String, name: String },
     /// An enum: a variant picker, and the active variant's fields
     /// when it has any.
     Variant {
         path: String,
         name: String,
-        variants: Vec<String>,
-        /// Only unit variants can be picked; see [`enums`].
-        pick: bool,
         /// The active variant is a one-field tuple variant.
         single_tuple_field: bool,
-        children: Vec<Entry>,
+        /// The active variant has fields to show.
+        has_children: bool,
     },
 }
 
 /// The leaf, enum, and single-field-tuple-struct handling shared by
-/// [`push_entry`] and [`push_unnamed`]. `false` leaves a struct or
-/// multi-field tuple struct for the caller.
+/// [`push_entry`] and [`push_unnamed`]. `false` leaves a struct, a
+/// multi-field tuple struct or a list for the caller.
 fn push_common(
     registry: &TypeRegistry,
     value: &dyn PartialReflect,
@@ -151,15 +158,13 @@ fn push_common(
         return true;
     }
 
-    if let Some(variants) = enums::variants(value) {
-        let pick = enums::constructible(value, registry);
+    if enums::variants(value).is_some() {
         out.push(Entry::Variant {
             path: path.to_string(),
             name: name.to_string(),
-            variants,
-            pick,
             single_tuple_field: enums::is_single_tuple_variant(value),
-            children: variant_children(registry, value, path),
+            has_children: !variant_children(registry, value, path)
+                .is_empty(),
         });
         return true;
     }
@@ -182,11 +187,22 @@ fn push_common(
     false
 }
 
-/// One field: a leaf if a widget is registered for its type, a
-/// collapsible group if it is a struct with none of its own, or
-/// dropped if it's neither. A single-field tuple struct has no field
-/// name to head a group with, so it recurses into that field instead;
-/// see [`push_unnamed`].
+/// Whether `value` holds fields of its own to walk.
+fn has_fields(value: &dyn PartialReflect) -> bool {
+    matches!(
+        value.reflect_ref(),
+        ReflectRef::Struct(_)
+            | ReflectRef::TupleStruct(_)
+            | ReflectRef::List(_)
+            | ReflectRef::Array(_)
+    )
+}
+
+/// One field: a leaf if an editor is registered for its type, a
+/// collapsible group if it is a struct or list with none of its own,
+/// or dropped if it's neither. A single-field tuple struct has no
+/// field name to head a group with, so it recurses into that field
+/// instead; see [`push_unnamed`].
 fn push_entry(
     registry: &TypeRegistry,
     value: &dyn PartialReflect,
@@ -198,18 +214,20 @@ fn push_entry(
         return;
     }
 
-    if matches!(
-        value.reflect_ref(),
-        ReflectRef::Struct(_) | ReflectRef::TupleStruct(_)
-    ) {
-        let children = collect_entries(registry, value, path);
-        // An empty struct has nothing to fold away, so it isn't worth
-        // a header of its own.
-        if !children.is_empty() {
+    if has_fields(value) {
+        // An empty struct has nothing to fold away, so it isn't
+        // worth a header of its own. An empty list is how a list
+        // that is about to gain an item looks, so it keeps one.
+        let is_list = matches!(
+            value.reflect_ref(),
+            ReflectRef::List(_) | ReflectRef::Array(_)
+        );
+        if is_list
+            || !collect_entries(registry, value, path).is_empty()
+        {
             out.push(Entry::Group {
                 path: path.to_string(),
                 name: name.to_string(),
-                children,
             });
         }
     }
@@ -230,10 +248,7 @@ fn push_unnamed(
         return;
     }
 
-    if matches!(
-        value.reflect_ref(),
-        ReflectRef::Struct(_) | ReflectRef::TupleStruct(_)
-    ) {
+    if has_fields(value) {
         out.extend(collect_entries(registry, value, path));
     }
 }
@@ -317,9 +332,37 @@ fn collect_entries(
                 );
             }
         }
+        ReflectRef::List(value) => {
+            for (i, item) in value.iter().enumerate() {
+                push_item(registry, item, prefix, i, &mut out);
+            }
+        }
+        ReflectRef::Array(value) => {
+            for (i, item) in value.iter().enumerate() {
+                push_item(registry, item, prefix, i, &mut out);
+            }
+        }
         _ => {}
     }
     out
+}
+
+/// The item at `index` of a list or array at `prefix`, named by its
+/// index.
+fn push_item(
+    registry: &TypeRegistry,
+    item: &dyn PartialReflect,
+    prefix: &str,
+    index: usize,
+    out: &mut Vec<Entry>,
+) {
+    push_entry(
+        registry,
+        item,
+        &format!("{prefix}[{index}]"),
+        &format!("[{index}]"),
+        out,
+    );
 }
 
 fn join(prefix: &str, name: &str) -> String {
@@ -330,8 +373,8 @@ fn join(prefix: &str, name: &str) -> String {
     }
 }
 
-/// The last path segment, what a row labels itself with. The group
-/// above it already said the rest.
+/// The last path segment, what a row labels itself with when nothing
+/// named it. The group above it already said the rest.
 fn leaf_name(path: &str) -> &str {
     path.rsplit('.').next().unwrap_or(path)
 }
@@ -339,19 +382,22 @@ fn leaf_name(path: &str) -> &str {
 /// `field`'s own editable value, when the whole thing reflects a
 /// single, nameless leaf - `Name`, say - rather than a set of fields.
 /// Its card's title stands in for that missing name, so it needs the
-/// same drag source a genuine field's [`FieldName`](super::FieldName)
-/// label carries.
+/// same drag source a genuine field's [`field_name`](
+/// super::field_name) label carries.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the entity inspector's cards take it up"
+    )
+)]
 pub(crate) fn root_leaf(
     world: &World,
     field: &Field,
 ) -> Option<Field> {
     match entries(world, field).as_slice() {
         [Entry::Leaf { path, name, .. }] if name.is_empty() => {
-            Some(if path.is_empty() {
-                field.clone()
-            } else {
-                field.child(path)
-            })
+            Some(field.child(path))
         }
         _ => None,
     }
@@ -376,352 +422,474 @@ fn entries(world: &World, field: &Field) -> Vec<Entry> {
     out
 }
 
-/// Fires when the *shape* under `field` changes: its set of entries.
-///
-/// Values ride on bindings, so a focused number input survives a
-/// value change; a rebuild would despawn it mid-edit. The
-/// tick is checked first so the walk only runs when something
-/// touched the component.
-fn shape_changed(
-    field: Field,
-) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool {
-    let mut seen_tick: Option<Tick> = None;
-    let mut seen_shape: Option<Vec<Entry>> = None;
-    move |WorldNodeRef { world, .. }| {
-        let tick = field.changed_tick(world);
-        if seen_shape.is_some() && tick == seen_tick {
-            return false;
-        }
-        seen_tick = tick;
+/// The entries for the fields of the active variant of the enum at
+/// `field`.
+fn variant_entries(world: &World, field: &Field) -> Vec<Entry> {
+    let mut out = Vec::new();
+    field.read_at(world, |value| {
+        let registry = world.resource::<AppTypeRegistry>().read();
+        out = variant_children(&registry, value, "");
+    });
+    out
+}
 
-        let current = entries(world, &field);
-        let fired = seen_shape.as_ref() != Some(&current);
-        seen_shape = Some(current);
-        fired
-    }
+/// A signal of what `read` makes of `field`, which fires when that
+/// differs from the last time.
+///
+/// The component's tick is checked first, so the read only runs when
+/// something touched the component.
+fn watch<T>(
+    field: Field,
+    read: impl Fn(&World, &Field) -> T + Clone + Send + Sync + 'static,
+) -> Signal<T>
+where
+    T: PartialEq + Send + Sync + 'static,
+{
+    let reader = field.clone();
+    let peek = read.clone();
+    let mut seen: Option<T> = None;
+    let mut seen_tick: Option<Tick> = None;
+    // Whether a write could still land on the tick seen.
+    let mut open = false;
+    Signal::new(
+        move |world: &World| read(world, &reader),
+        move |world: &World| {
+            let tick = field.changed_tick(world);
+            if seen.is_some() && !open && tick == seen_tick {
+                return false;
+            }
+            seen_tick = tick;
+            open = tick == Some(world.read_change_tick());
+
+            let current = peek(world, &field);
+            let fired = seen.as_ref() != Some(&current);
+            seen = Some(current);
+            fired
+        },
+    )
+}
+
+/// The place a section of `field` keeps its fold state.
+fn section_key(field: &Field) -> (Owner, TypeId, String) {
+    (field.owner(), field.root_type(), field.path().to_string())
 }
 
 /// Editable rows for everything reflectable under `root`, which is a
 /// whole component at the empty path.
-pub struct InspectorFields {
-    pub root: Field,
-    /// How many [`Foldable`] bodies this sits under, for `FieldRow`
-    /// to keep its columns aligned. `0` for a call site with none of
-    /// its own.
-    pub depth: u32,
-}
-
-impl Composer<FynixHost> for InspectorFields {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let walked = self.root.clone();
-        let depth = self.depth;
-
-        ui.elem(elem!(
-            Frame,
-            width = percent(100),
-            direction = FlexDirection::Column,
-            row_gap = px(4)
-        ))
-        .watch(shape_changed(self.root), move |ui| {
-            build_entries(
-                ui,
-                &walked,
-                entries(ui.world, &walked),
-                depth,
-            );
-        })
-        .handle()
-    }
-}
-
-fn build_entries(
-    ui: &mut BevyUi,
-    root: &Field,
-    entries: Vec<Entry>,
+///
+/// `depth` is how many [`Foldable`] bodies this sits under, for the
+/// rows to keep their columns aligned. `0` for a call site with none
+/// of its own.
+pub fn inspector_fields(
+    root: Field,
     depth: u32,
-) {
-    for entry in entries {
-        match entry {
-            Entry::Leaf {
-                path,
-                name,
-                type_id,
-            } => build_leaf(ui, root, path, name, type_id, depth),
-            Entry::Group { path, name, .. } => {
-                build_group(ui, root, path, name, depth)
-            }
-            Entry::Variant {
-                path,
-                name,
-                variants,
-                pick,
-                single_tuple_field,
-                children,
-            } => build_variant(
-                ui,
-                root,
-                path,
-                name,
-                variants,
-                pick,
-                single_tuple_field,
-                children,
+) -> impl View<Bevy, EditorTheme> {
+    let walked = root.clone();
+    each::<EditorTheme, Entry, Entry>(
+        watch(root, entries),
+        |entry| entry.clone(),
+        move |entry| entry_view(&walked, entry, depth),
+    )
+    .within(
+        frame()
+            .direction(FlexDirection::Column)
+            .width(percent(100.0))
+            .gap(4.0),
+    )
+}
+
+/// The fields of the active variant of the enum at `field`, built
+/// again when it switches to another.
+///
+/// An enum's own picker is [`variant_picker`]; this is what goes
+/// under it.
+pub fn variant_fields(
+    field: Field,
+    depth: u32,
+) -> impl View<Bevy, EditorTheme> {
+    let walked = field.clone();
+    keyed::<EditorTheme, Option<String>>(
+        watch(field, |world, field| {
+            field.read_at(world, enums::active_in).flatten()
+        }),
+        move |_| {
+            let field = walked.clone();
+            AnyView::<Bevy, EditorTheme>::new(move |cx| {
+                let rows = variant_entries(cx.world, &field)
+                    .iter()
+                    .map(|entry| entry_view(&field, entry, depth))
+                    .collect::<Vec<_>>();
+                cx.build(column(rows).gap(4.0))
+            })
+        },
+    )
+    .within(
+        frame()
+            .direction(FlexDirection::Column)
+            .width(percent(100.0))
+            .gap(0.0),
+    )
+}
+
+/// The view of one entry found under `root`.
+fn entry_view(
+    root: &Field,
+    entry: &Entry,
+    depth: u32,
+) -> AnyView<Bevy, EditorTheme> {
+    match entry {
+        Entry::Leaf {
+            path,
+            name,
+            type_id,
+        } => {
+            let field = root.child(path);
+            field_row(
+                name_label(&field, name),
+                leaf_editor(field, *type_id),
                 depth,
-            ),
+            )
+            .boxed()
         }
+        Entry::Group { path, name } => {
+            let field = root.child(path);
+            section(name.clone(), section_key(&field), move || {
+                inspector_fields(field.clone(), depth + 1).boxed()
+            })
+        }
+        Entry::Variant {
+            path,
+            name,
+            single_tuple_field,
+            has_children,
+        } => variant_entry(
+            root,
+            path,
+            name,
+            *single_tuple_field,
+            *has_children,
+            depth,
+        ),
     }
 }
 
-fn build_leaf(
-    ui: &mut BevyUi,
-    root: &Field,
-    path: String,
-    name: String,
-    type_id: TypeId,
-    depth: u32,
-) {
-    let Some(drawer) = type_data::<ReflectInspect>(ui.world, type_id)
-    else {
-        return;
-    };
+/// A row's label, dimmer than the value it labels: the field name is
+/// a caption, not the content. `None` for a field with no name.
+fn name_label(
+    field: &Field,
+    name: &str,
+) -> Option<AnyView<Bevy, EditorTheme>> {
+    (!name.is_empty()).then(|| {
+        let _ = field;
+        label(name.to_string()).tone(Tone::Dim).wrap(false).boxed()
+    })
+}
 
-    // Dimmer than the value it labels: the field name is a caption,
-    // not the content.
-    let muted = ui.theme.color.text_dim;
-    let label = name;
-    let field = root.child(&path);
-    ui.compose(FieldRow {
-        label,
-        color: muted,
-        bold: false,
-        depth,
-        field: Some(field.clone()),
-        value: move |ui: &mut BevyUi| drawer.build(&field, ui),
-    });
+/// The editor registered for `type_id`, bound to `field`.
+fn leaf_editor(
+    field: Field,
+    type_id: TypeId,
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let view =
+            match type_data::<ReflectInspect>(cx.world, type_id) {
+                Some(editor) => editor.build(Binding::from(field)),
+                None => frame().boxed(),
+            };
+        cx.build(view)
+    })
 }
 
 /// A variant picker, and the active variant's own fields folded
 /// underneath it, if the enum carries data.
-fn build_variant(
-    ui: &mut BevyUi,
+fn variant_entry(
     root: &Field,
-    path: String,
-    name: String,
-    variants: Vec<String>,
-    pick: bool,
+    path: &str,
+    name: &str,
     single_tuple_field: bool,
-    children: Vec<Entry>,
+    has_children: bool,
     depth: u32,
-) {
-    let field = root.child(&path);
-    let muted = ui.theme.color.text_dim;
+) -> AnyView<Bevy, EditorTheme> {
+    let field = root.child(path);
+    let picker = variant_picker(Binding::from(field.clone()));
 
-    if children.is_empty() {
-        let label = leaf_name(&path).to_string();
-        ui.compose(FieldRow {
-            label,
-            color: muted,
-            bold: false,
-            depth,
-            field: Some(field.clone()),
-            value: move |ui: &mut BevyUi| {
-                ui.compose(enums::VariantPicker {
-                    source: &field,
-                    variants,
-                    pick,
-                });
-            },
-        });
-        return;
+    if !has_children {
+        let text = if name.is_empty() {
+            leaf_name(path)
+        } else {
+            name
+        };
+        return field_row(name_label(&field, text), picker, depth)
+            .boxed();
     }
 
     // Nothing named this - the walk's own root, or a single-field
     // tuple struct spliced into it; see `entries` and `push_common`.
     if name.is_empty() {
-        ui.compose(enums::VariantPicker {
-            source: &field,
-            variants,
-            pick,
-        });
-        build_entries(ui, root, children, depth);
-        return;
+        return column((picker, variant_fields(field, depth)))
+            .gap(4.0)
+            .boxed();
     }
 
     // A one-field tuple variant needs no header either, just the
     // fold's usual indent under the picker row.
     if single_tuple_field {
-        let label = name;
-        ui.compose(FieldRow {
-            label,
-            color: muted,
-            bold: false,
-            depth,
-            field: Some(field.clone()),
-            value: move |ui: &mut BevyUi| {
-                ui.compose(enums::VariantPicker {
-                    source: &field,
-                    variants,
-                    pick,
-                });
-            },
-        });
-
-        let root = root.clone();
-        fold::indent(ui, None, move |ui| {
-            build_entries(ui, &root, children.clone(), depth + 1)
-        });
-        return;
+        let head = field_row(name_label(&field, name), picker, depth);
+        return column((
+            head,
+            fold::indent(variant_fields(field, depth + 1)),
+        ))
+        .gap(4.0)
+        .boxed();
     }
 
-    // Re-walked from `field` on every open rather than carried in the
-    // closure, so a section reopened many times never clones stale
-    // data forward. `entries` never wraps `field` itself, so its one
-    // entry is always this same variant.
-    ui.compose(Section::new(
-        name,
-        (root.owner(), root.root_type(), path),
-        move |ui: &mut BevyUi| {
-            let Some(Entry::Variant {
-                variants,
-                pick,
-                children,
-                ..
-            }) = entries(ui.world, &field).into_iter().next()
-            else {
-                return;
-            };
-            ui.compose(enums::VariantPicker {
-                source: &field,
-                variants,
-                pick,
-            });
-            build_entries(ui, &field, children, depth + 1);
-        },
-    ));
-}
-
-fn build_group(
-    ui: &mut BevyUi,
-    root: &Field,
-    path: String,
-    name: String,
-    depth: u32,
-) {
-    let group_field = root.child(&path);
-
-    // Re-walked from `group_field` on every open rather than carried
-    // in the closure, so a section reopened many times never clones
-    // stale data forward.
-    ui.compose(Section::new(
-        name,
-        (root.owner(), root.root_type(), path),
-        move |ui: &mut BevyUi| {
-            let walked = entries(ui.world, &group_field);
-            build_entries(ui, &group_field, walked, depth + 1);
-        },
-    ));
+    let key = section_key(&field);
+    let binding = Binding::from(field.clone());
+    section(name.to_string(), key, move || {
+        column((
+            variant_picker(binding.clone()),
+            variant_fields(field.clone(), depth + 1),
+        ))
+        .gap(4.0)
+        .boxed()
+    })
 }
 
 /// A collapsible section: a header that folds it, and a body indented
-/// under a guide rail.
-pub struct Section<F, H> {
-    pub name: String,
-    pub body: F,
-    /// This section's place in `ClosedSections`, as owner, root type,
-    /// path.
-    pub section: (Owner, TypeId, String),
-    /// Run on the header once it's built, after folding is wired to
-    /// it - for whatever else the header should carry, like a delete
-    /// button. A no-op when left out.
-    pub on_header: H,
+/// under a guide rail. Whether it is open is kept under `key` (owner,
+/// root type, path), so it survives the section being built again.
+pub fn section(
+    name: String,
+    key: (Owner, TypeId, String),
+    body: impl Fn() -> AnyView<Bevy, EditorTheme> + Send + Sync + 'static,
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let (owner, root, path) = key;
+        let open = section_open(cx.world, owner, root, &path);
+        let gap = cx.theme().space.sm;
+        let header = move |chevron: Chevron| {
+            button(
+                row((
+                    chevron.icon(),
+                    label(name).bold(true).wrap(false),
+                ))
+                .align(AlignItems::Center)
+                .gap(gap),
+            )
+            .width(percent(100.0))
+            .justify(JustifyContent::FlexStart)
+            .padding(UiRect::axes(px(4.0), px(3.0)))
+            .radius(4.0)
+            .rules(tint)
+        };
+        cx.build(
+            Foldable::new(header, body)
+                .folds_on(FoldsOn::Header)
+                .open(open)
+                .on_toggle(move |world, open| {
+                    toggle_section(
+                        world,
+                        owner,
+                        root,
+                        path.clone(),
+                        open,
+                    );
+                }),
+        )
+    })
 }
 
-/// [`Section::new`]'s `on_header`: nothing extra on it.
-fn no_header(_: ElementMut<'_, '_, FynixHost, Button>) {}
+#[cfg(test)]
+mod tests {
+    use bevy::ecs::hierarchy::Children;
+    use bevy::text::EditableText;
+    use bevy::ui_widgets::Activate;
 
-impl<F> Section<F, fn(ElementMut<'_, '_, FynixHost, Button>)> {
-    /// A section with nothing extra on its header.
-    pub fn new(
-        name: String,
-        section: (Owner, TypeId, String),
-        body: F,
-    ) -> Self {
-        Self {
-            name,
-            body,
-            section,
-            on_header: no_header,
-        }
+    use super::*;
+    use crate::testing::{self, Kind, Probe};
+
+    fn probe_fields(app: &mut App, probe: Entity) -> Entity {
+        testing::show(
+            app,
+            inspector_fields(Field::of::<Probe>(probe), 0),
+        )
     }
-}
 
-impl<
-    F: BuildFn<FynixHost>,
-    H: for<'u, 'a> FnOnce(ElementMut<'u, 'a, FynixHost, Button>)
-        + Send
-        + Sync
-        + 'static,
-> Composer<FynixHost> for Section<F, H>
-{
-    type Element = Frame;
+    fn probe_mut(app: &mut App, probe: Entity) -> Mut<'_, Probe> {
+        app.world_mut().get_mut::<Probe>(probe).unwrap()
+    }
 
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let Self {
-            name,
-            body,
-            section,
-            on_header,
-        } = self;
-        let (owner, root, path) = section;
-        let open = section_open(ui.world, owner, root, &path);
+    fn rows(app: &App, node: Entity) -> Vec<Entity> {
+        app.world()
+            .get::<Children>(node)
+            .map(|kids| kids.iter().collect())
+            .unwrap_or_default()
+    }
 
-        let muted = ui.theme.color.text_dim;
-        let primary = ui.theme.color.text;
-        ui.compose(Foldable {
-            header: elem!(
-                !TintButton::default(),
-                width = percent(100),
-                height = auto(),
-                justify = JustifyContent::FlexStart,
-                padding = UiRect::axes(px(4), px(3)),
-                radius = px(4),
-                icon = elem!(
-                    Icon,
-                    image = icons::CHEVRON,
-                    color = muted,
-                    rotation = CHEVRON_SHUT
-                ),
-                label = elem!(
-                    Label,
-                    text = name,
-                    color = primary,
-                    bold = true
-                )
-            ),
-            // Nothing else to mean: the whole header folds it.
-            folds_on: FoldsOn::Header,
-            enabled: true,
-            on_header,
-            body,
-            open,
-            on_toggle: move |world: &mut World, open: bool| {
-                toggle_section(
-                    world,
-                    owner,
-                    root,
-                    path.clone(),
-                    open,
-                );
-            },
-        })
-        .handle()
+    fn labels(app: &App, node: Entity) -> Vec<String> {
+        testing::all::<Text>(app, node)
+            .into_iter()
+            .map(|node| {
+                app.world().get::<Text>(node).unwrap().0.clone()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_struct_expands_into_one_row_per_field() {
+        let (mut app, probe) = testing::probe_app();
+        let root = probe_fields(&mut app, probe);
+
+        // One per field of `Probe`, the two groups and the enum
+        // among them.
+        assert_eq!(rows(&app, root).len(), 9);
+        let names = labels(&app, root);
+        for name in [
+            "on", "level", "name", "time", "offset", "size", "inner",
+            "kind", "items", "a", "b",
+        ] {
+            assert!(
+                names.contains(&name.to_string()),
+                "{name} in {names:?}"
+            );
+        }
+        // The nested struct's fields are rows of their own.
+        assert_eq!(
+            testing::all::<EditableText>(&app, root).len(),
+            // level, name, time, offset x3, size x2, inner a and b
+            10
+        );
+    }
+
+    #[test]
+    fn scrubbing_a_number_rebuilds_nothing() {
+        let (mut app, probe) = testing::probe_app();
+        let root = probe_fields(&mut app, probe);
+        let before = testing::below(&app, root);
+
+        let level = testing::field_root(&app, root);
+        testing::drag(&mut app, level, 10.0);
+        testing::drag(&mut app, level, 20.0);
+
+        assert_eq!(probe_mut(&mut app, probe).level, 0.2);
+        assert_eq!(testing::below(&app, root), before);
+    }
+
+    #[test]
+    fn an_enum_switches_its_fields_when_the_variant_changes() {
+        let (mut app, probe) = testing::probe_app();
+        let root = probe_fields(&mut app, probe);
+        let top = rows(&app, root);
+        let fields = |app: &App| {
+            let names = labels(app, root);
+            ["radius", "width", "height"]
+                .into_iter()
+                .filter(|name| names.contains(&name.to_string()))
+                .collect::<Vec<_>>()
+        };
+        assert!(fields(&app).is_empty(), "a unit variant has none");
+
+        probe_mut(&mut app, probe).kind =
+            Kind::Circle { radius: 2.0 };
+        app.update();
+        assert_eq!(fields(&app), ["radius"]);
+        let after_circle = rows(&app, root);
+        assert_eq!(
+            top.iter()
+                .zip(&after_circle)
+                .filter(|(before, after)| before != after)
+                .count(),
+            1,
+            "only the enum's own row is built again"
+        );
+
+        probe_mut(&mut app, probe).kind = Kind::Rect {
+            width: 1.0,
+            height: 2.0,
+        };
+        app.update();
+        assert_eq!(fields(&app), ["width", "height"]);
+        assert_eq!(
+            rows(&app, root),
+            after_circle,
+            "between two variants with fields, its row stays"
+        );
+
+        probe_mut(&mut app, probe).kind = Kind::Dot;
+        app.update();
+        assert!(fields(&app).is_empty());
+    }
+
+    #[test]
+    fn a_list_grows_by_one_row_without_building_the_others() {
+        let (mut app, probe) = testing::probe_app();
+        probe_mut(&mut app, probe).items = vec![1.0, 2.0];
+        let root = probe_fields(&mut app, probe);
+        let inputs = |app: &App| {
+            testing::all::<EditableText>(app, root)
+                .into_iter()
+                .map(|node| {
+                    app.world()
+                        .get::<EditableText>(node)
+                        .unwrap()
+                        .value()
+                        .to_string()
+                })
+                .collect::<Vec<_>>()
+        };
+        let before = testing::below(&app, root);
+        assert_eq!(inputs(&app).len(), 10 + 2);
+        assert!(labels(&app, root).contains(&"[1]".to_string()));
+
+        probe_mut(&mut app, probe).items.push(3.0);
+        app.update();
+
+        assert_eq!(inputs(&app).len(), 10 + 3);
+        assert!(labels(&app, root).contains(&"[2]".to_string()));
+        let after = testing::below(&app, root);
+        assert!(
+            before.iter().all(|node| after.contains(node)),
+            "every node there before is still there"
+        );
+    }
+
+    #[test]
+    fn a_section_remembers_being_shut() {
+        let (mut app, probe) = testing::probe_app();
+        let root = probe_fields(&mut app, probe);
+        let header =
+            testing::all::<bevy::ui_widgets::Button>(&app, root)[0];
+
+        app.world_mut().trigger(Activate { entity: header });
+        app.update();
+
+        assert!(!section_open(
+            app.world(),
+            Owner::Entity(probe),
+            TypeId::of::<Probe>(),
+            "inner"
+        ));
+        assert!(section_open(
+            app.world(),
+            Owner::Entity(probe),
+            TypeId::of::<Probe>(),
+            "kind"
+        ));
+    }
+
+    #[test]
+    fn a_nameless_leaf_is_a_root_leaf() {
+        let mut app = testing::app();
+        let named = app.world_mut().spawn(Name::new("cube")).id();
+        let probe = app.world_mut().spawn(Probe::default()).id();
+
+        assert_eq!(
+            root_leaf(app.world(), &Field::of::<Name>(named)),
+            Some(Field::of::<Name>(named))
+        );
+        assert_eq!(
+            root_leaf(app.world(), &Field::of::<Probe>(probe)),
+            None
+        );
     }
 }

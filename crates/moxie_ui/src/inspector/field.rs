@@ -63,9 +63,15 @@ impl Field {
     }
 
     /// The leaf one step further in, which is how the walk descends.
+    ///
+    /// `name` may be a field, a tuple index, or an index into a list
+    /// in brackets, as in `[2]`. An empty one is this field itself.
     pub fn child(&self, name: &str) -> Self {
-        let path = if self.path.is_empty() {
-            name.to_string()
+        let joined = self.path.is_empty()
+            || name.is_empty()
+            || name.starts_with('[');
+        let path = if joined {
+            format!("{}{name}", self.path)
         } else {
             format!("{}.{name}", self.path)
         };
@@ -74,16 +80,6 @@ impl Field {
             owner: self.owner,
             root: self.root,
             path: path.into_boxed_str(),
-        }
-    }
-
-    /// The item at `index` of the list or array this is, which is how
-    /// the walk descends into one.
-    pub fn item(&self, index: usize) -> Self {
-        Self {
-            owner: self.owner,
-            root: self.root,
-            path: format!("{}[{index}]", self.path).into_boxed_str(),
         }
     }
 

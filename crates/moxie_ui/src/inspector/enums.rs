@@ -50,7 +50,6 @@ pub(super) fn variants(
 
 /// Whether `value`'s active variant is a one-field tuple variant, the
 /// enum counterpart of a single-field tuple struct.
-#[expect(dead_code, reason = "the tree walk takes it up next")]
 pub(super) fn is_single_tuple_variant(
     value: &dyn PartialReflect,
 ) -> bool {
@@ -146,7 +145,13 @@ pub(super) fn active(
     binding: &Binding,
     world: &World,
 ) -> Option<String> {
-    let value = binding.get(world)?;
+    active_in(&*binding.get(world)?)
+}
+
+/// The name of the variant `value` is on, if it is an enum.
+pub(super) fn active_in(
+    value: &dyn PartialReflect,
+) -> Option<String> {
     let ReflectRef::Enum(value) = value.reflect_ref() else {
         return None;
     };
