@@ -247,7 +247,7 @@ fn draggable(
 mod tests {
     use super::*;
     use crate::inspector::Field;
-    use crate::testing::{self, Probe};
+    use crate::tests::{self, Probe};
 
     /// What the host's checks answer, in the world.
     #[derive(Resource, Default)]
@@ -270,7 +270,7 @@ mod tests {
         app.world_mut().resource_mut::<FieldHasAction>().0 =
             Some(has_action);
         let field = Field::of::<Probe>(probe).child(path);
-        testing::show(app, field_name(Some(field), path))
+        tests::show(app, field_name(Some(field), path))
     }
 
     fn ink(app: &App, node: Entity) -> Color {
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn a_has_action_field_turns_its_label_accent() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let node = named(&mut app, probe, "level");
         let theme = EditorTheme::default();
         assert_eq!(ink(&app, node), theme.color.text);
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn a_label_keeps_its_own_colour_when_the_action_goes() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         app.init_resource::<Host>();
         app.world_mut().resource_mut::<FieldAnimatable>().0 =
             Some(animatable);
@@ -305,7 +305,7 @@ mod tests {
             Some(has_action);
         let red = EditorTheme::default().palette.red;
         let field = Field::of::<Probe>(probe).child("level");
-        let node = testing::show(
+        let node = tests::show(
             &mut app,
             field_name(Some(field), "X").ink(red),
         );
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn only_an_animatable_field_is_a_drag_source() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let plain = named(&mut app, probe, "name");
         assert!(app.world().get::<EntityCursor>(plain).is_none());
 
@@ -331,10 +331,10 @@ mod tests {
 
     #[test]
     fn dragging_a_label_carries_its_field_with_a_ghost() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let node = named(&mut app, probe, "level");
 
-        testing::drag_start(&mut app, node, PointerButton::Primary);
+        tests::drag_start(&mut app, node, PointerButton::Primary);
         let dragged = app.world().resource::<DraggedField>();
         assert_eq!(
             dragged.field,
@@ -343,7 +343,7 @@ mod tests {
         let ghost = dragged.ghost.expect("a ghost");
         assert!(app.world().get::<Node>(ghost).is_some());
 
-        testing::drag_stop(&mut app, node);
+        tests::drag_stop(&mut app, node);
         let dragged = app.world().resource::<DraggedField>();
         assert_eq!(dragged.field, None);
         assert!(app.world().get_entity(ghost).is_err());
@@ -351,10 +351,10 @@ mod tests {
 
     #[test]
     fn another_button_does_not_start_a_drag() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let node = named(&mut app, probe, "level");
 
-        testing::drag_start(&mut app, node, PointerButton::Secondary);
+        tests::drag_start(&mut app, node, PointerButton::Secondary);
 
         assert_eq!(
             app.world().resource::<DraggedField>().field,

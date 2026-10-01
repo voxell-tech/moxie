@@ -709,10 +709,10 @@ mod tests {
     use bevy::ui_widgets::Activate;
 
     use super::*;
-    use crate::testing::{self, Kind, Probe};
+    use crate::tests::{self, Kind, Probe};
 
     fn probe_fields(app: &mut App, probe: Entity) -> Entity {
-        testing::show(
+        tests::show(
             app,
             inspector_fields(Field::of::<Probe>(probe), 0),
         )
@@ -730,7 +730,7 @@ mod tests {
     }
 
     fn labels(app: &App, node: Entity) -> Vec<String> {
-        testing::all::<Text>(app, node)
+        tests::all::<Text>(app, node)
             .into_iter()
             .map(|node| {
                 app.world().get::<Text>(node).unwrap().0.clone()
@@ -740,7 +740,7 @@ mod tests {
 
     #[test]
     fn a_struct_expands_into_one_row_per_field() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let root = probe_fields(&mut app, probe);
 
         // One per field of `Probe`, the two groups and the enum
@@ -758,7 +758,7 @@ mod tests {
         }
         // The nested struct's fields are rows of their own.
         assert_eq!(
-            testing::all::<EditableText>(&app, root).len(),
+            tests::all::<EditableText>(&app, root).len(),
             // level, name, time, offset x3, size x2, inner a and b
             10
         );
@@ -766,21 +766,21 @@ mod tests {
 
     #[test]
     fn scrubbing_a_number_rebuilds_nothing() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let root = probe_fields(&mut app, probe);
-        let before = testing::below(&app, root);
+        let before = tests::below(&app, root);
 
-        let level = testing::field_root(&app, root);
-        testing::drag(&mut app, level, 10.0);
-        testing::drag(&mut app, level, 20.0);
+        let level = tests::field_root(&app, root);
+        tests::drag(&mut app, level, 10.0);
+        tests::drag(&mut app, level, 20.0);
 
         assert_eq!(probe_mut(&mut app, probe).level, 0.2);
-        assert_eq!(testing::below(&app, root), before);
+        assert_eq!(tests::below(&app, root), before);
     }
 
     #[test]
     fn an_enum_switches_its_fields_when_the_variant_changes() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let root = probe_fields(&mut app, probe);
         let top = rows(&app, root);
         let fields = |app: &App| {
@@ -825,11 +825,11 @@ mod tests {
 
     #[test]
     fn a_list_grows_by_one_row_without_building_the_others() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         probe_mut(&mut app, probe).items = vec![1.0, 2.0];
         let root = probe_fields(&mut app, probe);
         let inputs = |app: &App| {
-            testing::all::<EditableText>(app, root)
+            tests::all::<EditableText>(app, root)
                 .into_iter()
                 .map(|node| {
                     app.world()
@@ -840,7 +840,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         };
-        let before = testing::below(&app, root);
+        let before = tests::below(&app, root);
         assert_eq!(inputs(&app).len(), 10 + 2);
         assert!(labels(&app, root).contains(&"[1]".to_string()));
 
@@ -849,7 +849,7 @@ mod tests {
 
         assert_eq!(inputs(&app).len(), 10 + 3);
         assert!(labels(&app, root).contains(&"[2]".to_string()));
-        let after = testing::below(&app, root);
+        let after = tests::below(&app, root);
         assert!(
             before.iter().all(|node| after.contains(node)),
             "every node there before is still there"
@@ -858,10 +858,10 @@ mod tests {
 
     #[test]
     fn a_section_remembers_being_shut() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let root = probe_fields(&mut app, probe);
         let header =
-            testing::all::<bevy::ui_widgets::Button>(&app, root)[0];
+            tests::all::<bevy::ui_widgets::Button>(&app, root)[0];
 
         app.world_mut().trigger(Activate { entity: header });
         app.update();
@@ -882,7 +882,7 @@ mod tests {
 
     #[test]
     fn a_nameless_leaf_is_a_root_leaf() {
-        let mut app = testing::app();
+        let mut app = tests::app();
         let named = app.world_mut().spawn(Name::new("cube")).id();
         let probe = app.world_mut().spawn(Probe::default()).id();
 

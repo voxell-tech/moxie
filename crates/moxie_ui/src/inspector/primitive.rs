@@ -76,7 +76,7 @@ mod tests {
 
     use super::*;
     use crate::inspector::Field;
-    use crate::testing::{self, Probe};
+    use crate::tests::{self, Probe};
 
     fn probe_field(app: &mut App, path: &str) -> (Entity, Binding) {
         let probe = app.world_mut().spawn(Probe::default()).id();
@@ -90,9 +90,9 @@ mod tests {
 
     #[test]
     fn a_checkbox_shows_follows_and_writes_the_world() {
-        let (mut app, _) = testing::probe_app();
+        let (mut app, _) = tests::probe_app();
         let (probe, binding) = probe_field(&mut app, "on");
-        let node = testing::show(&mut app, bool::build(binding));
+        let node = tests::show(&mut app, bool::build(binding));
         let checked =
             |app: &App| app.world().get::<Checked>(node).is_some();
         assert!(!checked(&app));
@@ -113,47 +113,47 @@ mod tests {
 
     #[test]
     fn a_number_shows_follows_and_scrubs_the_world() {
-        let (mut app, _) = testing::probe_app();
+        let (mut app, _) = tests::probe_app();
         let (probe, binding) = probe_field(&mut app, "level");
         app.world_mut().get_mut::<Probe>(probe).unwrap().level = 2.5;
-        let root = testing::show(&mut app, f32::build(binding));
-        assert_eq!(testing::inputs(&app, root), ["2.5"]);
+        let root = tests::show(&mut app, f32::build(binding));
+        assert_eq!(tests::inputs(&app, root), ["2.5"]);
 
         app.world_mut().get_mut::<Probe>(probe).unwrap().level = 4.0;
         app.update();
-        assert_eq!(testing::inputs(&app, root), ["4"]);
+        assert_eq!(tests::inputs(&app, root), ["4"]);
 
-        let field = testing::field_root(&app, root);
-        testing::drag(&mut app, field, 10.0);
+        let field = tests::field_root(&app, root);
+        tests::drag(&mut app, field, 10.0);
         assert_eq!(probe_of(&app, probe).level, 4.1);
-        assert_eq!(testing::inputs(&app, root), ["4.1"]);
+        assert_eq!(tests::inputs(&app, root), ["4.1"]);
     }
 
     #[test]
     fn scrubbing_a_number_rebuilds_nothing() {
-        let (mut app, _) = testing::probe_app();
+        let (mut app, _) = tests::probe_app();
         let (_, binding) = probe_field(&mut app, "level");
-        let root = testing::show(&mut app, f32::build(binding));
-        let before = testing::below(&app, root);
+        let root = tests::show(&mut app, f32::build(binding));
+        let before = tests::below(&app, root);
 
-        let field = testing::field_root(&app, root);
-        testing::drag(&mut app, field, 10.0);
-        testing::drag(&mut app, field, 20.0);
+        let field = tests::field_root(&app, root);
+        tests::drag(&mut app, field, 10.0);
+        tests::drag(&mut app, field, 20.0);
 
-        assert_eq!(testing::below(&app, root), before);
+        assert_eq!(tests::below(&app, root), before);
     }
 
     #[test]
     fn a_duration_is_edited_as_seconds() {
-        let (mut app, _) = testing::probe_app();
+        let (mut app, _) = tests::probe_app();
         let (probe, binding) = probe_field(&mut app, "time");
         app.world_mut().get_mut::<Probe>(probe).unwrap().time =
             Duration::from_millis(1500);
-        let root = testing::show(&mut app, Duration::build(binding));
-        assert_eq!(testing::inputs(&app, root), ["1.5"]);
+        let root = tests::show(&mut app, Duration::build(binding));
+        assert_eq!(tests::inputs(&app, root), ["1.5"]);
 
-        let field = testing::field_root(&app, root);
-        testing::drag(&mut app, field, -1000.0);
+        let field = tests::field_root(&app, root);
+        tests::drag(&mut app, field, -1000.0);
         assert_eq!(
             probe_of(&app, probe).time,
             Duration::from_secs(0)

@@ -653,7 +653,7 @@ mod tests {
 
     use super::*;
     use crate::inspector::InspectAppExt as _;
-    use crate::testing::{self, Probe};
+    use crate::tests::{self, Probe};
 
     /// A resource with one field to edit.
     #[derive(Resource, Reflect, Default)]
@@ -663,11 +663,11 @@ mod tests {
     }
 
     fn inputs(app: &App, root: Entity) -> Vec<String> {
-        testing::inputs(app, root)
+        tests::inputs(app, root)
     }
 
     fn labels(app: &App, root: Entity) -> Vec<String> {
-        testing::all::<Text>(app, root)
+        tests::all::<Text>(app, root)
             .into_iter()
             .map(|node| {
                 app.world().get::<Text>(node).unwrap().0.clone()
@@ -677,8 +677,8 @@ mod tests {
 
     #[test]
     fn a_component_inspector_follows_its_component_in_and_out() {
-        let (mut app, probe) = testing::probe_app();
-        let root = testing::show(
+        let (mut app, probe) = tests::probe_app();
+        let root = tests::show(
             &mut app,
             component_inspector_of::<Probe>(probe),
         );
@@ -699,11 +699,11 @@ mod tests {
 
     #[test]
     fn a_resource_inspector_follows_its_resource_in_and_out() {
-        let mut app = testing::app();
+        let mut app = tests::app();
         app.register_type::<Gain>()
             .insert_resource(Gain { amount: 3.0 });
         let root =
-            testing::show(&mut app, resource_inspector_of::<Gain>());
+            tests::show(&mut app, resource_inspector_of::<Gain>());
         assert_eq!(inputs(&app, root), ["3"]);
 
         app.world_mut().remove_resource::<Gain>();
@@ -723,9 +723,9 @@ mod tests {
 
     #[test]
     fn an_entity_inspector_has_a_card_per_inspectable_component() {
-        let mut app = testing::app();
+        let mut app = tests::app();
         let entity = cube(&mut app);
-        let root = testing::show(&mut app, entity_inspector(entity));
+        let root = tests::show(&mut app, entity_inspector(entity));
 
         let names = labels(&app, root);
         assert!(names.contains(&"Name".to_string()), "{names:?}");
@@ -739,10 +739,10 @@ mod tests {
 
     #[test]
     fn a_component_added_builds_its_card_and_leaves_the_others() {
-        let mut app = testing::app();
+        let mut app = tests::app();
         let entity = cube(&mut app);
-        let root = testing::show(&mut app, entity_inspector(entity));
-        let before = testing::below(&app, root);
+        let root = tests::show(&mut app, entity_inspector(entity));
+        let before = tests::below(&app, root);
 
         app.world_mut()
             .entity_mut(entity)
@@ -752,7 +752,7 @@ mod tests {
         assert!(
             labels(&app, root).contains(&"Visibility".to_string())
         );
-        let after = testing::below(&app, root);
+        let after = tests::below(&app, root);
         // The add menu rebuilds as its list shortens, so the cards
         // are what has to be there still.
         assert!(
@@ -768,9 +768,9 @@ mod tests {
 
     #[test]
     fn the_add_menu_lists_what_is_left_and_adds_what_is_picked() {
-        let mut app = testing::app();
+        let mut app = tests::app();
         let entity = cube(&mut app);
-        let root = testing::show(&mut app, entity_inspector(entity));
+        let root = tests::show(&mut app, entity_inspector(entity));
 
         let options = labels(&app, root);
         assert!(options.contains(&"Add component".to_string()));
@@ -779,10 +779,10 @@ mod tests {
             "{options:?}"
         );
 
-        let item = testing::all::<MenuItem>(&app, root)
+        let item = tests::all::<MenuItem>(&app, root)
             .into_iter()
             .find(|item| {
-                testing::all::<Text>(&app, *item).iter().any(|text| {
+                tests::all::<Text>(&app, *item).iter().any(|text| {
                     app.world().get::<Text>(*text).unwrap().0
                         == "Cameras / Camera 2d"
                 })
@@ -803,8 +803,8 @@ mod tests {
 
     #[test]
     fn a_card_folds_its_body_and_remembers_it() {
-        let (mut app, probe) = testing::probe_app();
-        let root = testing::show(
+        let (mut app, probe) = tests::probe_app();
+        let root = tests::show(
             &mut app,
             root_card(
                 Field::of::<Probe>(probe),
@@ -814,7 +814,7 @@ mod tests {
         );
         assert!(app.world().get::<Open>(root).is_some());
         assert_eq!(inputs(&app, root).len(), 10);
-        let header = testing::all::<Button>(&app, root)[0];
+        let header = tests::all::<Button>(&app, root)[0];
 
         app.world_mut().trigger(Activate { entity: header });
         app.update();
@@ -835,7 +835,7 @@ mod tests {
 
     #[test]
     fn a_card_built_again_comes_back_shut() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         toggle_section(
             app.world_mut(),
             crate::inspector::Owner::Entity(probe),
@@ -843,7 +843,7 @@ mod tests {
             String::new(),
             false,
         );
-        let root = testing::show(
+        let root = tests::show(
             &mut app,
             root_card(
                 Field::of::<Probe>(probe),
@@ -858,12 +858,12 @@ mod tests {
 
     #[test]
     fn a_rename_row_edits_what_the_card_is_called() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         app.world_mut().get_mut::<Probe>(probe).unwrap().name =
             "ada".into();
         let rename =
             Binding::from(Field::of::<Probe>(probe).child("name"));
-        let root = testing::show(
+        let root = tests::show(
             &mut app,
             root_card(
                 Field::of::<Probe>(probe),
@@ -875,14 +875,14 @@ mod tests {
         assert_eq!(labels(&app, root)[1], "Name");
         assert_eq!(inputs(&app, root)[0], "ada");
         assert!(
-            testing::all::<EditableText>(&app, root).len() == 11,
+            tests::all::<EditableText>(&app, root).len() == 11,
             "the rename input comes first, then the ten fields"
         );
     }
 
     #[test]
     fn an_essential_component_cannot_be_removed() {
-        let mut app = testing::app();
+        let mut app = tests::app();
         let entity = app
             .world_mut()
             .spawn((Transform::default(), Camera2d))
@@ -905,7 +905,7 @@ mod tests {
 
     #[test]
     fn a_section_is_named_by_its_type_unless_it_says_otherwise() {
-        let mut app = testing::app();
+        let mut app = tests::app();
         app.register_inspectable::<Probe>();
         let registry =
             app.world().resource::<AppTypeRegistry>().read();

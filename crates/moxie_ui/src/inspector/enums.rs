@@ -258,12 +258,12 @@ mod tests {
 
     use super::*;
     use crate::inspector::Field;
-    use crate::testing::{self, Kind, Probe};
+    use crate::tests::{self, Kind, Probe};
 
     fn kind_picker(app: &mut App, probe: Entity) -> Entity {
         let binding =
             Binding::from(Field::of::<Probe>(probe).child("kind"));
-        testing::show(app, variant_picker(binding))
+        tests::show(app, variant_picker(binding))
     }
 
     fn kind(app: &App, probe: Entity) -> Kind {
@@ -272,17 +272,17 @@ mod tests {
 
     /// The label in the shut control, which comes first.
     fn shown(app: &App, root: Entity) -> String {
-        let first = testing::all::<Text>(app, root)[0];
+        let first = tests::all::<Text>(app, root)[0];
         app.world().get::<Text>(first).unwrap().0.clone()
     }
 
     #[test]
     fn it_lists_every_variant_and_shows_the_active_one() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let root = kind_picker(&mut app, probe);
         assert_eq!(shown(&app, root), "Dot");
 
-        let texts: Vec<_> = testing::all::<Text>(&app, root)
+        let texts: Vec<_> = tests::all::<Text>(&app, root)
             .into_iter()
             .map(|node| {
                 app.world().get::<Text>(node).unwrap().0.clone()
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn it_follows_the_world_and_picking_writes_it() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let root = kind_picker(&mut app, probe);
 
         app.world_mut().get_mut::<Probe>(probe).unwrap().kind =
@@ -303,7 +303,7 @@ mod tests {
         assert_eq!(shown(&app, root), "Circle");
 
         let rows =
-            testing::all::<bevy::ui_widgets::MenuItem>(&app, root);
+            tests::all::<bevy::ui_widgets::MenuItem>(&app, root);
         app.world_mut().trigger(Activate { entity: rows[2] });
         app.update();
 
@@ -320,10 +320,10 @@ mod tests {
 
     #[test]
     fn a_value_that_is_not_an_enum_is_an_empty_node() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let binding =
             Binding::from(Field::of::<Probe>(probe).child("level"));
-        let root = testing::show(&mut app, variant_picker(binding));
-        assert!(testing::below(&app, root).is_empty());
+        let root = tests::show(&mut app, variant_picker(binding));
+        assert!(tests::below(&app, root).is_empty());
     }
 }

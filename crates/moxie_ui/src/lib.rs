@@ -19,7 +19,7 @@ pub mod icons;
 pub mod inspector;
 pub mod layout;
 #[cfg(test)]
-mod testing;
+mod tests;
 pub mod theme;
 pub mod widgets;
 
@@ -51,34 +51,5 @@ impl Plugin for MoxieUiPlugin {
         .init_resource::<AssetTypes>()
         .init_resource::<FoundAssets>()
         .init_resource::<AssetDragging>();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use bevy::time::TimePlugin;
-    use bevy_fynix::views::{button, ghost, label, row};
-    use bevy_fynix::{Bevy, ScopedExt as _, View, mount};
-
-    use super::*;
-
-    fn panel() -> impl View<Bevy, EditorTheme> {
-        row((label("moxie"), button(label("go")).rules(ghost)))
-    }
-
-    #[test]
-    fn plugin_themes_a_mounted_view() {
-        let mut app = App::new();
-        app.add_plugins((TimePlugin, MoxieUiPlugin));
-        mount::<EditorTheme>(app.world_mut(), panel());
-        app.update();
-
-        let mut labels =
-            app.world_mut().query::<(&Text, &TextColor)>();
-        let (_, color) = labels
-            .iter(app.world())
-            .find(|(text, _)| text.0 == "moxie")
-            .unwrap();
-        assert_eq!(color.0, EditorTheme::default().color.text);
     }
 }

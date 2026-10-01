@@ -150,12 +150,12 @@ vector!(Quat, f32, ["x", "y", "z", "w"]);
 mod tests {
     use super::*;
     use crate::inspector::Field;
-    use crate::testing::{self, Probe};
+    use crate::tests::{self, Probe};
 
     fn offset_editor(app: &mut App, probe: Entity) -> Entity {
         let binding =
             Binding::from(Field::of::<Probe>(probe).child("offset"));
-        testing::show(app, Vec3::build(binding))
+        tests::show(app, Vec3::build(binding))
     }
 
     fn offset(app: &App, probe: Entity) -> Vec3 {
@@ -164,41 +164,40 @@ mod tests {
 
     #[test]
     fn a_vector_is_one_input_per_axis_and_follows_the_world() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         app.world_mut().get_mut::<Probe>(probe).unwrap().offset =
             Vec3::new(1.0, 2.0, 3.0);
         let root = offset_editor(&mut app, probe);
-        assert_eq!(testing::inputs(&app, root), ["1", "2", "3"]);
+        assert_eq!(tests::inputs(&app, root), ["1", "2", "3"]);
 
         app.world_mut().get_mut::<Probe>(probe).unwrap().offset.y =
             5.5;
         app.update();
-        assert_eq!(testing::inputs(&app, root), ["1", "5.5", "3"]);
+        assert_eq!(tests::inputs(&app, root), ["1", "5.5", "3"]);
     }
 
     #[test]
     fn scrubbing_one_axis_writes_that_axis_alone() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         app.world_mut().get_mut::<Probe>(probe).unwrap().offset =
             Vec3::new(1.0, 2.0, 3.0);
         let root = offset_editor(&mut app, probe);
 
-        let z =
-            testing::all::<bevy::text::EditableText>(&app, root)[2];
+        let z = tests::all::<bevy::text::EditableText>(&app, root)[2];
         let z = app.world().get::<ChildOf>(z).unwrap().parent();
-        testing::drag(&mut app, z, 10.0);
+        tests::drag(&mut app, z, 10.0);
 
         assert_eq!(offset(&app, probe), Vec3::new(1.0, 2.0, 3.1));
     }
 
     #[test]
     fn the_letters_are_tinted_by_axis() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         let root = offset_editor(&mut app, probe);
         let theme = EditorTheme::default();
 
         let letters: Vec<(String, Color)> =
-            testing::all::<Text>(&app, root)
+            tests::all::<Text>(&app, root)
                 .into_iter()
                 .map(|node| {
                     let world = app.world();
@@ -221,16 +220,16 @@ mod tests {
 
     #[test]
     fn an_unsigned_vector_is_whole_numbers_held_at_zero() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         app.world_mut().get_mut::<Probe>(probe).unwrap().size =
             UVec2::new(4, 8);
         let binding =
             Binding::from(Field::of::<Probe>(probe).child("size"));
-        let root = testing::show(&mut app, UVec2::build(binding));
-        assert_eq!(testing::inputs(&app, root), ["4", "8"]);
+        let root = tests::show(&mut app, UVec2::build(binding));
+        assert_eq!(tests::inputs(&app, root), ["4", "8"]);
 
-        let x = testing::field_root(&app, root);
-        testing::drag(&mut app, x, -50.0);
+        let x = tests::field_root(&app, root);
+        tests::drag(&mut app, x, -50.0);
         let size = app.world().get::<Probe>(probe).unwrap().size;
         assert_eq!(size, UVec2::new(0, 8));
     }

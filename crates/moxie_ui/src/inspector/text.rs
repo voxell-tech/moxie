@@ -43,34 +43,34 @@ impl Inspect for Name {
 mod tests {
     use super::*;
     use crate::inspector::Field;
-    use crate::testing::{self, Probe};
+    use crate::tests::{self, Probe};
 
     #[test]
     fn a_text_field_shows_and_follows_the_world() {
-        let (mut app, probe) = testing::probe_app();
+        let (mut app, probe) = tests::probe_app();
         app.world_mut().get_mut::<Probe>(probe).unwrap().name =
             "ada".into();
         let binding =
             Binding::from(Field::of::<Probe>(probe).child("name"));
-        let root = testing::show(&mut app, String::build(binding));
-        assert_eq!(testing::inputs(&app, root), ["ada"]);
+        let root = tests::show(&mut app, String::build(binding));
+        assert_eq!(tests::inputs(&app, root), ["ada"]);
 
         app.world_mut().get_mut::<Probe>(probe).unwrap().name =
             "grace".into();
         app.update();
-        assert_eq!(testing::inputs(&app, root), ["grace"]);
+        assert_eq!(tests::inputs(&app, root), ["grace"]);
     }
 
     #[test]
     fn a_name_is_edited_as_its_text() {
-        let mut app = testing::app();
+        let mut app = tests::app();
         let entity = app.world_mut().spawn(Name::new("cube")).id();
         let binding = Binding::from(Field::of::<Name>(entity));
-        let root = testing::show(&mut app, Name::build(binding));
-        assert_eq!(testing::inputs(&app, root), ["cube"]);
+        let root = tests::show(&mut app, Name::build(binding));
+        assert_eq!(tests::inputs(&app, root), ["cube"]);
 
         app.world_mut().entity_mut(entity).insert(Name::new("cone"));
         app.update();
-        assert_eq!(testing::inputs(&app, root), ["cone"]);
+        assert_eq!(tests::inputs(&app, root), ["cone"]);
     }
 }

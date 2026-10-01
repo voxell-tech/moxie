@@ -18,7 +18,8 @@ use bevy::text::EditableText;
 use bevy::time::{TimePlugin, TimeUpdateStrategy};
 use bevy::ui::UiScale;
 use bevy::window::PrimaryWindow;
-use bevy_fynix::{View, mount};
+use bevy_fynix::views::{button, ghost, label, row};
+use bevy_fynix::{Bevy, ScopedExt as _, View, mount};
 
 use crate::MoxieUiPlugin;
 use crate::theme::EditorTheme;
@@ -203,4 +204,23 @@ pub fn probe_app() -> (App, Entity) {
     app.register_type::<Probe>();
     let probe = app.world_mut().spawn(Probe::default()).id();
     (app, probe)
+}
+
+fn panel() -> impl View<Bevy, EditorTheme> {
+    row((label("moxie"), button(label("go")).rules(ghost)))
+}
+
+#[test]
+fn plugin_themes_a_mounted_view() {
+    let mut app = App::new();
+    app.add_plugins((TimePlugin, MoxieUiPlugin));
+    mount::<EditorTheme>(app.world_mut(), panel());
+    app.update();
+
+    let mut labels = app.world_mut().query::<(&Text, &TextColor)>();
+    let (_, color) = labels
+        .iter(app.world())
+        .find(|(text, _)| text.0 == "moxie")
+        .unwrap();
+    assert_eq!(color.0, EditorTheme::default().color.text);
 }
