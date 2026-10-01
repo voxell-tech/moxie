@@ -3,7 +3,6 @@
 use bevy::ecs::resource::Resource;
 use bevy::ecs::world::World;
 use bevy::prelude::*;
-use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_fynix::tokens::{
     Motion, MotionTokens, SpacingTokens, SurfaceTokens, TextTokens,
     Tone,
@@ -58,41 +57,6 @@ pub fn state_of<S: States>() -> Signal<Option<S>> {
     changing(|world: &World| {
         world.get_resource::<State<S>>().map(|s| s.get().clone())
     })
-}
-
-/// Upstream: a cursor icon that wins over every hovered node's own,
-/// such as a grab held for the length of a drag.
-#[derive(Resource, Default, Debug, PartialEq, Eq)]
-pub struct OverrideCursor(pub Option<SystemCursorIcon>);
-
-/// Upstream: applies [`OverrideCursor`] to the primary window after
-/// the hover cursor has been set.
-pub struct OverrideCursorPlugin;
-
-impl Plugin for OverrideCursorPlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<OverrideCursor>()
-            .add_systems(Update, apply_override);
-    }
-}
-
-fn apply_override(
-    cursor: Res<OverrideCursor>,
-    windows: Query<
-        (Entity, Option<&CursorIcon>),
-        With<PrimaryWindow>,
-    >,
-    mut commands: Commands,
-) {
-    let Some(icon) = cursor.0 else {
-        return;
-    };
-    let wanted = CursorIcon::System(icon);
-    for (window, current) in &windows {
-        if current != Some(&wanted) {
-            commands.entity(window).insert(wanted.clone());
-        }
-    }
 }
 
 /// Upstream: the width of a [`Rail`]'s line.
@@ -518,20 +482,5 @@ mod tests {
         assert!(!signal.changed(&world));
         world.resource_mut::<Pair>().0 = 5;
         assert!(signal.changed(&world));
-    }
-
-    #[test]
-    fn override_cursor_wins_on_the_window() {
-        let mut app = App::new();
-        app.add_plugins(OverrideCursorPlugin);
-        let window = app.world_mut().spawn(PrimaryWindow).id();
-        app.world_mut().resource_mut::<OverrideCursor>().0 =
-            Some(SystemCursorIcon::Grabbing);
-        app.update();
-
-        assert_eq!(
-            app.world().get::<CursorIcon>(window),
-            Some(&CursorIcon::System(SystemCursorIcon::Grabbing))
-        );
     }
 }

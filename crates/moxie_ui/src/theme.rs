@@ -142,8 +142,8 @@ pub struct Spacing {
     /// A menu's own corner - concentric with `menu_item_radius`
     /// across `menu_padding`; see `toolbars.md` in the Apple HIG.
     pub menu_radius: f32,
-    /// How close a menu is allowed to sit to the window's edge before
-    /// it flips to the other side.
+    /// How close a menu is allowed to sit to the window's edge
+    /// before it flips to the other side.
     pub menu_margin: f32,
     /// A component card's own corner, in the entity inspector.
     pub card_radius: f32,
@@ -257,6 +257,9 @@ impl TextTokens for EditorTheme {
             Tone::Faint => self.color.text_faint,
             Tone::Accent => self.color.accent,
             Tone::Critical => self.color.critical,
+            // The accent is light, so text on it is the ground
+            // colour.
+            Tone::OnAccent => self.color.bg,
         }
     }
 

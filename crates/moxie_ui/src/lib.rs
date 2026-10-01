@@ -2,7 +2,8 @@
 #![allow(
     clippy::type_complexity,
     clippy::too_many_arguments,
-    reason = "Inherent to Bevy ECS: systems take many params and query tuples."
+    reason = "Inherent to Bevy ECS: systems take many params and \
+              query tuples."
 )]
 
 // Not ported yet: asset_picker
@@ -40,7 +41,6 @@ impl Plugin for MoxieUiPlugin {
         app.add_plugins((
             FynixPlugin::<EditorTheme>::default(),
             DockPlugin::<EditorTheme>::default(),
-            gaps::OverrideCursorPlugin,
         ))
         .insert_resource(Theme(EditorTheme::default()))
         .add_systems(Update, elements::fit_action_icons)

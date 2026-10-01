@@ -4,8 +4,8 @@
 
 use bevy::prelude::*;
 use bevy::window::SystemCursorIcon;
+use bevy_fynix::OverrideCursor;
 
-use crate::gaps::OverrideCursor;
 use crate::theme::EditorTheme;
 
 /// Where the ghost sits relative to the cursor, so the pointer lands

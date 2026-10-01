@@ -1,8 +1,7 @@
+use bevy::ecs::world::World;
 use bevy::ui::{PositionType, UiRect, Val};
 use bevy_fynix::Prop;
 use bevy_fynix::views::Frame;
-
-use bevy::ecs::world::World;
 
 /// Where a timeline box sits and how big it is, in pixels from its
 /// parent's top left corner.

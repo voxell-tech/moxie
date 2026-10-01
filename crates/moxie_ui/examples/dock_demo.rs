@@ -1,10 +1,11 @@
 //! Demonstrates the docking system in [`moxie_ui::widgets::dock`].
 //!
-//! Three trivial panels ("Panel A/B/C") start as tabs in one full-window
-//! area. Try:
+//! Three trivial panels ("Panel A/B/C") start as tabs in one
+//! full-window area. Try:
 //! - dragging a tab left/right within the tab bar to reorder it,
 //! - dragging a tab onto another area's tab bar to merge it in,
-//! - dragging a tab onto an area's top/bottom/left/right edge to split,
+//! - dragging a tab onto an area's top/bottom/left/right edge to
+//!   split,
 //! - dragging the divider between two areas to resize them,
 //! - pressing Escape mid-drag to cancel.
 

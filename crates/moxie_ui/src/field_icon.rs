@@ -1,4 +1,5 @@
-//! Icons bound to a reflected field, for wherever the editor names one.
+//! Icons bound to a reflected field, for wherever the editor names
+//! one.
 //!
 //! Bind one with the [`FieldIcon`] reflect attribute, or with
 //! [`FieldIconAppExt::register_field_icon`] for a type that can't
@@ -172,8 +173,9 @@ fn join(segments: &[&str]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use bevy_motiongfx::motiongfx::field_path::field;
+
+    use super::*;
 
     #[derive(Reflect)]
     struct Inner {
