@@ -11,3 +11,26 @@ pub use bevy_fynix::views::{
     icon, label, menu_bar, menu_item, menu_surface, number_field,
     overlay, row, scroll, segment, segmented, text_field, tint,
 };
+
+mod placement;
+mod playhead;
+mod time_label;
+mod time_tick;
+mod timeline_action;
+mod timeline_block;
+mod timeline_gap;
+mod timeline_link;
+mod timeline_track;
+
+pub use placement::Placement;
+pub use playhead::playhead_line;
+pub use time_label::time_label;
+pub use time_tick::time_tick;
+pub use timeline_action::{
+    ACTION_ICON_SIZE, ActionClip, fit_action_icons, icon_fit,
+    timeline_action,
+};
+pub use timeline_block::{Selected, timeline_block};
+pub use timeline_gap::timeline_gap;
+pub use timeline_link::timeline_link;
+pub use timeline_track::timeline_track;

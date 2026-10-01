@@ -42,6 +42,7 @@ impl Plugin for MoxieUiPlugin {
             gaps::OverrideCursorPlugin,
         ))
         .insert_resource(Theme(EditorTheme::default()))
+        .add_systems(Update, elements::fit_action_icons)
         .init_resource::<AssetTypes>()
         .init_resource::<FoundAssets>();
     }
