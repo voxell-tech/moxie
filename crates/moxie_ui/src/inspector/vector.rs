@@ -14,13 +14,10 @@
 //! elsewhere.
 
 use bevy::prelude::*;
-use bevy_fynix::views::{
-    FrameProps as _, Number, label, number_field, row,
-};
+use bevy_fynix::views::{FrameProps as _, Number, number_field, row};
 use bevy_fynix::{AnyView, Bevy, ViewExt as _};
 
-use super::{Binding, Inspect};
-use crate::gaps::inked;
+use super::{Binding, Inspect, field_name};
 use crate::theme::{EditorTheme, Palette};
 
 /// How wide each axis's input is, narrower than a lone number's.
@@ -58,13 +55,19 @@ fn axis_color(theme: &EditorTheme, name: &str) -> Color {
 fn axes<T: Axes>(binding: Binding) -> AnyView<Bevy, EditorTheme> {
     AnyView::new(move |cx| {
         let theme = cx.theme();
+        // The base field, so an animatable axis can be dragged out on
+        // its own (`translation.x`); `None` for a source the editor
+        // keeps elsewhere.
+        let field = binding.field().cloned();
         let mut cells = Vec::new();
         for (index, name) in T::NAMES.iter().enumerate() {
             cells.push(
-                inked(
-                    label(name.to_uppercase()).bold(true).wrap(false),
-                    axis_color(theme, name),
+                field_name(
+                    field.as_ref().map(|field| field.child(name)),
+                    name.to_uppercase(),
                 )
+                .ink(axis_color(theme, name))
+                .bold(true)
                 .boxed(),
             );
             cells.push(axis::<T>(binding.clone(), index).boxed());

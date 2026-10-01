@@ -12,6 +12,7 @@
 
 mod enums;
 mod field;
+mod field_drag;
 mod primitive;
 mod text;
 mod tree;
@@ -35,6 +36,10 @@ use crate::theme::EditorTheme;
 
 pub use enums::variant_picker;
 pub use field::{Field, Owner};
+pub use field_drag::{
+    DraggableField, DraggedField, FieldAnimatable, FieldHasAction,
+    FieldName, draggable_field, field_name,
+};
 pub use tree::{inspector_fields, section, variant_fields};
 
 /// An editor, as the registry stores it: a function from where the
@@ -51,6 +56,10 @@ pub struct InspectPlugin;
 
 impl Plugin for InspectPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<FieldAnimatable>()
+            .init_resource::<FieldHasAction>()
+            .init_resource::<DraggedField>();
+
         app.register_inspect::<bool>()
             .register_inspect::<f32>()
             .register_inspect::<f64>()

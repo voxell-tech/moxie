@@ -10,11 +10,13 @@ use bevy::camera::NormalizedRenderTarget;
 use bevy::ecs::hierarchy::Children;
 use bevy::input::InputPlugin;
 use bevy::input_focus::{InputDispatchPlugin, InputFocusPlugin};
-use bevy::picking::events::{Drag, Pointer};
+use bevy::picking::backend::HitData;
+use bevy::picking::events::{Drag, DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::{Location, PointerButton, PointerId};
 use bevy::prelude::*;
 use bevy::text::EditableText;
 use bevy::time::{TimePlugin, TimeUpdateStrategy};
+use bevy::ui::UiScale;
 use bevy::window::PrimaryWindow;
 use bevy_fynix::{View, mount};
 
@@ -35,6 +37,7 @@ pub fn app() -> App {
         MoxieUiPlugin,
     ))
     .init_asset::<Image>()
+    .init_resource::<UiScale>()
     .insert_resource(TimeUpdateStrategy::ManualDuration(
         Duration::from_millis(50),
     ));
@@ -124,6 +127,38 @@ pub fn drag(app: &mut App, target: Entity, dx: f32) {
         target,
     ));
     app.update();
+}
+
+/// Fires the pointer event `event` on `on`.
+fn fire<E>(app: &mut App, on: Entity, event: E)
+where
+    E: core::fmt::Debug + Clone + Reflect,
+    Pointer<E>: bevy::ecs::event::Event,
+    for<'t> <Pointer<E> as bevy::ecs::event::Event>::Trigger<'t>:
+        Default,
+{
+    app.world_mut().trigger(Pointer::new(
+        PointerId::Mouse,
+        location(),
+        event,
+        on,
+    ));
+    app.update();
+}
+
+/// The start of a drag of `on` with `button`.
+pub fn drag_start(app: &mut App, on: Entity, button: PointerButton) {
+    let hit = HitData::new(Entity::PLACEHOLDER, 0.0, None, None);
+    fire(app, on, DragStart { button, hit });
+}
+
+/// The end of a drag of `on`.
+pub fn drag_stop(app: &mut App, on: Entity) {
+    let event = DragEnd {
+        button: PointerButton::Primary,
+        distance: Vec2::ZERO,
+    };
+    fire(app, on, event);
 }
 
 /// A pair of fields, for a struct to nest.

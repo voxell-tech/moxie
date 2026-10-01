@@ -30,8 +30,8 @@ use bevy_fynix::{
 use moxie_asset::type_data;
 
 use super::{
-    Binding, Field, Owner, ReflectInspect, enums, field_row,
-    variant_picker,
+    Binding, Field, Owner, ReflectInspect, enums, field_name,
+    field_row, variant_picker,
 };
 use crate::fold::{self, Chevron, Foldable, FoldsOn};
 use crate::theme::EditorTheme;
@@ -580,8 +580,9 @@ fn name_label(
     name: &str,
 ) -> Option<AnyView<Bevy, EditorTheme>> {
     (!name.is_empty()).then(|| {
-        let _ = field;
-        label(name.to_string()).tone(Tone::Dim).wrap(false).boxed()
+        field_name(Some(field.clone()), name)
+            .tone(Tone::Dim)
+            .boxed()
     })
 }
 

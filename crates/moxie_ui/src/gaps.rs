@@ -78,17 +78,25 @@ pub fn inked<V>(inner: V, color: Color) -> Inked<V> {
 impl<T, V: View<Bevy, T>> View<Bevy, T> for Inked<V> {
     fn build(self, cx: &mut Cx<'_, Bevy, T>) -> Entity {
         let node = self.inner.build(cx);
-        let mut entity = cx.world.entity_mut(node);
-        if let Some(mut paint) = entity.get_mut::<Paint>() {
-            paint.ink = self.color;
-        }
-        if let Some(mut text) = entity.get_mut::<TextColor>() {
-            text.0 = self.color;
-        }
-        if let Some(mut image) = entity.get_mut::<ImageNode>() {
-            image.color = self.color;
-        }
+        set_ink(cx.world, node, self.color);
         node
+    }
+}
+
+/// Upstream: draws the label or icon `node` in `color`, whatever its
+/// tone says, and keeps the colour in its paint.
+pub fn set_ink(world: &mut World, node: Entity, color: Color) {
+    let Ok(mut entity) = world.get_entity_mut(node) else {
+        return;
+    };
+    if let Some(mut paint) = entity.get_mut::<Paint>() {
+        paint.ink = color;
+    }
+    if let Some(mut text) = entity.get_mut::<TextColor>() {
+        text.0 = color;
+    }
+    if let Some(mut image) = entity.get_mut::<ImageNode>() {
+        image.color = color;
     }
 }
 
