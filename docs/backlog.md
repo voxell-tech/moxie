@@ -395,3 +395,23 @@ today.
       `Timeline`'s `curr_index`/`target_index` sampling model in
       `crates/motiongfx/src/timeline.rs`, which currently assumes one
       active track at a time.
+
+## More for `fynix_macros`
+
+`fynix_macros` is back with `#[element]`, which writes an element's
+builder methods, `Styled`, `Layered`, `Element` and its `{Struct}Props`
+trait from the struct, with each prop written through its own lenz
+tag. What is still written by hand:
+
+- [ ] The patch types. Each prop names a unit struct with a `Patch`
+      impl, made with `patch!`, `node_patch!` or `size_patch!`. Taking
+      a closure in the attribute (`#[elem(write = |ui, v| ..)]`) and
+      generating the struct would put the write beside its prop.
+- [ ] The one-rule `when` on an element, still made by `own_when!`.
+      `#[element]` could write it, if it learned the state type the
+      backend uses.
+- [ ] Per-prop transitions by name. Every blending prop travels over
+      the one curve a transition rule gives. With props keyed by
+      `FieldId`, `.transition(..)` could name the props it is for.
+- [ ] `Styled` and `Layered` for a composite, which still needs
+      `styled!` or a hand-written impl to take path rules.

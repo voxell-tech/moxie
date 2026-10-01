@@ -918,12 +918,10 @@ dependencies = [
 name = "bevy_fynix"
 version = "0.0.1"
 dependencies = [
- "bevy_app",
- "bevy_ecs",
- "bevy_picking",
- "bevy_time",
- "bevy_ui",
+ "bevy",
  "fynix",
+ "lenz",
+ "motiongfx_interp",
 ]
 
 [[package]]
