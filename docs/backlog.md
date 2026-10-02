@@ -1,33 +1,34 @@
 # Backlog
 
-## Unify icon size across icon-only buttons
+## Action editing follow-ups
 
-Every icon-only button (a fold chevron, a variant picker's, a
-toolbar-style button) currently sets its own `size` on the `Icon` it
-carries, and they disagree: `fold::Foldable` uses `px(8)`, `inspector/
-enums.rs`'s `VariantPicker` chevron `px(9)`, `ui/timeline.rs`'s block
-chevron `px(4)`, and `ui/assets.rs`'s two folder-row chevrons plus
-`inspector/tree.rs`'s leave it unset, falling through to `Icon`'s own
-default of `px(11)`.
+What is left of the action editing round. Creating an action by
+dragging a field onto the timeline, naming, collapsing, moving and
+resizing are done.
 
-A style can't fix this from `ButtonElem`'s side: fynix_mock's cascade
-is element `Default` -> `Style` -> call site (`style.rs`), and the
-call site's own `icon = val!(Icon, ...)` assignment replaces the whole
-field, style-applied or not - a `Style for ButtonElem` (`TintButton`
-and friends) runs before that and gets overwritten regardless. The fix
-has to be a `Style for Icon` instead, used at the icon assignment
-itself: `icon = val!(!SomeIconStyle, image = ..., color = ...,
-rotation = ...)`, dropping each call site's own `size = px(N)`. `val!`
-already supports the same `!style` form `elem!` does.
-
-- [ ] Add a `Style for Icon` in `moxie_ui/elements` fixing `size` to
-      one constant.
-- [ ] Convert every icon-only button's `icon = val!(Icon, ...)` to the
-      new styled form, across `fold.rs`, `inspector/enums.rs`,
-      `ui/timeline.rs`, `ui/assets.rs` (two spots), and
-      `inspector/tree.rs`.
-- [ ] Pick the actual size - `px(8)` (`Foldable`'s current value) is
-      the closest thing to an existing default among them.
+- [ ] Graduating a draft once its subject and field are both picked:
+      `op` defaults to `AnimOp::To`, and `value` to the field's live
+      value in a new pool slot. Open question: whether it fires the
+      moment both are set, or waits for a confirm. Drag-to-create may
+      make this path unneeded.
+- [ ] Demote the actions of a deleted entity to drafts as it is
+      deleted, from the `On<Remove, EntityUid>` observer in
+      `bevy_motiongfx/scene/id.rs`. Today a failing compile demotes
+      them, but only at the next recompile.
+- [ ] Partly demote an action whose component was removed: keep the
+      subject, clear the field, op and value.
+- [ ] Ask before a deletion that would orphan live actions. There is no
+      undo.
+- [ ] Edit the stage: a toggle on an inspector field row pinning its
+      live value as the stage seed, and a matching row in the action
+      panel for the earliest action on a field.
+- [ ] A dashed ghost clip while a field is dragged over the timeline.
+- [ ] Set a new node's `delay` from where it is dropped inside `All` or
+      `Flow`.
+- [ ] Move the drop internals shared by `reorder` and `create` into
+      their own `timeline/drop.rs`.
+- [ ] Incremental names for new entities ("Cube", "Cube 1", ...).
+- [ ] An Operation row once `AnimOp` has a second variant.
 
 ## Open a `.mox` by double-clicking it
 
@@ -62,9 +63,6 @@ Dragging a `.mox` onto the running window is a separate path that
 already works - bevy maps it to `FileDragAndDrop::DroppedFile` - and
 would be worth wiring up on its own.
 
-- [ ] Take a path at startup from `argv`, and open it through a
-      path-taking half of `project::load_scene` split out from the
-      dialog.
 - [ ] Resolve assets and the dialog's starting folder against the
       running executable rather than the build machine.
 - [ ] Handle `FileDragAndDrop::DroppedFile`.
