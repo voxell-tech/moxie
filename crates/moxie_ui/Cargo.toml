@@ -23,9 +23,5 @@ bevy = { workspace = true, default-features = true, features = [
 workspace = true
 
 [[example]]
-name = "dock_demo"
-path = "examples/dock_demo.rs"
-
-[[example]]
 name = "inspector_demo"
 path = "examples/inspector_demo.rs"
