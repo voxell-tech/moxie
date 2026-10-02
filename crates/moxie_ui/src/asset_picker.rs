@@ -248,7 +248,7 @@ fn window<T: Asset + TypePath>(
         cx.under(root, |cx| {
             cx.build(
                 popup(
-                    at,
+                    Rect::from_corners(at, at),
                     (
                         header::<T>(root, title, binding.clone()),
                         search(root),
