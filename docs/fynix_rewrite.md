@@ -1,8 +1,12 @@
 # A fynix rewrite
 
-Status: design. Nothing here is built yet. The plan is to prove it in a
-throwaway prototype crate before touching `vendor/fynix`, which is
-vendored as a submodule for when that time comes.
+Status: built. The design below was proved in two prototype crates,
+`fynix_proto` and `bevy_fynix_proto`, which replaced the old crates in
+`vendor/fynix` (the `dev` branch) and have since been deleted from this
+repository. `moxie_ui` and `moxie` now run on it. The sections below
+are the design as it was written; "the prototype" in them means those
+crates, whose code lives on in `vendor/fynix` as `fynix` and
+`bevy_fynix`.
 
 ## Why
 

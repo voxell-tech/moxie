@@ -1,47 +1,5 @@
 # Backlog
 
-## Unify theming onto `EditorTheme`
-
-`EditorTheme` (our Monokai Pro palette) and feathers' `UiTheme`
-currently coexist. `UiTheme` only colors the stock feathers widgets we
-reuse - `NumberField`'s input and the dropdown popup - which likely
-look mismatched against the rest of the UI. Their own systems read
-`UiTheme` every frame for hover/press/focus, so patching tokens still
-leaves a second theme mechanism underneath; owning the widgets is the
-only way both surfaces read one palette. Fork feathers and rebuild
-those as moxie_ui elements styled off `EditorTheme`, then drop
-`UiTheme`/`ThemeProps`/feathers tokens once nothing reads them.
-
-- [ ] Fork feathers; build our own `NumberField` (drag/type/format
-      interaction) as a moxie_ui element, styled off `EditorTheme`.
-- [ ] Build our own dropdown popup (placement, dismissal, keyboard
-      nav) as a moxie_ui element, styled off `EditorTheme`. Not just
-      styling: `DropdownMenu`/`DropdownList` (`moxie_ui/src/elements/
-      dropdown.rs`) apply `bsn!{@FeathersMenu}`/`bsn!{@FeathersMenuPopup}`,
-      which is where the open/close behavior actually lives -
-      `bevy_feathers::controls::menu`'s `on_menu_event` observer is
-      what toggles the popup's `Visibility` on a `MenuEvent`, not
-      `bevy_ui_widgets` itself (that crate only fires the event and
-      handles focus/keyboard). Dropping Feathers here means writing
-      that observer ourselves, then `DropdownList` can collapse onto
-      a plain `Frame` styled with `MenuSurface`
-      (`elements/dropdown.rs`) - the same surface `context_menu.rs`
-      already uses - instead of hand-patching Feathers' scene output
-      with `EditorTheme` colors/radius/padding after the fact.
-      `bevy_ui_widgets::popover::Popover` (edge-avoiding placement) is
-      already proven decoupled from Feathers: `context_menu.rs`
-      anchors on it directly without going through
-      `FeathersMenuPopup`, so the placement half of this is already
-      done - only the open/close visibility wiring is left.
-- [ ] Drop `UiTheme`/`ThemeProps`/feathers tokens once nothing reads
-      them.
-- [ ] `Label`'s `None => ThemedText` fallback should default to
-      `theme.text_primary` directly.
-- [ ] Give `EditorTheme` a button corner radius (there's no field for
-      one today) and use it everywhere a button rounds itself -
-      `Button`/`GhostButton`/`MenuButton`/`SegmentButton` each pick
-      their own `px(N)` constant right now.
-
 ## Unify icon size across icon-only buttons
 
 Every icon-only button (a fold chevron, a variant picker's, a
@@ -141,71 +99,6 @@ even passed `world` today to be able to.
 - [ ] Persisting this across app restarts (not just within one running
       session) would need somewhere durable to keep it -
       `EditorSettings` is the existing precedent for that.
-
-## `BevyElementVisual` boilerplate
-
-Every `ElementVisual<BevyHost>` impl starts with
-`world.entity_mut(node)`. A forwarding blanket impl hits Rust's
-orphan rule; the marker-param workaround compiles but can't satisfy
-`Element<H>`'s bound without changing `fynix`'s kernel.
-
-- [ ] Add a `macro_rules!` in `bevy_fynix` forwarding a narrower
-      `BevyElementVisual` impl into `ElementVisual<BevyHost>`.
-- [ ] Or an attribute macro on the impl itself, skipping the repeated
-      type name - needs a new `bevy_fynix_macros` proc-macro crate.
-
-## `#[elem(flatten)]` for shared field groups
-
-`ButtonElem`, `Frame`, `ScrollArea`, `Panel`, and a few others each
-hand-roll the same `width`/`height`/`min_width`/`min_height`/
-`flex_grow`/`justify`/`padding` cluster and their own `node()`
-builder. Embedding `bevy::Node` itself was considered and turned
-down: `#[derive(Element)]` mints one enum variant, one `FieldId`, and
-one `lenz` accessor path per top-level field, which is what lets
-`elem!(Frame, width = ...)` work as flat sugar, `.bind(|frame|
-frame.width())` name a single projection, and `#[default(...)]`
-override one field at a time. Collapsing eight fields into a single
-`pub node: Node` would collapse all of that onto one opaque path, and
-still wouldn't absorb `radius`/`fill`/`hover`, which aren't part of
-`Node` at all.
-
-A flattened field group keeps the addressability: a small reusable
-struct (`Layout { width, height, min_width, min_height, flex_grow,
-justify, padding, ... }`) that `#[derive(Element)]` unpacks field by
-field into the same enum/path/lenz machinery it already generates for
-a direct field, rather than treating it as one opaque child.
-
-- [ ] Design `Layout` (or similarly-scoped groups) as a plain struct
-      other `Element`s embed.
-- [ ] Teach `fynix_macros/src/element.rs` an `#[elem(flatten)]`
-      directive: for a flattened field, walk its own fields the same
-      way as a direct one instead of minting a single variant for the
-      whole struct.
-- [ ] Convert `ButtonElem`, `Frame`, `ScrollArea`, `Panel`, and
-      `field.rs`/`dropdown.rs`'s elements over once flattening lands.
-
-## Let an `on(...)` line's `read` return an `Option`
-
-`Label` and `Icon` each keep a `dragged_color: Option<Color>` and a
-`dragged()` method that returns `&self.color` when it is `None`. That
-falls back to the base color by hand, and it is not the same as the
-`Dragged` tag doing nothing: a node that is both dragged and hovered
-shows its base color instead of its hover color.
-
-`fynix` can't express this today. `read` has to return `&T`, which the
-macro wraps as `resolve(..).map(path)`. And `FieldLines::resolve` picks
-a line by its tag alone, so a `None` read would still win the line and
-`tick` would drop the transition, leaving the field where it was.
-
-- [ ] Make `fynix` a submodule here so the change can land alongside.
-- [ ] Macro: accept a `read` returning `Option<&T>`
-      (`fynix_macros/src/element.rs`, `.map(path)` to `.and_then(path)`).
-- [ ] `fynix/src/anim.rs`: have `FieldLines::resolve` skip a line whose
-      access returns `None`, so the field falls to the next active line
-      or to base. It needs the pool passed in, which touches
-      `reresolve`, `set_tag` and `unset_tag`.
-- [ ] Then drop the fallback methods on `Label` and `Icon` and make
-      `dragged_color` read straight from the `Option`.
 
 ## Assigning and treating assets in the inspector
 
