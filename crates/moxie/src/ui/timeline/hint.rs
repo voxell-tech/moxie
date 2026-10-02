@@ -3,12 +3,10 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform};
-use bevy_fynix::WorldEntityMut;
-use fynix::composer::Composer;
-use fynix::prelude::*;
-use moxie_ui::elements::Frame;
+use bevy_fynix::views::{BehaviorExt as _, frame};
+use bevy_fynix::{AnyView, Bevy, Theme};
 use moxie_ui::layout::logical_rect;
-use moxie_ui::reactive::{BevyFynix, BevyUi, FynixHost};
+use moxie_ui::theme::EditorTheme;
 
 use super::TrackViewport;
 
@@ -56,31 +54,29 @@ impl HintNode<'_, '_> {
     }
 }
 
-impl Composer<FynixHost> for Hint {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let hint_z = Some(ui.theme.layer.drop_hint);
-
-        let mut hint = ui.elem(elem!(
-            Frame,
-            position = PositionType::Absolute,
-            display = Display::None,
-            z = hint_z
-        ));
-        hint.insert((Pickable::IGNORE, self))
+/// The hint, hidden until something shows it. It floats over its
+/// parent and ignores the pointer.
+pub(super) fn hint() -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(|cx| {
+        let node = cx.build(
+            frame()
+                .position(PositionType::Absolute)
+                .display(Display::None)
+                .z(Some(cx.theme().layer.drop_hint))
+                .tagged(Hint),
+        );
+        cx.world
+            .entity_mut(node)
+            .insert(Pickable::IGNORE)
             .observe(on_show)
             .observe(on_hide);
-        hint.handle()
-    }
+        node
+    })
 }
 
 fn on_show(
     show: On<Show>,
-    kernel: Res<BevyFynix>,
+    theme: Res<Theme<EditorTheme>>,
     q_viewport: Query<
         (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
         With<TrackViewport>,
@@ -107,7 +103,7 @@ fn on_show(
     else {
         return;
     };
-    let theme = kernel.theme();
+    let theme = &theme.0;
 
     let bounds = match &show.shape {
         Shape::Insert(bounds) => {
@@ -123,7 +119,8 @@ fn on_show(
         }
     };
 
-    // The area is the hint's parent, and the viewport scrolls under it.
+    // The area is the hint's parent, and the viewport scrolls under
+    // it.
     let to_area = logical_rect(viewport_node, viewport_transform).min
         - Vec2::new(0.0, scroll.y)
         - logical_rect(area_node, area_transform).min;

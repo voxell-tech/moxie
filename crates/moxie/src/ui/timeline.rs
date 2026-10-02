@@ -13,41 +13,42 @@ mod retime;
 mod time_axis;
 mod zoom;
 
-use block_layout::Placed;
-use pattern::DelayPattern;
-use zoom::{FitTimeline, on_track_scroll};
-
-use bevy_fynix::tag::TagExt as _;
 use core::time::Duration;
 use std::collections::BTreeSet;
 
-use bevy::feathers::controls::NumberInputValue;
 use bevy::prelude::*;
-use bevy::ui_widgets::{Activate, ScrollArea as ScrollAreaBehavior};
+use bevy::ui::ScrollPosition;
+use bevy_fynix::tokens::Tone;
+use bevy_fynix::views::{
+    BehaviorExt as _, ContextMenuExt as _, FrameProps as _, button,
+    column, frame, ghost, icon, label, menu_item, number_field, row,
+    tint,
+};
+use bevy_fynix::{
+    AnyView, Bevy, Hovered, Pressed, Prop, ScopedExt as _,
+    ViewExt as _, ViewSeq as _, keyed, resource,
+};
 use bevy_motiongfx::prelude::MotionGfxManager;
+use block_layout::Placed;
+use moxie_ui::drag::Dragged;
+use moxie_ui::elements::{
+    Placement, playhead_line, time_label, time_tick, timeline_action,
+    timeline_block, timeline_gap, timeline_link,
+};
+use moxie_ui::field_icon::field_icon;
+use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
+use moxie_ui::gaps::{changing, changing_under};
+use moxie_ui::icons as ui_icons;
+use moxie_ui::theme::{EditorTheme, Spacing};
+use pattern::DelayPattern;
+use zoom::{FitTimeline, on_track_scroll};
 
 use crate::playback::{
-    TogglePlayback, on_time_entered, on_track_cancel,
+    SeekTo, TogglePlayback, on_seek, on_track_cancel,
     on_track_click_release, on_track_drag, on_track_press,
     on_track_release,
 };
 use crate::{EditorScene, EditorState, SelectedAction, TimelineView};
-use bevy_fynix::WorldEntityMut;
-use fynix::composer::Composer;
-use fynix::prelude::*;
-use moxie_ui::elements::{
-    ACTION_ICON_SIZE, Button, ButtonCursor, Frame, GhostButton, Icon,
-    IconCursor, Label, NumberField, NumberFieldCursor, Panel,
-    PlayheadLine, PlayheadLineCursor, ScrollArea, TimeLabel,
-    TimeTick, TimelineAction, TimelineBlock, TimelineBlockCursor,
-    TimelineGap, TimelineLink, TintButton, icon_fit,
-};
-use moxie_ui::field_icon::field_icon;
-use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
-use moxie_ui::reactive::{
-    BevyUi, FynixHost, resource_changed, value_changed,
-};
-use moxie_ui::theme::Spacing;
 
 /// The timeline's resources and interaction systems.
 pub(crate) struct TimelinePlugin;
@@ -63,7 +64,8 @@ impl Plugin for TimelinePlugin {
                 reorder::plugin,
                 create::plugin,
                 zoom::plugin,
-            ));
+            ))
+            .add_observer(on_seek);
     }
 }
 
@@ -89,150 +91,132 @@ const CONTROL_BAR_HEIGHT: f32 = 40.0;
 const TIME_AXIS_HEIGHT: f32 = 24.0;
 const MAJOR_TICK: f32 = 8.0;
 const MINOR_TICK: f32 = 4.0;
+/// A block header's height.
+const HEADER_ROW: f32 = 18.0;
 
 /// Viewport where the timeline, track and action UI is displayed.
 #[derive(Component, Default, Clone)]
 pub(crate) struct TrackViewport;
 
-/// The timeline panel, as kernel nodes.
-///
-/// Each reactive field binds at the node that owns it, so the
-/// play/pause icon, time label and friends have to be `NodeMut`s to
-/// carry their own binds. That is why this is a composer.
-pub(super) struct TimelinePanel;
-
-impl Composer<FynixHost> for TimelinePanel {
-    type Element = Panel;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Panel> {
-        ui.elem(elem!(Panel))
-            .with(|ui| {
-                ui.elem(elem!(
-                    Frame,
-                    width = percent(100),
-                    height = percent(100),
-                    direction = FlexDirection::Column
-                ))
-                .with(|ui| {
-                    ui.compose(ControlBar);
-                    ui.compose(TrackArea);
-                });
-            })
-            .handle()
-    }
+/// The timeline panel.
+pub(super) fn panel() -> AnyView<Bevy, EditorTheme> {
+    column((control_bar(), track_area()))
+        .width(percent(100.0))
+        .height(percent(100.0))
+        .gap(0.0)
+        .boxed()
 }
 
-/// Play/pause + time readout.
-struct ControlBar;
-
-impl Composer<FynixHost> for ControlBar {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let pad = ui.theme.space.xl;
-        ui.elem(elem!(
-            Frame,
-            width = percent(100),
-            height = px(CONTROL_BAR_HEIGHT),
-            align = AlignItems::Center,
-            column_gap = px(12),
-            padding = UiRect::horizontal(px(pad))
-        ))
-        .with(|ui| {
-            ui.elem(elem!(
-                Button,
-                icon = elem!(
-                    Icon,
-                    image = crate::icons::PLAY,
-                    size = px(14)
+/// Play/pause, the time readout and the fit button.
+fn control_bar() -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(|cx| {
+        let pad = cx.theme().space.xl;
+        let assets = cx.world.resource::<AssetServer>();
+        let play = assets.load::<Image>(crate::icons::PLAY);
+        let pause = assets.load::<Image>(crate::icons::PAUSE);
+        cx.build(
+            row((
+                button(
+                    icon(resource::<EditorState, _>(move |state| {
+                        if state.is_playing {
+                            pause.clone()
+                        } else {
+                            play.clone()
+                        }
+                    }))
+                    .size(14.0),
                 )
+                .padding(UiRect::axes(px(8.0), px(4.0)))
+                .on_activate(|world| world.trigger(TogglePlayback)),
+                row((
+                    number_field::<f32>(
+                        changing(shown_secs),
+                        |world, secs| world.trigger(SeekTo(secs)),
+                    )
+                    .width(px(64.0)),
+                    label("s"),
+                ))
+                .align(AlignItems::Center)
+                .gap(3.0),
+                frame().grow(1.0),
+                button(label("Fit"))
+                    .width(px(44.0))
+                    .height(px(24.0))
+                    .on_activate(|world| world.trigger(FitTimeline)),
             ))
-            .observe(|_: On<Activate>, mut commands: Commands| {
-                commands.trigger(TogglePlayback);
-            })
-            .bind(
-                |button| button.icon().image(),
-                resource_changed::<EditorState>(),
-                |WorldNodeRef { world, .. }| {
-                    if world.resource::<EditorState>().is_playing {
-                        crate::icons::PAUSE.to_string()
-                    } else {
-                        crate::icons::PLAY.to_string()
-                    }
-                },
-            );
-
-            ui.elem(elem!(
-                Frame,
-                align = AlignItems::Center,
-                column_gap = px(3)
-            ))
-            .with(|ui| {
-                ui.elem(elem!(NumberField, width = px(64)))
-                    .observe(on_time_entered)
-                    .bind(
-                        |input| input.value(),
-                        value_changed(|world, _| current_time(world)),
-                        |WorldNodeRef { world, .. }| {
-                            let secs =
-                                current_time(world).as_secs_f32();
-                            NumberInputValue::F32(
-                                (secs * 100.0).round() / 100.0,
-                            )
-                        },
-                    );
-
-                ui.elem(elem!(Label, text = "s"));
-            });
-
-            // Fit button.
-            ui.elem(elem!(Frame, flex_grow = 1.0f32));
-
-            ui.elem(elem!(
-                Button,
-                label = elem!(Label, text = "Fit"),
-                width = px(44),
-                height = px(24)
-            ))
-            .observe(
-                |_: On<Activate>, mut commands: Commands| {
-                    commands.trigger(FitTimeline);
-                },
-            );
-        })
-        .handle()
-    }
+            .width(percent(100.0))
+            .height(px(CONTROL_BAR_HEIGHT))
+            .align(AlignItems::Center)
+            .gap(12.0)
+            .padding(UiRect::horizontal(px(pad))),
+        )
+    })
 }
 
-/// The time axis ruler above the tracks.
-struct TimeAxis;
+/// The playhead's time as the readout shows it.
+fn shown_secs(world: &World) -> f32 {
+    (current_time(world).as_secs_f32() * 100.0).round() / 100.0
+}
 
-impl Composer<FynixHost> for TimeAxis {
-    type Element = Frame;
+/// The scrollable track viewport, filling the whole panel width. The
+/// playhead floats over it as a sibling, so the viewport neither
+/// scrolls nor clips it.
+fn track_area() -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(|cx| {
+        let area = cx.build(
+            column((
+                playhead_line(
+                    changing(|world: &World| {
+                        px(world
+                            .resource::<TimelineView>()
+                            .x_from_time(current_time(world)))
+                    }),
+                    px(TIME_AXIS_HEIGHT),
+                ),
+                time_axis(),
+                clipped_tracks(),
+            ))
+            .width(percent(100.0))
+            .grow(1.0)
+            .gap(0.0),
+        );
+        cx.world
+            .entity_mut(area)
+            .observe(on_track_press)
+            .observe(on_track_drag)
+            .observe(on_track_release)
+            .observe(on_track_click_release)
+            .observe(on_track_cancel)
+            .observe(on_track_scroll);
+        area
+    })
+}
 
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        ui.elem(elem!(
-            Frame,
-            width = percent(100),
-            height = px(TIME_AXIS_HEIGHT),
-        ))
-        .watch(value_changed(axis_view), build_ticks)
-        .handle()
-    }
+/// The time axis ruler above the tracks: a tick every so often and a
+/// reading at the major ones, drawn again when its width or the view
+/// changes.
+fn time_axis() -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(|cx| {
+        let axis = cx.build(
+            frame()
+                .width(percent(100.0))
+                .height(px(TIME_AXIS_HEIGHT)),
+        );
+        let marks = keyed::<EditorTheme, (u32, TimelineView)>(
+            changing_under(Some(axis), move |world: &World| {
+                axis_view(world, axis)
+            }),
+            |&(width, view)| axis_marks(width, view),
+        )
+        .within(frame().width(percent(100.0)).height(percent(100.0)));
+        cx.under(axis, |cx| cx.build(marks));
+        axis
+    })
 }
 
 /// The time axis's width and the view it draws, so a change to
-/// either retriggers the watch. Width is rounded so sub-pixel
-/// jitter cannot.
+/// either redraws the marks. Width is rounded so sub-pixel jitter
+/// cannot.
 fn axis_view(world: &World, node: Entity) -> (u32, TimelineView) {
     let width = world
         .get::<ComputedNode>(node)
@@ -245,115 +229,74 @@ fn axis_view(world: &World, node: Entity) -> (u32, TimelineView) {
     (width, *world.resource::<TimelineView>())
 }
 
-fn build_ticks(ui: &mut BevyUi) {
-    let (width, view) = axis_view(ui.world, ui.parent());
-    let color = ui.theme.color.text_dim;
-    let text_size = ui.theme.text.small;
-    let marks = time_axis::ticks(&view, width as f32);
-
-    for tick in marks {
-        let major = tick.label.is_some();
-        ui.elem(elem!(
-            TimeTick,
-            x = px(tick.x),
-            height = px(if major { MAJOR_TICK } else { MINOR_TICK }),
-            color = color.with_alpha(if major { 0.6 } else { 0.3 })
-        ));
-
-        if let Some(text) = tick.label {
-            ui.elem(elem!(
-                TimeLabel,
-                x = px(tick.x),
-                label = elem!(
-                    Label,
-                    text = text,
-                    size = text_size,
-                    wrap = false,
-                    color = color.with_alpha(0.7)
+/// Every tick and reading across `width` px of `view`.
+fn axis_marks(
+    width: u32,
+    view: TimelineView,
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let color = cx.theme().color.text_dim;
+        let mut marks = Vec::new();
+        for tick in time_axis::ticks(&view, width as f32) {
+            let major = tick.label.is_some();
+            marks.push(
+                time_tick(
+                    px(tick.x),
+                    px(if major { MAJOR_TICK } else { MINOR_TICK }),
+                    color.with_alpha(if major { 0.6 } else { 0.3 }),
                 )
-            ));
+                .boxed(),
+            );
+            if let Some(text) = tick.label {
+                marks.push(time_label(px(tick.x), text).boxed());
+            }
         }
-    }
+        cx.build(
+            row(marks)
+                .width(percent(100.0))
+                .height(percent(100.0))
+                .gap(0.0),
+        )
+    })
 }
 
-/// The scrollable track viewport, filling the whole panel width. The
-/// playhead floats over it as a sibling, so the [`ScrollArea`]
-/// neither scrolls nor clips it.
-struct TrackArea;
+/// Clips the viewport and the hint, both its children, so a
+/// scrolled-off hint cannot bleed up over the time axis. The
+/// playhead sits outside this on purpose: it runs the ruler's full
+/// height.
+fn clipped_tracks() -> AnyView<Bevy, EditorTheme> {
+    column((viewport(), hint::hint()))
+        .width(percent(100.0))
+        .grow(1.0)
+        .min_height(px(0.0))
+        .gap(0.0)
+        .overflow(Overflow::clip())
+        .boxed()
+}
 
-impl Composer<FynixHost> for TrackArea {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let mut root = ui.elem(elem!(
-            Frame,
-            width = percent(100),
-            direction = FlexDirection::Column,
-            flex_grow = 1.0f32
-        ));
-        root.observe(on_track_press)
-            .observe(on_track_drag)
-            .observe(on_track_release)
-            .observe(on_track_click_release)
-            .observe(on_track_cancel)
-            .observe(on_track_scroll)
-            .with(|ui| {
-                ui.elem(elem!(
-                    PlayheadLine,
-                    top = px(TIME_AXIS_HEIGHT)
-                ))
-                .bind(
-                    |line| line.left(),
-                    resource_changed::<MotionGfxManager>(),
-                    |WorldNodeRef { world, .. }| {
-                        px(world
-                            .resource::<TimelineView>()
-                            .x_from_time(current_time(world)))
-                    },
-                );
-            })
-            .with(|ui| {
-                ui.compose(TimeAxis);
-            })
-            .with(|ui| {
-                // Clips the viewport and the hint, both its children,
-                // so a scrolled-off hint cannot bleed up over the time
-                // axis. `PlayheadLine` sits outside this on purpose:
-                // it runs the ruler's full height.
-                let space = ui.theme.space;
-                let mut clip = ui.elem(elem!(
-                    Frame,
-                    width = percent(100),
-                    flex_grow = 1.0f32,
-                    overflow = Overflow::clip()
-                ));
-
-                clip.with(|ui| {
-                    ui.elem(elem!(
-                        ScrollArea,
-                        width = percent(100),
-                        flex_grow = 1.0f32
-                    ))
-                    .insert(TrackViewport)
-                    .remove::<ScrollAreaBehavior>()
-                    .watch(
-                        value_changed(move |world, _| {
-                            block_view(world, space)
-                        }),
-                        build_block_boxes,
-                    );
-
-                    // A sibling of the `.watch()`-owned `ScrollArea`,
-                    // so a rebuild of the box list keeps it.
-                    ui.compose(hint::Hint);
-                });
-            });
-
-        root.handle()
-    }
+/// The boxes' scroll area. Wheel scrolling is the track's own (see
+/// [`on_track_scroll`]), so it has none of its own.
+fn viewport() -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(|cx| {
+        let space = cx.theme().space;
+        cx.build(
+            keyed::<EditorTheme, BlockKey>(
+                changing(move |world: &World| {
+                    block_view(world, space)
+                }),
+                block_boxes,
+            )
+            .within(
+                column(())
+                    .width(percent(100.0))
+                    .grow(1.0)
+                    .min_width(px(0.0))
+                    .min_height(px(0.0))
+                    .overflow(Overflow::scroll())
+                    .with((TrackViewport, ScrollPosition::default())),
+            ),
+        )
+    })
 }
 
 /// `timeline.target_time()`, or zero if no timeline is focused yet.
@@ -369,9 +312,9 @@ fn current_time(world: &World) -> Duration {
         .unwrap_or(Duration::ZERO)
 }
 
-/// The editor scene's animation tree, laid out as nested boxes. Nested
-/// boxes are a percent of their parent, so the layout ignores the view
-/// and only the root box follows it.
+/// The editor scene's animation tree, laid out as nested boxes.
+/// Nested boxes are a percent of their parent, so the layout ignores
+/// the view and only the root box follows it.
 fn block_placements(world: &World, space: Spacing) -> Vec<Placed> {
     let empty = BTreeSet::new();
     let folded = world
@@ -409,13 +352,12 @@ impl RebuildTick {
     }
 }
 
-/// The boxes plus which one, if any, is selected. The watcher's
-/// signal: a box rebuilds only when a node is added, removed,
-/// re-timed, re-nested, reordered, or selection moves onto or off it.
-fn block_view(
-    world: &World,
-    space: Spacing,
-) -> (Vec<Placed>, Option<Vec<usize>>, u64) {
+/// The boxes plus which one, if any, is selected. The key of the box
+/// list: it rebuilds only when a node is added, removed, re-timed,
+/// re-nested, reordered, or selection moves onto or off it.
+type BlockKey = (Vec<Placed>, Option<Vec<usize>>, u64);
+
+fn block_view(world: &World, space: Spacing) -> BlockKey {
     let selected = world
         .get_resource::<SelectedAction>()
         .and_then(|s| s.0.clone());
@@ -428,414 +370,513 @@ fn block_view(
     (block_placements(world, space), selected, tick)
 }
 
-/// A block's header: its name (or combinator, if unnamed) beside its
-/// fold chevron, clickable to select - the chevron alone toggles the
-/// fold.
-struct BlockHeader<F> {
-    path: Vec<usize>,
-    left: Val,
-    top: Val,
-    width: Val,
-    height: f32,
-    folded: bool,
-    label: String,
-    is_selected: bool,
-    /// Builds what nests inside the block's box.
-    children: F,
-}
-
-impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for BlockHeader<F> {
-    type Element = TimelineBlock;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, TimelineBlock> {
-        let Self {
-            path,
-            left,
-            top,
-            width,
-            height,
-            folded,
-            label,
-            is_selected,
-            children,
-        } = self;
-        let theme = ui.theme;
-        let default_color = theme.color.text;
-        let selected_color = theme.palette.purple;
-
-        let block_color = if is_selected {
-            selected_color
-        } else {
-            default_color
+/// The boxes, nested the way the tree is: a block's header holds its
+/// children, and an action leaf is its own box. Either outlines in
+/// the theme's accent when [`SelectedAction`] names its path, and
+/// clicking either writes that path in; only the action also lights
+/// up under the cursor.
+///
+/// Under a root of its own, which has no transition, so a rebuild
+/// swaps the whole tree at once rather than fading the old one out.
+fn block_boxes(key: &BlockKey) -> AnyView<Bevy, EditorTheme> {
+    let (placements, selected, _) = key.clone();
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let tree = Tree {
+            placements: &placements,
+            selected: selected.as_ref(),
+            theme: cx.theme(),
+            world: cx.world,
+            pattern: cx.world.resource::<DelayPattern>().0.clone(),
+            chevron: cx
+                .world
+                .resource::<AssetServer>()
+                .load(ui_icons::CHEVRON),
+            trash: cx
+                .world
+                .resource::<AssetServer>()
+                .load(ui_icons::TRASH),
         };
-
-        let chevron_color = theme.color.text_faint;
-        let label_color = theme.color.text.with_alpha(0.8);
-
-        let background = if is_selected {
-            block_color.with_luminance(0.3).with_alpha(0.8)
+        let views = if placements.is_empty() {
+            Vec::new()
         } else {
-            block_color.with_alpha(0.03)
+            tree.nodes(0).0
         };
-
-        let mut header = ui.elem(elem!(
-            TimelineBlock,
-            top = top,
-            left = left,
-            width = width,
-            height = px(height),
-            background = background,
-            dragged_background = if is_selected {
-                background.with_alpha(0.2)
-            } else {
-                background
-            },
-            border = block_color.with_alpha(0.5),
-            dragged_border = block_color.with_alpha(0.2),
-            selected = is_selected,
-            radius = px(theme.space.card_radius)
-        ));
-        header.insert(retime::BoxPath(path.clone())).with(
-            move |ui| {
-                let mut header_button = ui.elem(elem!(
-                    !GhostButton,
-                    width = percent(100),
-                    height = px(18),
-                    justify = JustifyContent::FlexStart,
-                    padding = UiRect::axes(px(4), px(2)),
-                    radius = Val::ZERO,
-                    column_gap = px(4)
-                ));
-                header_button.observe({
-                    let path = path.clone();
-                    move |_: On<Activate>,
-                      mut selected: ResMut<SelectedAction>| {
-                    selected.0 = Some(path.clone());
-                }
-                });
-                reorder::body(&mut header_button, path.clone());
-                // The root block has nothing above it to delete it
-                // from.
-                if !path.is_empty() {
-                    let delete_path = path.clone();
-                    moxie_ui::context_menu::context_menu(
-                        &mut header_button,
-                        move |menu| {
-                            let critical =
-                                menu.theme().color.critical;
-                            let path = delete_path.clone();
-                            menu.item(
-                                Some((
-                                    moxie_ui::icons::TRASH,
-                                    critical,
-                                )),
-                                "Delete",
-                                move |world| {
-                                    reorder::delete(world, &path);
-                                },
-                            );
-                        },
-                    );
-                }
-                header_button.with(move |ui| {
-                    ui.elem(elem!(
-                    !TintButton::default(),
-                    icon = elem!(
-                        Icon,
-                        image = moxie_ui::icons::CHEVRON,
-                        size = px(7),
-                        color = chevron_color,
-                        dragged_color = chevron_color.with_alpha(0.2),
-                        rotation = if folded {
-                            CHEVRON_SHUT
-                        } else {
-                            CHEVRON_OPEN
-                        }
-                    )
-                ))
-                .observe(
-                    move |_: On<Activate>, mut commands: Commands| {
-                        let path = path.clone();
-                        commands.queue(move |world: &mut World| {
-                            toggle_folded(world, &path);
-                        });
-                    },
-                );
-                    ui.elem(elem!(
-                        Label,
-                        text = label,
-                        wrap = false,
-                        color = label_color,
-                        dragged_color = label_color.with_alpha(0.2)
-                    ));
-                });
-                children(ui);
-            },
-        );
-
-        header.handle()
-    }
+        cx.build(row(views).gap(0.0))
+    })
 }
 
-/// The boxes, nested the way the tree is: a block's [`BlockHeader`]
-/// holds its children, and an action leaf is its own
-/// [`TimelineAction`]. Either outlines in the theme's accent when
-/// [`SelectedAction`] names its path, and clicking either writes that
-/// path in; only the action also lights up under the cursor.
-fn build_block_boxes(ui: &mut BevyUi) {
-    let (placements, selected, _) =
-        block_view(ui.world, ui.theme.space);
-    let pattern = ui.world.resource::<DelayPattern>().0.clone();
-
-    if !placements.is_empty() {
-        build_node(ui, &placements, 0, selected.as_ref(), &pattern);
-    }
+/// The inputs for building one layout's boxes.
+struct Tree<'a> {
+    placements: &'a [Placed],
+    selected: Option<&'a Vec<usize>>,
+    theme: &'a EditorTheme,
+    world: &'a World,
+    pattern: Handle<Image>,
+    chevron: Handle<Image>,
+    trash: Handle<Image>,
 }
 
-/// Builds `placements[at]` and everything nested under it, and returns
-/// the index just past that subtree.
-fn build_node(
-    ui: &mut BevyUi,
-    placements: &[Placed],
-    at: usize,
-    selected: Option<&Vec<usize>>,
-    pattern: &Handle<Image>,
-) -> usize {
-    let placed = &placements[at];
-    let theme = ui.theme;
-    let is_selected = selected == Some(&placed.path);
-    let mut next = at + 1;
+impl Tree<'_> {
+    /// The views of `placements[at]` and everything nested under it,
+    /// and the index just past that subtree.
+    fn nodes(
+        &self,
+        at: usize,
+    ) -> (Vec<AnyView<Bevy, EditorTheme>>, usize) {
+        let placed = &self.placements[at];
+        let is_selected = self.selected == Some(&placed.path);
+        let mut views = Vec::new();
+        let mut next = at + 1;
 
-    // Spawned at zero width even with no delay yet, so a live
-    // drag that opens one up has an entity already in place to
-    // grow.
-    if !placed.path.is_empty() {
-        ui.elem(elem!(
-            TimelineGap,
-            top = placed.top(),
-            left = placed.gap_left(),
-            width = placed.gap_width(),
-            height = px(placed.h),
-            image = pattern.clone(),
-            color = theme.color.text_dim.with_alpha(0.35)
-        ))
-        .insert(retime::GapPath(placed.path.clone()));
+        // Built at zero width even with no delay yet, so a live
+        // drag that opens one up has a node already in place to
+        // grow.
+        if !placed.path.is_empty() {
+            views.push(self.gap(placed));
+        }
+        if let Some([left, top, width, height]) = placed.link_rect() {
+            views.push(
+                timeline_link(
+                    Placement::new(left, top, width, height),
+                    self.theme.color.text_dim,
+                )
+                .tagged(retime::LinkPath(placed.path.clone()))
+                .boxed(),
+            );
+        }
+
+        if placed.label.is_some() {
+            let mut inside = vec![self.header(placed)];
+            // The root's box has no `delay` of its own to drag -
+            // it always starts at zero.
+            if !placed.path.is_empty() {
+                inside.push(self.edge(placed, retime::Kind::Delay));
+            }
+            while self.placements.get(next).is_some_and(|child| {
+                child.path.len() > placed.path.len()
+            }) {
+                let (nested, after) = self.nodes(next);
+                inside.extend(nested);
+                next = after;
+            }
+            views.push(self.block(placed, is_selected, inside));
+        } else {
+            views.push(self.action(placed, is_selected));
+        }
+
+        (views, next)
     }
 
-    if let Some([left, top, width, height]) = placed.link_rect() {
-        ui.elem(elem!(
-            TimelineLink,
-            top = top,
-            left = left,
-            width = width,
-            height = height,
-            color = theme.color.text_dim
-        ))
-        .insert(retime::LinkPath(placed.path.clone()));
+    /// The hatched stretch before a node's own delay ends.
+    fn gap(&self, placed: &Placed) -> AnyView<Bevy, EditorTheme> {
+        timeline_gap(
+            Placement::new(
+                placed.gap_left(),
+                placed.top(),
+                placed.gap_width(),
+                px(placed.h),
+            ),
+            self.pattern.clone(),
+            self.theme.color.text_dim.with_alpha(0.35),
+        )
+        .tagged(retime::GapPath(placed.path.clone()))
+        .boxed()
     }
 
-    match &placed.label {
-        Some(label) => {
-            let mut header = ui.compose(BlockHeader {
-                path: placed.path.clone(),
-                left: placed.left(),
-                top: placed.top(),
-                width: placed.width(),
-                height: placed.h,
-                folded: placed.folded,
-                label: label.clone(),
-                is_selected,
-                children: |ui: &mut BevyUi| {
-                    // The root's box has no `delay` of its own to drag -
-                    // it always starts at zero.
-                    if !placed.path.is_empty() {
-                        edge_handle(
-                            ui,
-                            placed.path.clone(),
-                            retime::Kind::Delay,
-                        );
-                    }
-                    while placements.get(next).is_some_and(|child| {
-                        child.path.len() > placed.path.len()
-                    }) {
-                        next = build_node(
-                            ui, placements, next, selected, pattern,
-                        );
-                    }
-                },
-            });
+    /// A block's box around `inside`. The root's follows the view,
+    /// the rest are a percent of their parent.
+    fn block(
+        &self,
+        placed: &Placed,
+        is_selected: bool,
+        inside: Vec<AnyView<Bevy, EditorTheme>>,
+    ) -> AnyView<Bevy, EditorTheme> {
+        let (left, width): (Prop<Val>, Prop<Val>) =
             if placed.path.is_empty() {
                 let secs = placed.w;
-                header
-                    .bind(
-                        |block| block.left(),
-                        resource_changed::<TimelineView>(),
-                        |WorldNodeRef { world, .. }| {
-                            px(world
-                                .resource::<TimelineView>()
-                                .x_from_time(Duration::ZERO))
-                        },
-                    )
-                    .bind(
-                        |block| block.width(),
-                        resource_changed::<TimelineView>(),
-                        move |WorldNodeRef { world, .. }| {
-                            px(secs
-                                * world
-                                    .resource::<TimelineView>()
-                                    .px_per_second)
-                        },
-                    );
-            }
-        }
-        // An action leaf's own element: position, colors and
-        // selection are all typed fields, and it owns its
-        // pointer cursor and hover/press tint itself.
-        None => {
-            let path = placed.path.clone();
-            let label = placed.name.clone().unwrap_or_else(|| {
-                if placed.draft {
-                    "Draft".to_string()
-                } else {
-                    String::new()
-                }
-            });
-            // A draft has no subject/field yet, so its clip reads
-            // as an empty slot in the critical color, rather than
-            // a real action's fill.
-            let fill = if placed.draft {
-                theme.color.critical.with_alpha(0.5)
-            } else {
-                theme.color.clip
-            };
-            let border = if is_selected {
-                theme.color.accent
-            } else if placed.draft {
-                theme.color.critical.with_alpha(0.5)
-            } else {
-                Color::NONE
-            };
-            let label_color = if placed.draft {
-                theme.color.critical.with_alpha(0.9)
-            } else {
-                theme.palette.blue.with_alpha(0.9)
-            };
-            let icon = placed.field.as_ref().and_then(|field| {
-                let registry =
-                    ui.world.resource::<AppTypeRegistry>().read();
-                field_icon(
-                    &registry,
-                    &field.type_name().to_string(),
-                    field.path(),
+                (
+                    resource::<TimelineView, _>(|view| {
+                        px(view.x_from_time(Duration::ZERO))
+                    })
+                    .into(),
+                    resource::<TimelineView, _>(move |view| {
+                        px(secs * view.px_per_second)
+                    })
+                    .into(),
                 )
+            } else {
+                (placed.left().into(), placed.width().into())
+            };
+        timeline_block(
+            Placement::new(left, placed.top(), width, px(placed.h)),
+            is_selected,
+            inside,
+        )
+        .tagged(retime::BoxPath(placed.path.clone()))
+        .boxed()
+    }
+
+    /// A block's header: its name (or combinator, if unnamed) beside
+    /// its fold chevron, clickable to select; the chevron alone
+    /// toggles the fold.
+    fn header(&self, placed: &Placed) -> AnyView<Bevy, EditorTheme> {
+        let path = placed.path.clone();
+        let rotation = if placed.folded {
+            CHEVRON_SHUT
+        } else {
+            CHEVRON_OPEN
+        };
+        let fold_path = path.clone();
+        let chevron = button(
+            icon(self.chevron.clone())
+                .size(7.0)
+                .rotation(rotation)
+                .when::<Dragged, _>(|icon, _: &EditorTheme| {
+                icon.opacity(0.2)
+            }),
+        )
+        .padding(UiRect::all(px(3.0)))
+        .rules(tint)
+        .toned(Tone::Faint)
+        .on_activate(move |world| toggle_folded(world, &fold_path));
+        let name = label(placed.label.clone().unwrap_or_default())
+            .wrap(false)
+            .opacity(0.8)
+            .when::<Dragged, _>(|label, _: &EditorTheme| {
+                label.opacity(0.2)
             });
-            // What `fit_action_icons` will settle on once laid out,
-            // so the icon is never built at the wrong size. The
-            // placement is in seconds, so it is scaled to pixels here.
-            let fit = icon_fit(
-                placed.w
-                    * ui.world
-                        .resource::<TimelineView>()
-                        .px_per_second,
-            );
-            let mut action = ui.elem(elem!(
-                TimelineAction,
-                radius = px(theme.space.radius),
-                icon = icon.map(|image| elem!(
-                    Icon,
-                    image = image,
-                    color = Color::WHITE.with_alpha(fit),
-                    size = px(ACTION_ICON_SIZE * fit)
-                )(theme)),
-                label = elem!(
-                    Label,
-                    text = label,
-                    size = theme.text.small,
-                    color = label_color,
-                    dragged_color = label_color.with_alpha(0.2)
-                ),
-                top = placed.top(),
-                left = placed.left(),
-                width = placed.width(),
-                height = px(placed.h),
-                fill = fill,
-                hover_fill = theme.color.clip_hover,
-                press_fill = theme.color.clip_press,
-                dragged_fill = fill.with_alpha(0.2),
-                border = border,
-                dragged_border = if border == Color::NONE {
-                    border
-                } else {
-                    border.with_alpha(0.2)
-                },
-                selected = is_selected
-            ));
-            action
-                .insert(retime::BoxPath(placed.path.clone()))
-                .pointer_tags()
-                .observe({
-                    let path = path.clone();
-                    move |_: On<Activate>,
-                          mut selected: ResMut<SelectedAction>| {
-                        selected.0 = Some(path.clone());
-                    }
-                });
-            reorder::body(&mut action, path.clone());
-            {
-                let delete_path = path.clone();
-                moxie_ui::context_menu::context_menu(
-                    &mut action,
-                    move |menu| {
-                        let critical = menu.theme().color.critical;
-                        let path = delete_path.clone();
-                        menu.item(
-                            Some((moxie_ui::icons::TRASH, critical)),
-                            "Delete",
-                            move |world| {
-                                reorder::delete(world, &path);
-                            },
-                        );
-                    },
-                );
-            }
-            action.with(|ui| {
-                edge_handle(ui, path.clone(), retime::Kind::Delay);
-                edge_handle(ui, path, retime::Kind::Resize);
-            });
+
+        let select_path = path.clone();
+        let header = button(
+            row((chevron, name)).align(AlignItems::Center).gap(4.0),
+        )
+        .width(percent(100.0))
+        .height(px(HEADER_ROW))
+        .justify(JustifyContent::FlexStart)
+        .padding(UiRect::axes(px(4.0), px(2.0)))
+        .radius(0.0)
+        .rules(ghost)
+        .on_activate(move |world| select(world, &select_path));
+        let header = reorder::body(header, path.clone());
+        // The root block has nothing above it to delete it from.
+        if path.is_empty() {
+            header
+        } else {
+            self.deletable(header, path)
         }
     }
 
-    next
+    /// An action leaf's own box, with its two edge handles.
+    fn action(
+        &self,
+        placed: &Placed,
+        is_selected: bool,
+    ) -> AnyView<Bevy, EditorTheme> {
+        let image = placed.field.as_ref().and_then(|field| {
+            let registry =
+                self.world.resource::<AppTypeRegistry>().read();
+            field_icon(
+                &registry,
+                &field.type_name().to_string(),
+                field.path(),
+            )
+        });
+        let image = image.map(|path| {
+            self.world.resource::<AssetServer>().load::<Image>(path)
+        });
+        let name = placed.name.clone().unwrap_or_else(|| {
+            if placed.draft {
+                "Draft".to_string()
+            } else {
+                String::new()
+            }
+        });
+        let path = placed.path.clone();
+        let select_path = path.clone();
+        let action = timeline_action(
+            Placement::new(
+                placed.left(),
+                placed.top(),
+                placed.width(),
+                px(placed.h),
+            ),
+            name,
+            image,
+            placed.draft,
+            is_selected,
+        )
+        .tagged(retime::BoxPath(path.clone()))
+        .on_activate(move |world| select(world, &select_path));
+        let action = reorder::body(action, path.clone());
+        let action = self.deletable(action, path.clone());
+
+        let edges = vec![
+            self.edge(placed, retime::Kind::Delay),
+            self.edge(placed, retime::Kind::Resize),
+        ];
+        AnyView::<Bevy, EditorTheme>::new(move |cx| {
+            let node = cx.build(action);
+            cx.under(node, |cx| edges.build_each(cx));
+            node
+        })
+    }
+
+    /// A thin strip on one edge of the box it is built inside, wired
+    /// to `kind` via [`retime::edge`].
+    fn edge(
+        &self,
+        placed: &Placed,
+        kind: retime::Kind,
+    ) -> AnyView<Bevy, EditorTheme> {
+        let accent = self.theme.color.accent;
+        let inset = match kind {
+            retime::Kind::Delay => {
+                UiRect::new(Val::ZERO, auto(), Val::ZERO, auto())
+            }
+            retime::Kind::Resize => {
+                UiRect::new(auto(), Val::ZERO, Val::ZERO, auto())
+            }
+        };
+        let handle = frame()
+            .position(PositionType::Absolute)
+            .inset(inset)
+            .width(px(retime::EDGE_HANDLE_PX))
+            .height(percent(100.0))
+            .when::<Hovered, _>(move |frame, _: &EditorTheme| {
+                frame.fill(accent.with_alpha(0.35))
+            })
+            .when::<Pressed, _>(move |frame, _: &EditorTheme| {
+                frame.fill(accent.with_alpha(0.6))
+            });
+        retime::edge(handle, placed.path.clone(), kind)
+    }
+
+    /// `view` with a right-click menu deleting the node at `path`.
+    fn deletable(
+        &self,
+        view: AnyView<Bevy, EditorTheme>,
+        path: Vec<usize>,
+    ) -> AnyView<Bevy, EditorTheme> {
+        let trash = self.trash.clone();
+        let gap = self.theme.space.md;
+        view.context_menu(move || {
+            let path = path.clone();
+            (menu_item(
+                row((
+                    icon(trash.clone()),
+                    label("Delete").wrap(false),
+                ))
+                .align(AlignItems::Center)
+                .gap(gap)
+                .toned(Tone::Critical),
+            )
+            .on_activate(move |world| {
+                reorder::delete(world, &path);
+            }),)
+        })
+        .boxed()
+    }
 }
 
-/// A thin strip on one edge of the box it is built inside, wired to
-/// `kind` via [`retime::edge`].
-fn edge_handle(
-    ui: &mut BevyUi,
-    path: Vec<usize>,
-    kind: retime::Kind,
-) {
-    let accent = ui.theme.color.accent;
-    let inset = match kind {
-        retime::Kind::Delay => {
-            UiRect::new(Val::ZERO, auto(), Val::ZERO, auto())
+/// Selects the node at `path`.
+fn select(world: &mut World, path: &[usize]) {
+    world.resource_mut::<SelectedAction>().0 = Some(path.to_vec());
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ui::widget::ImageNode;
+    use bevy_motiongfx::scene::backend::Backend;
+    use motiongfx_scene::block::Node as SceneNode;
+    use moxie_ui::elements::Selected;
+
+    use super::retime::BoxPath;
+    use super::*;
+    use crate::tests::harness::{Editor, SETTLE};
+
+    fn draft(name: &str) -> SceneNode<Backend> {
+        SceneNode::Draft {
+            delay: None,
+            duration: Duration::from_secs(1),
+            name: Some(name.to_string()),
         }
-        retime::Kind::Resize => {
-            UiRect::new(auto(), Val::ZERO, Val::ZERO, auto())
+    }
+
+    /// An editor whose timeline holds a draft per name.
+    fn editor_with(names: &[&str]) -> Editor {
+        let mut editor = Editor::new();
+        let world = editor.world();
+        let mut scene = world.resource_mut::<EditorScene>();
+        for name in names {
+            scene.edit().animation.children.push(draft(name));
         }
-    };
-    let mut handle = ui.elem(elem!(
-        Frame,
-        position = PositionType::Absolute,
-        inset = inset,
-        width = px(retime::EDGE_HANDLE_PX),
-        height = percent(100),
-        hover_background = accent.with_alpha(0.35),
-        press_background = accent.with_alpha(0.6)
-    ));
-    handle.pointer_tags();
-    retime::edge(&mut handle, path, kind);
+        editor.step(SETTLE);
+        editor
+    }
+
+    fn boxes(editor: &mut Editor) -> Vec<Vec<usize>> {
+        let world = editor.world();
+        let mut paths = world
+            .query::<&BoxPath>()
+            .iter(world)
+            .map(|path| path.0.clone())
+            .collect::<Vec<_>>();
+        paths.sort();
+        paths
+    }
+
+    #[test]
+    fn an_empty_timeline_draws_no_boxes() {
+        let mut editor = Editor::new();
+        assert!(boxes(&mut editor).is_empty());
+    }
+
+    #[test]
+    fn each_node_gets_a_box_under_the_root() {
+        let mut editor = editor_with(&["Intro", "Outro"]);
+        assert_eq!(
+            boxes(&mut editor),
+            vec![vec![], vec![0], vec![1]]
+        );
+        editor.text("Intro");
+        editor.text("Outro");
+    }
+
+    #[test]
+    fn pressing_a_box_selects_it() {
+        let mut editor = editor_with(&["Intro", "Outro"]);
+        editor.press("Outro");
+
+        assert_eq!(
+            editor.world().resource::<SelectedAction>().0,
+            Some(vec![1])
+        );
+        let world = editor.world();
+        let selected = world
+            .query_filtered::<&BoxPath, With<Selected>>()
+            .iter(world)
+            .map(|path| path.0.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(selected, vec![vec![1]]);
+    }
+
+    #[test]
+    fn deleting_a_node_removes_its_box() {
+        let mut editor = editor_with(&["Intro", "Outro"]);
+        reorder::delete(editor.world(), &[0]);
+        editor.step(SETTLE);
+
+        assert_eq!(boxes(&mut editor), vec![vec![], vec![0]]);
+        assert!(editor.texts("Intro").is_empty());
+        editor.text("Outro");
+    }
+
+    #[test]
+    fn a_reorder_rebuilds_the_boxes() {
+        let mut editor = editor_with(&["Intro", "Outro"]);
+        {
+            let world = editor.world();
+            world
+                .resource_mut::<EditorScene>()
+                .edit()
+                .animation
+                .children
+                .swap(0, 1);
+            RebuildTick::bump_in(world);
+        }
+        editor.step(SETTLE);
+
+        // The first box now carries the other name.
+        let world = editor.world();
+        let first = world
+            .query::<(&BoxPath, &Children)>()
+            .iter(world)
+            .find(|(path, _)| path.0 == [0])
+            .map(|(_, children)| children.len())
+            .unwrap_or(0);
+        assert!(first > 0);
+        editor.text("Outro");
+    }
+
+    #[test]
+    fn folding_a_block_hides_what_it_holds() {
+        let mut editor = editor_with(&["Intro"]);
+        toggle_folded(editor.world(), &[]);
+        editor.step(SETTLE);
+
+        assert_eq!(boxes(&mut editor), vec![Vec::<usize>::new()]);
+        toggle_folded(editor.world(), &[]);
+        editor.step(SETTLE);
+        assert_eq!(boxes(&mut editor), vec![vec![], vec![0]]);
+    }
+
+    #[test]
+    fn the_play_button_follows_the_playing_state() {
+        let mut editor = Editor::new();
+        let icon_path = |editor: &mut Editor| {
+            let world = editor.world();
+            let play = crate::icons::PLAY;
+            let pause = crate::icons::PAUSE;
+            world
+                .query::<&ImageNode>()
+                .iter(world)
+                .filter_map(|image| {
+                    image.image.path().map(ToString::to_string)
+                })
+                .find(|path| path == play || path == pause)
+        };
+        assert_eq!(
+            icon_path(&mut editor).as_deref(),
+            Some(crate::icons::PLAY)
+        );
+
+        editor.world().spawn(
+            bevy_motiongfx::prelude::RealtimePlayer {
+                is_playing: true,
+                time_scale: 1.0,
+            },
+        );
+        editor.step(SETTLE);
+        assert_eq!(
+            icon_path(&mut editor).as_deref(),
+            Some(crate::icons::PAUSE)
+        );
+    }
+
+    #[test]
+    fn the_axis_marks_are_drawn_again_when_the_zoom_changes() {
+        let mut editor = Editor::new();
+        let marks = |editor: &mut Editor| {
+            let world = editor.world();
+            world
+                .query::<&bevy::ui::widget::Text>()
+                .iter(world)
+                .count()
+        };
+        let before = marks(&mut editor);
+        editor.world().resource_mut::<TimelineView>().zoom_to(
+            0.0,
+            Duration::ZERO,
+            20.0,
+        );
+        editor.step(SETTLE);
+        assert_ne!(marks(&mut editor), before);
+    }
+
+    #[test]
+    fn toggling_a_fold_flips_it() {
+        let mut world = World::new();
+        world.init_resource::<BlockFoldState>();
+        toggle_folded(&mut world, &[1, 2]);
+        assert!(
+            world
+                .resource::<BlockFoldState>()
+                .paths()
+                .contains(&vec![1, 2])
+        );
+        toggle_folded(&mut world, &[1, 2]);
+        assert!(
+            world.resource::<BlockFoldState>().paths().is_empty()
+        );
+    }
 }

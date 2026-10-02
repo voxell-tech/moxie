@@ -1,8 +1,8 @@
 //! Saving and loading the editor's project file.
 //!
 //! The file format is [`moxie_asset::project`]'s. This is what the
-//! editor does around it: picking the path, choosing what of the world
-//! is saved, and swapping the loaded project in. The animation
+//! editor does around it: picking the path, choosing what of the
+//! world is saved, and swapping the loaded project in. The animation
 //! addresses its subjects by [`EntityUid`], which only means anything
 //! once the entities carrying those ids are back in the world.
 
@@ -67,6 +67,17 @@ pub(crate) fn load_scene(world: &mut World) {
     open(world, &text, path);
 }
 
+/// Replaces whatever is loaded with the project file at `path`, as
+/// `File > Open` does once a path is picked.
+pub fn open_path(world: &mut World, path: PathBuf) {
+    match std::fs::read_to_string(&path) {
+        Ok(text) => open(world, &text, path),
+        Err(err) => {
+            error!("could not read {}: {err}", path.display());
+        }
+    }
+}
+
 /// Replaces whatever is loaded with the project `text` holds, read
 /// from `path`.
 pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
@@ -89,8 +100,8 @@ pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
         return;
     }
 
-    // The recompile runs on `EditorScene` changing, so inserting it is
-    // the whole of loading the animation.
+    // The recompile runs on `EditorScene` changing, so inserting it
+    // is the whole of loading the animation.
     world.insert_resource(EditorScene::new(MotionGfxScene(
         project.scene,
     )));
@@ -116,8 +127,9 @@ pub(crate) fn serialize(
         .collect();
     let world = &*world;
 
-    // Before the registry is locked below: gathering them reads it too,
-    // and a second read on a thread already holding one can deadlock.
+    // Before the registry is locked below: gathering them reads it
+    // too, and a second read on a thread already holding one can
+    // deadlock.
     let assets = world.resource::<InternalAssets>().to_save(world);
 
     let registry = world.resource::<AppTypeRegistry>().clone();
@@ -171,9 +183,9 @@ fn deserialize(
 /// Drops the loaded project, so nothing of it outlives the load.
 ///
 /// Despawning [`SceneRoot`] is the whole of it, since every subject
-/// hangs under it and bevy takes a despawned entity's descendants with
-/// it. The selections go too: both name something in the scene being
-/// replaced, and neither means anything in the one arriving.
+/// hangs under it and bevy takes a despawned entity's descendants
+/// with it. The selections go too: both name something in the scene
+/// being replaced, and neither means anything in the one arriving.
 fn clear(world: &mut World) {
     let roots = world
         .query_filtered::<Entity, With<SceneRoot>>()

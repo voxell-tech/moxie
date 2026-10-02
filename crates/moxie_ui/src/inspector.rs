@@ -1,14 +1,14 @@
 //! Reflection-driven inspector.
 //!
-//! [`InspectorFields`] walks any reflected value in the world and
+//! [`inspector_fields`] walks any reflected value in the world and
 //! renders it as a collapsible hierarchy of editable rows. Which
-//! widget a leaf gets is a type-registry lookup, so a new editable
+//! editor a leaf gets is a type-registry lookup, so a new editable
 //! type is one [`Inspect`] impl away.
 //!
-//! A widget is handed a [`Source`] rather than a value, and never
+//! An editor is handed a [`Binding`] rather than a value, and never
 //! learns where that value actually lives. [`Field`] (a component of
 //! an entity) is the one the walk uses, but anything else the editor
-//! keeps can serve the same widgets.
+//! keeps can serve the same editors through a [`Source`].
 
 mod enums;
 mod field;
@@ -28,22 +28,26 @@ use bevy::reflect::std_traits::ReflectDefault;
 use bevy::reflect::{FromType, GetTypeRegistration, PartialReflect};
 use bevy::sprite::Anchor;
 use bevy::text::{LetterSpacing, LineHeight};
-use fynix::composer::Composer;
-use fynix::prelude::*;
-use moxie_asset::type_data;
-
-use crate::elements::{Frame, Label};
-use crate::fold;
-use crate::reactive::{BevyUi, FynixHost};
-
+use bevy_fynix::views::{FrameProps as _, column, row};
+use bevy_fynix::{AnyView, Bevy, Signal, View, ViewExt as _};
+pub use enums::variant_picker;
 pub use field::{Field, Owner};
-use field_drag::FieldName;
-pub(crate) use field_drag::draggable_field;
-pub use field_drag::{DraggedField, FieldAnimatable, FieldHasAction};
-pub use tree::{InspectorFields, Section};
+pub use field_drag::{
+    DraggableField, DraggedField, FieldAnimatable, FieldHasAction,
+    FieldName, draggable_field, field_name,
+};
+use moxie_asset::type_data;
+pub use tree::{inspector_fields, section, variant_fields};
 pub(crate) use tree::{root_leaf, section_open, toggle_section};
 
-/// The widgets and the entity-inspector sections available out of
+use crate::fold;
+use crate::theme::EditorTheme;
+
+/// An editor, as the registry stores it: a function from where the
+/// value lives to the view that edits it.
+pub type Editor = fn(Binding) -> AnyView<Bevy, EditorTheme>;
+
+/// The editors and the entity-inspector sections available out of
 /// the box.
 ///
 /// Anything else is one [`InspectAppExt::register_inspect`] or
@@ -126,13 +130,14 @@ impl Plugin for InspectPlugin {
     }
 }
 
-/// Registering inspector widgets on the app.
+/// Registering inspector editors on the app.
 pub trait InspectAppExt {
     /// Makes `T` editable wherever the inspector meets it.
     fn register_inspect<T: Inspect>(&mut self) -> &mut Self;
 
-    /// Makes `T` a section of its own wherever an [`EntityInspector`](
-    /// crate::elements::EntityInspector) meets it.
+    /// Makes `T` a section of its own wherever an
+    /// [`entity_inspector`](crate::elements::entity_inspector) meets
+    /// it.
     ///
     /// Opt-in like [`register_inspect`](Self::register_inspect):
     /// `#[reflect(Component)]` lets the inspector reach a value, not
@@ -155,7 +160,7 @@ pub trait InspectAppExt {
     ) -> &mut Self;
 
     /// A scope for tagging the [`InspectGroup::register_inspectable`]
-    /// calls chained off it with `name`, so `AddComponent`'s menu
+    /// calls chained off it with `name`, so the add-component menu
     /// lists them together.
     fn with_inspect_group(
         &mut self,
@@ -164,8 +169,8 @@ pub trait InspectAppExt {
 
     /// Marks `T` a component no fresh entity is ever without: also
     /// registers `T`'s [`ReflectDefault`], what actually spawns it on
-    /// one, and [`EntityInspector`](crate::elements::EntityInspector)
-    /// never offers to delete it.
+    /// one, and [`entity_inspector`](
+    /// crate::elements::entity_inspector) never offers to delete it.
     fn register_essential<
         T: Component
             + Reflect
@@ -262,7 +267,7 @@ impl InspectAppExt for App {
     }
 }
 
-/// Which group of `AddComponent`'s menu a component belongs to; see
+/// A component's group in the add-component menu; see
 /// [`InspectAppExt::with_inspect_group`].
 #[derive(Clone)]
 pub struct ReflectInspectGroup(pub &'static str);
@@ -343,10 +348,10 @@ impl InspectGroup<'_> {
     }
 }
 
-/// Where a widget reads and writes the value it edits.
+/// The place an editor reads and writes the value it edits.
 ///
 /// Reflected rather than typed, so it can be handed to whichever
-/// widget the registry picked for an unknown type.
+/// editor the registry picked for an unknown type.
 pub trait Source: Send + Sync + 'static {
     fn get(&self, world: &World) -> Option<Box<dyn PartialReflect>>;
 
@@ -357,7 +362,7 @@ pub trait Source: Send + Sync + 'static {
     fn changed(&self)
     -> Box<dyn FnMut(&World) -> bool + Send + Sync>;
 
-    /// A copy of its own, for a widget that needs one per input.
+    /// A copy of its own, for an editor that needs one per input.
     fn boxed(&self) -> Box<dyn Source>;
 
     /// The component field this reads and writes, when it is one.
@@ -368,8 +373,8 @@ pub trait Source: Send + Sync + 'static {
     }
 }
 
-/// Reading and writing a source as a concrete type, which is what a
-/// widget actually wants.
+/// Reading and writing a source as a concrete type, which is what an
+/// editor actually wants.
 pub trait SourceExt: Source {
     fn read<T: FromReflect>(&self, world: &World) -> Option<T> {
         T::from_reflect(&*self.get(world)?)
@@ -390,48 +395,84 @@ pub trait SourceExt: Source {
 
 impl<S: Source + ?Sized> SourceExt for S {}
 
-/// A boxed [`Source`] cloned through [`Source::boxed`] rather than
-/// derived - a trait object isn't `Clone` on its own - so a
-/// [`menu_item`](crate::elements::menu_item) row can be handed a
-/// closure it's free to run more than once.
-pub(crate) struct ClonableSource(pub(crate) Box<dyn Source>);
+/// A [`Source`] an editor is handed, cloneable so each input of an
+/// editor can hold its own.
+///
+/// It carries no value: an editor binds a [`signal`](Self::signal) of
+/// it to its inputs and writes back through [`write`](Self::write),
+/// so nothing goes stale behind a snapshot.
+pub struct Binding(Box<dyn Source>);
 
-impl Clone for ClonableSource {
+impl Clone for Binding {
     fn clone(&self) -> Self {
         Self(self.0.boxed())
     }
 }
 
-impl ClonableSource {
-    // Methods of its own: a closure only using the field captures
-    // just that field - `Box<dyn Source>` on its own, which isn't
-    // `Clone`.
-    pub(crate) fn get(
+impl From<Field> for Binding {
+    fn from(field: Field) -> Self {
+        Self::new(field)
+    }
+}
+
+impl Binding {
+    /// A binding to what `source` reads and writes.
+    pub fn new(source: impl Source) -> Self {
+        Self(Box::new(source))
+    }
+
+    /// The component field this reads and writes, when it is one.
+    pub fn field(&self) -> Option<&Field> {
+        self.0.as_field()
+    }
+
+    /// The value now, as a reflected copy.
+    pub fn get(
         &self,
         world: &World,
     ) -> Option<Box<dyn PartialReflect>> {
         self.0.get(world)
     }
 
-    pub(crate) fn set(
+    /// The value now, as `T`.
+    pub fn read<T: FromReflect>(&self, world: &World) -> Option<T> {
+        self.0.read(world)
+    }
+
+    /// Writes `value`, unless the source already holds it.
+    pub fn write<T: PartialReflect>(
         &self,
         world: &mut World,
-        value: &dyn PartialReflect,
+        value: T,
     ) {
+        self.0.write(world, value);
+    }
+
+    /// Writes a reflected `value`.
+    pub fn set(&self, world: &mut World, value: &dyn PartialReflect) {
         self.0.set(world, value);
     }
-}
 
-/// A source's signal, in the shape the kernel polls with. Nothing
-/// about a source depends on the node asking.
-pub fn when_changed(
-    source: &dyn Source,
-) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool
-+ Send
-+ Sync
-+ 'static {
-    let mut changed = source.changed();
-    move |WorldNodeRef { world, .. }| changed(world)
+    /// A signal of `read` run against this binding, re-read when the
+    /// source says the value may have moved.
+    pub fn derive<T>(
+        &self,
+        read: impl Fn(&Binding, &World) -> T + Send + Sync + 'static,
+    ) -> Signal<T> {
+        let binding = self.clone();
+        Signal::new(
+            move |world: &World| read(&binding, world),
+            self.0.changed(),
+        )
+    }
+
+    /// A signal of the value as `T`, `T::default()` while it cannot
+    /// be read.
+    pub fn signal<T: FromReflect + Default>(&self) -> Signal<T> {
+        self.derive(|binding, world| {
+            binding.read::<T>(world).unwrap_or_default()
+        })
+    }
 }
 
 /// Fires when `get`'s value differs from the last poll, and on the
@@ -461,154 +502,104 @@ pub fn reflect_changed(
     }
 }
 
-/// The widget for whatever `source` currently holds.
+/// The editor for whatever `binding` holds when this is built.
 ///
 /// A registered [`Inspect`] wins; failing that an enum picks its own
 /// variant, which needs no registration because reflection already
-/// knows what the variants are.
-pub fn inspect_value(ui: &mut BevyUi, source: &dyn Source) {
-    let Some(value) = source.get(ui.world) else {
-        return;
-    };
-
-    let drawer = value
-        .get_represented_type_info()
-        .map(|info| info.type_id())
-        .and_then(|type_id| {
-            type_data::<ReflectInspect>(ui.world, type_id)
+/// knows what the variants are. Anything else is an empty node.
+pub fn inspect_value(binding: Binding) -> AnyView<Bevy, EditorTheme> {
+    AnyView::new(move |cx| {
+        let value = binding.get(cx.world);
+        let drawer = value.as_deref().and_then(|value| {
+            let type_id =
+                value.get_represented_type_info()?.type_id();
+            type_data::<ReflectInspect>(cx.world, type_id)
         });
-
-    if let Some(drawer) = drawer {
-        drawer.build(source, ui);
-    } else if let Some(variants) = enums::variants(&*value) {
-        let pick = {
-            let registry =
-                ui.world.resource::<AppTypeRegistry>().read();
-            enums::constructible(&*value, &registry)
+        let view = match drawer {
+            Some(drawer) => drawer.build(binding),
+            None => variant_picker(binding),
         };
-        ui.compose(enums::VariantPicker {
-            source,
-            variants,
-            pick,
-        });
-    }
+        cx.build(view)
+    })
 }
 
-/// One field's row: a label column, then whatever `value` builds
-/// beside it. The split is proportional (40/60), so it scales with
-/// however wide the panel is docked - the same convention Unity,
-/// Godot, and Unreal's own inspectors use.
+/// The label column's share of the row.
+const LABEL_SHARE: f32 = 0.4;
+
+/// The gap between a row's label and its value.
+const LABEL_GAP: f32 = 8.0;
+
+/// One field's row: a label column, then `value` beside it, split
+/// 40/60 so it scales with the panel's width.
 ///
 /// `depth` is how many [`Foldable`](crate::fold::Foldable) bodies
-/// this row sits under. Each one narrows the row by its own indent,
-/// which would otherwise pull the 40% mark inward with it; the label
-/// sheds that same width back so `value` starts at the same place
-/// no matter how deep its row is nested.
-pub struct FieldRow<F: FnOnce(&mut BevyUi)> {
-    pub label: String,
-    pub color: Color,
-    pub bold: bool,
-    pub depth: u32,
-    pub value: F,
-    /// The component field this row edits, when it is one. An
-    /// animatable one (per [`FieldAnimatable`]) gets a draggable label;
-    /// `None` never does.
-    pub field: Option<Field>,
-}
-
-impl<F: FnOnce(&mut BevyUi)> Composer<FynixHost> for FieldRow<F> {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let Self {
-            label,
-            color,
-            bold,
-            depth,
-            value,
-            field,
-        } = self;
-
-        const VALUE_SHARE: f32 = 0.6;
-        const LABEL_SIZE: f32 = 12.0;
-        const EDGE_PADDING: f32 = 8.0;
-        let indent = ui.theme.space.fold_indent + fold::RAIL_WIDTH;
-        let shed = VALUE_SHARE * depth as f32 * indent;
-
-        ui.elem(elem!(
-            Frame,
-            width = percent(100),
-            direction = FlexDirection::Row,
-            align = AlignItems::Center,
-            column_gap = px(8),
-            padding = UiRect::vertical(px(3))
-        ))
-        .with(move |ui| {
-            // A spliced field has no name of its own - see `entries`
-            // in `tree.rs` - so there is nothing to head a label
-            // column with; the value takes the whole row instead.
-            if !label.is_empty() {
-                ui.elem(elem!(
-                    Frame,
-                    width = percent(40),
-                    margin = UiRect::right(px(-shed)),
-                    overflow = Overflow::clip_x(),
-                    padding = UiRect::right(px(EDGE_PADDING))
-                ))
-                .with(move |ui| match field {
-                    Some(field) => {
-                        ui.compose(FieldName {
-                            field,
-                            text: label,
-                            size: LABEL_SIZE,
-                            color,
-                            bold,
-                        });
-                    }
-                    None => {
-                        ui.elem(elem!(
-                            Label,
-                            text = label,
-                            size = LABEL_SIZE,
-                            color = color,
-                            bold = bold,
-                            wrap = false
-                        ));
-                    }
-                });
-            }
-            ui.elem(elem!(Frame, flex_grow = 1.0f32)).with(value);
-        })
-        .handle()
-    }
-}
-
-/// Builds the editing widget for one reflected value.
+/// this row sits under. The label sheds their indent, so `value`
+/// starts at the same place however deep the row is nested.
 ///
-/// The value itself is not passed in. A widget is built once, then
-/// binds to its source and re-reads whenever that fires, so a
-/// focused input survives an edit.
+/// A row with no `label` has no label column, and `value` takes the
+/// whole row.
+pub fn field_row(
+    label: Option<AnyView<Bevy, EditorTheme>>,
+    value: AnyView<Bevy, EditorTheme>,
+    depth: u32,
+) -> impl View<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let space = cx.theme().space;
+        let indent = space.fold_toggle / 2.0
+            + fold::RAIL_WIDTH
+            + space.fold_indent;
+        let shed = (1.0 - LABEL_SHARE) * depth as f32 * indent;
+
+        let value = column((value,)).grow(1.0).gap(0.0);
+        let mut columns = Vec::new();
+        if let Some(label) = label {
+            columns.push(
+                column((label,))
+                    .width(percent(LABEL_SHARE * 100.0))
+                    .margin(UiRect::right(px(-shed)))
+                    .overflow(Overflow::clip_x())
+                    .padding(UiRect::right(px(LABEL_GAP)))
+                    .gap(0.0)
+                    .boxed(),
+            );
+        }
+        columns.push(value.boxed());
+        cx.build(
+            row(columns)
+                .width(percent(100.0))
+                .align(AlignItems::Center)
+                .gap(LABEL_GAP)
+                .padding(UiRect::vertical(px(3.0))),
+        )
+    })
+}
+
+/// Builds the editor for one reflected value.
+///
+/// The value itself is not passed in. An editor is built once, then
+/// its inputs bind to a [`Binding::signal`] and re-read whenever that
+/// fires, so a focused input survives an edit.
 pub trait Inspect:
     FromReflect + TypePath + GetTypeRegistration
 {
-    fn build(source: &dyn Source, ui: &mut BevyUi);
+    fn build(binding: Binding) -> AnyView<Bevy, EditorTheme>;
 }
 
 /// Type data pointing at a type's [`Inspect::build`].
 ///
-/// A bare `fn`: the source arrives as an argument, so nothing about
-/// the widget has to be boxed to be stored.
+/// A bare `fn`: the binding arrives as an argument, so nothing about
+/// the editor has to be boxed to be stored.
 #[derive(Clone)]
 pub struct ReflectInspect {
-    build: fn(&dyn Source, &mut BevyUi),
+    build: Editor,
 }
 
 impl ReflectInspect {
-    pub fn build(&self, source: &dyn Source, ui: &mut BevyUi) {
-        (self.build)(source, ui)
+    pub fn build(
+        &self,
+        binding: Binding,
+    ) -> AnyView<Bevy, EditorTheme> {
+        (self.build)(binding)
     }
 }
 
@@ -618,8 +609,8 @@ impl<T: Inspect> FromType<T> for ReflectInspect {
     }
 }
 
-/// Marks a component as one an [`EntityInspector`](
-/// crate::elements::EntityInspector) shows. See
+/// Marks a component as one an [`entity_inspector`](
+/// crate::elements::entity_inspector) shows. See
 /// [`InspectAppExt::register_inspectable`].
 #[derive(Clone)]
 pub struct ReflectInspectable {

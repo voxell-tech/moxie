@@ -39,13 +39,12 @@ pub(crate) fn retarget_scene_cameras(
     }
 }
 
-/// Fit the preview into its parent area, preserving the composition's
-/// aspect ratio (letterbox) so it never stretches.
+/// Fit the preview into `area`, preserving the composition's aspect
+/// ratio (letterbox) so it never stretches.
 pub(crate) fn preview_fit(
     world: &World,
-    node: Entity,
+    area: Entity,
 ) -> Option<(Val, Val)> {
-    let area = world.get::<ChildOf>(node)?.parent();
     let computed = world.get::<ComputedNode>(area)?;
     let avail = computed.size() * computed.inverse_scale_factor();
     if avail.x <= 0.0 || avail.y <= 0.0 {

@@ -1,6 +1,7 @@
 //! The `.mox` project file: one RON document holding a project's
 //! entities, as a reflected [`DynamicWorld`], its animation, its
-//! bookmarks, and the [internal assets](crate::InternalAssets) it owns.
+//! bookmarks, and the [internal assets](crate::InternalAssets) it
+//! owns.
 //!
 //! The animation's own type is the caller's, so this reads and writes
 //! any `S` serde can. Files and bookmarks under the project's folder
@@ -164,9 +165,9 @@ impl<S: Serialize> Serialize for Document<'_, S> {
     }
 }
 
-/// A [`DynamicWorld`] laid out as bevy's own serializer writes it, for
-/// bevy's [`WorldDeserializer`] to read back, but with its handles
-/// written through `handles`.
+/// A [`DynamicWorld`] laid out as bevy's own serializer writes it,
+/// for bevy's [`WorldDeserializer`] to read back, but with its
+/// handles written through `handles`.
 struct WorldOut<'a> {
     world: &'a DynamicWorld,
     registry: &'a TypeRegistry,
@@ -245,7 +246,8 @@ impl Serialize for Components<'_> {
     }
 }
 
-/// Values of distinct types, as a map from type path to value, sorted.
+/// Values of distinct types, as a map from type path to value,
+/// sorted.
 struct Values<'a> {
     values: &'a [Box<dyn PartialReflect>],
     registry: &'a TypeRegistry,

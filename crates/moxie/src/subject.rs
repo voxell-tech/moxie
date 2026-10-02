@@ -35,7 +35,7 @@ impl Target {
             let registry = world.resource::<AppTypeRegistry>().read();
             registry.get(field.root_type())?.type_info().type_path()
         };
-        let path = format!("::{}", field.path().replace('.', "::"));
+        let path = format!(".{}", field.path());
         Some(Self {
             subject,
             field: FieldRef::new(TypeName::new(type_path), path),
@@ -68,14 +68,14 @@ impl Target {
     }
 }
 
-/// A subject as a row shows it, split so its id can render muted where
-/// its name cannot.
+/// A subject as a row shows it, split so its id can render muted
+/// where its name cannot.
 #[derive(Clone, PartialEq)]
 pub(crate) struct Caption {
     /// Its name, while it is still in the world and has one.
     pub(crate) name: Option<String>,
-    /// The head of its id: a whole uuid is unreadable, but two subjects
-    /// sharing a name still need telling apart.
+    /// The head of its id: a whole uuid is unreadable, but two
+    /// subjects sharing a name still need telling apart.
     pub(crate) head: String,
 }
 

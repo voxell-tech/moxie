@@ -1,7 +1,7 @@
 //! Where a node dropped on the track lands, and putting it there:
-//! between two of a block's children, or onto another node to wrap the
-//! pair in a new block. Moving a node and creating one from a field
-//! both land this way.
+//! between two of a block's children, or onto another node to wrap
+//! the pair in a new block. Moving a node and creating one from a
+//! field both land this way.
 
 use bevy::prelude::*;
 use bevy_motiongfx::scene::backend::Backend;
@@ -101,8 +101,9 @@ pub(super) fn resolve(
             _ => (Combinator::All, false),
         };
 
-        // The surrounding block already runs its children this way, so
-        // a sibling is the same timing without the nesting.
+        // The surrounding block already runs its children this way,
+        // so a sibling is the same timing without the
+        // nesting.
         if wanted == combinator {
             return Some(Target::Insert {
                 index: if before { index } else { index + 1 },
@@ -161,8 +162,8 @@ fn innermost_block(
 }
 
 /// The part of `bounds` a drop reads as the node itself; the margin
-/// around it targets the enclosing block. Capped so even a narrow node
-/// keeps a core.
+/// around it targets the enclosing block. Capped so even a narrow
+/// node keeps a core.
 fn core_of(bounds: Rect) -> Rect {
     let margin = Vec2::new(
         EDGE_MARGIN_PX.min(bounds.width() / 4.0),
@@ -389,9 +390,10 @@ fn band_across(
     }
 }
 
-/// The `width`-thick insert line at `index` among `parent`'s children:
-/// centered in the gap between neighbours, flush against a lone
-/// neighbour, or at the block's leading edge when there are none.
+/// The `width`-thick insert line at `index` among `parent`'s
+/// children: centered in the gap between neighbours, flush against a
+/// lone neighbour, or at the block's leading edge when there are
+/// none.
 fn line_rect(
     parent: &[usize],
     index: usize,

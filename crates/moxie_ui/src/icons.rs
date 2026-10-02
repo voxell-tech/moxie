@@ -4,10 +4,7 @@
 //! ...) belong in the app's crate instead. This is only for icons
 //! the dock/inspector engine itself draws.
 
-/// Shown when a tab has no [`DockWindowDescriptor::icon`](
-/// crate::widgets::dock::DockWindowDescriptor::icon): the slot stays
-/// reserved but fully transparent rather than being conditionally
-/// omitted.
+/// A transparent icon, keeping the slot of a dock tab with no icon.
 pub const PLACEHOLDER: &str = "icons/general/placeholder.png";
 
 /// A plus sign, for a button that adds something.

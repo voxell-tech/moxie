@@ -13,8 +13,8 @@ pub(crate) struct Tick {
     pub(crate) label: Option<String>,
 }
 
-/// The finest spacing that still leaves `min_px` between marks at this
-/// scale, off a ladder of one and five per power of ten.
+/// The finest spacing that still leaves `min_px` between marks at
+/// this scale, off a ladder of one and five per power of ten.
 fn tick_step(px_per_second: f32, min_px: f32) -> i64 {
     let px_per_ms = px_per_second / 1000.0;
     // Milliseconds a gap has to cover.

@@ -166,8 +166,9 @@ fn a_field_built_later_has_the_editor_caret() {
     // The inspector builds its fields once something is selected.
     add_cube(&mut editor);
 
-    let base5 =
-        moxie_ui::theme::EditorTheme::default().palette.base[5];
+    // The new text input leaves the caret at Bevy's default, which
+    // is the theme's text colour.
+    let text = moxie_ui::theme::EditorTheme::default().color.text;
     let world = editor.world();
     let carets = world
         .query::<&bevy::text::TextCursorStyle>()
@@ -175,7 +176,33 @@ fn a_field_built_later_has_the_editor_caret() {
         .map(|caret| caret.color)
         .collect::<Vec<_>>();
     assert!(!carets.is_empty());
-    assert!(carets.iter().all(|&color| color == base5), "{carets:?}");
+    assert!(carets.iter().all(|&color| color == text), "{carets:?}");
+}
+
+#[test]
+fn the_shell_shows_the_menu_bar_and_an_empty_inspector() {
+    let mut editor = Editor::new();
+    editor.text("File");
+    // The inspector and the action panel each say it.
+    assert_eq!(editor.texts("Nothing selected").len(), 2);
+    assert_eq!(editor.texts("Timeline").len(), 1);
+    editor.text("Action");
+}
+
+#[test]
+fn the_inspector_follows_the_selection() {
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+    // The action panel keeps its own, whatever the hierarchy picks.
+    assert_eq!(editor.texts("Nothing selected").len(), 1);
+
+    editor.world().insert_resource(SelectedEntity(None));
+    editor.step(SETTLE);
+    assert_eq!(editor.texts("Nothing selected").len(), 2);
+
+    editor.world().insert_resource(SelectedEntity(Some(cube)));
+    editor.step(SETTLE);
+    assert_eq!(editor.texts("Nothing selected").len(), 1);
 }
 
 #[test]
@@ -240,16 +267,16 @@ fn translation_x(editor: &mut Editor) -> (Entity, Entity) {
 }
 
 /// The text of the first number field under `root`, depth first.
+/// A number field keeps its text out of the pointer's way until it
+/// is typed into, which a text field does not.
 fn first_number_input(world: &World, root: Entity) -> Option<Entity> {
-    use bevy::feathers::controls::FeathersNumberInput;
-
     let children = world.get::<Children>(root)?;
     children.iter().find_map(|child| {
-        let in_number =
-            world.get::<FeathersNumberInput>(root).is_some();
-        if in_number
-            && world.get::<bevy::text::EditableText>(child).is_some()
-        {
+        let is_number_input = world
+            .get::<bevy::text::EditableText>(child)
+            .is_some()
+            && world.get::<bevy::picking::Pickable>(child).is_some();
+        if is_number_input {
             return Some(child);
         }
         first_number_input(world, child)

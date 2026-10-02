@@ -3,59 +3,64 @@
 //!
 //! The reflect inspector cannot reach these: it addresses one
 //! component of one entity, and an action is scene data. This edits
-//! the [`EditorScene`] directly, by the path the timeline selected
-//! the node with.
+//! the [`EditorScene`] directly, by the path the
+//! timeline selected the node with.
 
 use core::time::Duration;
 
 use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
 use bevy::reflect::PartialReflect;
+use bevy_fynix::tokens::Tone;
+use bevy_fynix::views::{
+    FrameProps as _, column, label, row, scroll, segmented,
+};
+use bevy_fynix::{AnyView, Bevy, ViewExt as _, keyed};
 use bevy_motiongfx::scene::backend::{AnimEase, AnimInterp, Backend};
-use fynix::composer::Composer;
-use fynix::prelude::*;
 use motiongfx_scene::block::{Block, Combinator, Node};
 use motiongfx_scene::refs::FieldRef;
-use moxie_ui::elements::{
-    Frame, Label, ScrollArea, SegmentedControl, display_name,
-};
+use moxie_ui::elements::display_name;
+use moxie_ui::gaps::{anchored, changing_under};
 use moxie_ui::inspector::{
-    FieldRow, Source, inspect_value, reflect_changed,
+    Binding, Source, field_row, inspect_value, reflect_changed,
 };
-use moxie_ui::reactive::{BevyUi, FynixHost, value_changed};
+use moxie_ui::theme::EditorTheme;
 
 use crate::{EditorScene, EditorSettings, SelectedAction, subject};
 
-/// The action panel, as kernel nodes.
-pub(super) struct ActionPanel;
+/// The stagger a block gets when the Type picker switches it to
+/// `Flow`.
+const DEFAULT_STAGGER: Duration = Duration::from_millis(150);
 
-impl Composer<FynixHost> for ActionPanel {
-    type Element = ScrollArea;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, ScrollArea> {
-        let pad = ui.theme.space.xl;
-        ui.elem(elem!(
-            ScrollArea,
-            flex_grow = 1.0f32,
-            row_gap = px(8),
-            padding = px(pad),
-            scroll_x = false
-        ))
-        // The shape only: each input binds its own value, so typing
-        // into one never rebuilds the panel out from under it.
-        .watch(value_changed(shape), build)
-        .handle()
-    }
+/// The action panel.
+///
+/// Built again only when the shape of the selection changes: each
+/// input binds its own value, so typing into one never rebuilds the
+/// panel out from under it.
+pub(super) fn panel() -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(|cx| {
+        let pad = cx.theme().space.xl;
+        cx.build(anchored::<EditorTheme, _>(move |anchor| {
+            keyed::<EditorTheme, Shape>(
+                changing_under(anchor, shape),
+                |shape| contents(shape.clone()),
+            )
+            .within(
+                scroll(())
+                    .width(percent(100.0))
+                    .grow(1.0)
+                    .gap(8.0)
+                    .padding(UiRect::all(px(pad))),
+            )
+        }))
+    })
 }
 
 /// One property of the selected node that an input writes back.
 ///
 /// Named: an input re-reads and rewrites it long after the panel was
 /// built.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Edit {
     /// How long the action runs for.
     Duration,
@@ -73,7 +78,7 @@ enum Edit {
 
 /// Everything a rebuild depends on. The numbers are deliberately
 /// absent: they move without rebuilding anything.
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 struct Shape {
     path: Option<Vec<usize>>,
     /// Empty when the path no longer lands on a node.
@@ -91,7 +96,7 @@ struct Shape {
 }
 
 /// The action's target value, wherever the pool keeps it.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 struct Pooled(Uuid);
 
 /// [`Edit::Interp`]'s own reflected type, standing in for
@@ -131,7 +136,8 @@ struct Property {
     edit: Edit,
 }
 
-fn shape(world: &World, _: Entity) -> Shape {
+/// The current selection's shape.
+fn shape(world: &World) -> Shape {
     let path = world
         .get_resource::<SelectedAction>()
         .and_then(|selected| selected.0.clone());
@@ -149,132 +155,104 @@ fn shape(world: &World, _: Entity) -> Shape {
         })
 }
 
-fn build(ui: &mut BevyUi) {
-    let theme = ui.theme;
-    let shape = shape(ui.world, ui.parent());
+/// A dimmed note, for a panel with nothing to show.
+fn note(text: &str) -> AnyView<Bevy, EditorTheme> {
+    label(text.to_string()).tone(Tone::Dim).boxed()
+}
 
+/// A row of `value` under a dimmed `name`.
+fn labelled(
+    name: impl Into<String>,
+    value: AnyView<Bevy, EditorTheme>,
+) -> AnyView<Bevy, EditorTheme> {
+    field_row(
+        Some(label(name.into()).tone(Tone::Dim).boxed()),
+        value,
+        0,
+    )
+    .boxed()
+}
+
+/// The panel's rows for `shape`.
+fn contents(shape: Shape) -> AnyView<Bevy, EditorTheme> {
     let Some(path) = shape.path else {
-        note(ui, "Nothing selected");
-        return;
+        return note("Nothing selected");
     };
     if shape.kind.is_empty() {
-        note(ui, "Selection is no longer in the scene");
-        return;
+        return note("Selection is no longer in the scene");
     }
 
-    heading(ui, path.clone());
+    let mut rows = vec![heading(path.clone())];
     if let Some(subject) = shape.subject {
-        let primary = theme.color.text;
-        let muted = theme.color.text_dim;
-        ui.compose(FieldRow {
-            label: "Subject".to_string(),
-            color: muted,
-            bold: false,
-            depth: 0,
-            field: None,
-            value: move |ui: &mut BevyUi| {
-                ui.elem(elem!(
-                    Frame,
-                    direction = FlexDirection::Row,
-                    align = AlignItems::Center,
-                    column_gap = px(4)
-                ))
-                .with(move |ui| {
-                    if let Some(name) = subject.name {
-                        ui.elem(elem!(
-                            Label,
-                            text = name,
-                            color = primary,
-                            wrap = false
-                        ));
-                    }
-                    ui.elem(elem!(
-                        Label,
-                        text = format!("#{}", subject.head),
-                        color = muted,
-                        wrap = false
-                    ));
-                });
-            },
-        });
+        rows.push(labelled("Subject", caption(subject)));
     }
     if let Some(combinator) = shape.combinator {
-        let selected = match combinator {
-            "Chain" => 0,
-            "All" => 1,
-            _ => 2,
-        };
-        let path = path.clone();
-        ui.compose(FieldRow {
-            label: "Type".to_string(),
-            color: theme.color.text_dim,
-            bold: false,
-            depth: 0,
-            field: None,
-            value: move |ui: &mut BevyUi| {
-                ui.compose(SegmentedControl {
-                    options: vec![
-                        "Chain".to_string(),
-                        "All".to_string(),
-                        "Flow".to_string(),
-                    ],
-                    selected,
-                    on_select:
-                        move |i: usize, commands: &mut Commands| {
-                            let path = path.clone();
-                            commands.queue(
-                                move |world: &mut World| {
-                                    set_combinator(world, &path, i);
-                                },
-                            );
-                        },
-                });
-            },
-        });
+        rows.push(labelled(
+            "Type",
+            type_picker(combinator, path.clone()),
+        ));
     }
     for (name, value) in shape.rows {
-        let primary = theme.color.text;
-        ui.compose(FieldRow {
-            label: name,
-            color: theme.color.text_dim,
-            bold: false,
-            depth: 0,
-            field: None,
-            value: move |ui: &mut BevyUi| {
-                ui.elem(elem!(
-                    Label,
-                    text = value,
-                    color = primary,
-                    wrap = false
-                ));
-            },
-        });
+        rows.push(labelled(name, label(value).wrap(false).boxed()));
     }
     for (name, edit) in shape.edits {
         let source = Property {
             path: path.clone(),
             edit,
         };
-        ui.compose(FieldRow {
-            label: name,
-            color: theme.color.text_dim,
-            bold: false,
-            depth: 0,
-            field: None,
-            value: move |ui: &mut BevyUi| inspect_value(ui, &source),
-        });
+        rows.push(labelled(
+            name,
+            inspect_value(Binding::new(source)),
+        ));
+    }
+    if let Some(pooled) = shape.value {
+        rows.push(labelled(
+            "Value",
+            inspect_value(Binding::new(pooled)),
+        ));
     }
 
-    if let Some(pooled) = shape.value {
-        ui.compose(FieldRow {
-            label: "Value".to_string(),
-            color: theme.color.text_dim,
-            bold: false,
-            depth: 0,
-            field: None,
-            value: move |ui: &mut BevyUi| inspect_value(ui, &pooled),
-        });
-    }
+    column(rows).width(percent(100.0)).gap(8.0).boxed()
+}
+
+/// A subject's name, then its id head muted.
+fn caption(subject: subject::Caption) -> AnyView<Bevy, EditorTheme> {
+    let name =
+        subject.name.map(|name| label(name).wrap(false).boxed());
+    let head = label(format!("#{}", subject.head))
+        .tone(Tone::Dim)
+        .wrap(false)
+        .boxed();
+    row(name.into_iter().chain([head]).collect::<Vec<_>>())
+        .align(AlignItems::Center)
+        .gap(4.0)
+        .boxed()
+}
+
+/// The Chain/All/Flow picker of the block at `path`.
+fn type_picker(
+    combinator: &'static str,
+    path: Vec<usize>,
+) -> AnyView<Bevy, EditorTheme> {
+    let selected = match combinator {
+        "Chain" => 0,
+        "All" => 1,
+        _ => 2,
+    };
+    segmented(
+        ["Chain", "All", "Flow"],
+        selected,
+        move |world, index| set_combinator(world, &path, index),
+    )
+    .boxed()
+}
+
+/// The panel's heading: the node's name, as an editable text field.
+fn heading(path: Vec<usize>) -> AnyView<Bevy, EditorTheme> {
+    inspect_value(Binding::new(Property {
+        path,
+        edit: Edit::Name,
+    }))
 }
 
 /// The selected node, as what to show and what can be changed.
@@ -701,7 +679,7 @@ fn set_combinator(world: &mut World, path: &[usize], index: usize) {
     let combinator = match index {
         0 => Combinator::Chain,
         1 => Combinator::All,
-        _ => Combinator::Flow(Duration::from_secs_f32(0.15)),
+        _ => Combinator::Flow(DEFAULT_STAGGER),
     };
 
     if path.is_empty() {
@@ -724,21 +702,622 @@ fn combinator_name(combinator: &Combinator) -> &'static str {
     }
 }
 
-/// The panel's heading: the node's own name, editable directly rather
-/// than a read-only title plus a separate Name row beneath it -
-/// clicking it is what a text field already does. Reuses the same
-/// `Property`/`Edit::Name` source and the registered `String` widget
-/// every other text edit in this panel goes through.
-fn heading(ui: &mut BevyUi, path: Vec<usize>) {
-    let source = Property {
-        path,
-        edit: Edit::Name,
-    };
-    inspect_value(ui, &source);
-}
+#[cfg(test)]
+mod tests {
+    use bevy_motiongfx::scene::asset::MotionGfxScene;
+    use bevy_motiongfx::scene::backend::AnimOp;
+    use bevy_motiongfx::scene::id::{EntityUid, SceneUid};
+    use bevy_motiongfx::scene::value_pool::ValuePool;
+    use motiongfx_scene::block::ActionCmd;
+    use motiongfx_scene::scene::{Scene, Stage};
 
-/// What the panel says when there is nothing to show.
-fn note(ui: &mut BevyUi, text: &str) {
-    let color = ui.theme.color.text_dim;
-    ui.elem(elem!(Label, text = text.to_string(), color = color));
+    use super::*;
+    use crate::tests::harness::{Editor, SETTLE};
+
+    const TRANSFORM: &str =
+        "bevy_transform::components::transform::Transform";
+
+    fn scene(
+        children: Vec<Node<Backend>>,
+        values: ValuePool,
+    ) -> MotionGfxScene {
+        MotionGfxScene(Scene {
+            stage: Stage {
+                subjects: Vec::new(),
+            },
+            animation: Block::chain(children),
+            values,
+        })
+    }
+
+    fn draft(delay: Option<Duration>) -> Node<Backend> {
+        Node::Draft {
+            delay,
+            duration: Duration::from_secs(1),
+            name: None,
+        }
+    }
+
+    fn action(subject: SceneUid, value: Uuid) -> ActionCmd<Backend> {
+        ActionCmd {
+            subject,
+            field: FieldRef::new(TRANSFORM, ".translation.x"),
+            op: AnimOp::To,
+            value,
+            duration: Duration::from_secs(2),
+            ease: None,
+            interp: None,
+            name: None,
+        }
+    }
+
+    fn pooled(value: f32) -> (ValuePool, Uuid) {
+        let mut values = ValuePool::default();
+        let id = Uuid::new_v4();
+        values.f32.insert(id, value);
+        (values, id)
+    }
+
+    /// A world with just what the panel's reads need, holding
+    /// `scene`.
+    fn world_of(scene: MotionGfxScene) -> World {
+        let mut world = World::new();
+        world.init_resource::<AppTypeRegistry>();
+        world.insert_resource(EditorScene::new(scene));
+        world
+    }
+
+    fn property(path: &[usize], edit: Edit) -> Property {
+        Property {
+            path: path.to_vec(),
+            edit,
+        }
+    }
+
+    fn read<T: FromReflect>(
+        source: &impl Source,
+        world: &World,
+    ) -> T {
+        T::from_reflect(&*source.get(world).expect("readable"))
+            .expect("of that type")
+    }
+
+    fn node(world: &World, path: &[usize]) -> Node<Backend> {
+        let scene = world.resource::<EditorScene>().scene();
+        node_at(&scene.0.animation, path).expect("there").clone()
+    }
+
+    fn action_world() -> (World, Uuid) {
+        let (values, id) = pooled(1.5);
+        let subject = SceneUid::Entity(EntityUid::new());
+        let world = world_of(scene(
+            vec![
+                Node::Action {
+                    delay: Some(Duration::from_secs(1)),
+                    action: action(subject, id),
+                },
+                Node::block(Block {
+                    combinator: Combinator::Flow(
+                        Duration::from_millis(500),
+                    ),
+                    ..Block::chain(vec![draft(None)])
+                }),
+            ],
+            values,
+        ));
+        (world, id)
+    }
+
+    #[test]
+    fn node_at_walks_down_through_blocks() {
+        let inner = Block::chain(vec![draft(None), draft(None)]);
+        let root =
+            Block::chain(vec![draft(None), Node::block(inner)]);
+
+        assert!(matches!(
+            node_at(&root, &[0]),
+            Some(Node::Draft { .. })
+        ));
+        assert!(matches!(
+            node_at(&root, &[1, 1]),
+            Some(Node::Draft { .. })
+        ));
+        assert!(node_at(&root, &[]).is_none(), "the root is no node");
+        assert!(node_at(&root, &[1, 2]).is_none());
+        assert!(
+            node_at(&root, &[0, 0]).is_none(),
+            "a draft has none"
+        );
+    }
+
+    #[test]
+    fn node_at_mut_lands_on_the_same_node() {
+        let mut root =
+            Block::chain(vec![Node::block(Block::chain(vec![
+                draft(None),
+            ]))]);
+        let Some(Node::Draft { delay, .. }) =
+            node_at_mut(&mut root, &[0, 0])
+        else {
+            panic!("a draft is at [0, 0]");
+        };
+        *delay = Some(Duration::from_secs(3));
+        assert!(matches!(
+            node_at(&root, &[0, 0]),
+            Some(Node::Draft { delay: Some(_), .. })
+        ));
+    }
+
+    #[test]
+    fn an_action_summarizes_with_its_own_rows_and_edits() {
+        let (world, id) = action_world();
+        let shape = summarize(&world, &[0]).expect("an action");
+
+        assert_eq!(shape.kind, "Action");
+        assert_eq!(shape.value, Some(Pooled(id)));
+        assert!(shape.subject.is_some());
+        assert_eq!(shape.combinator, None);
+        assert_eq!(
+            shape.rows,
+            [
+                (
+                    "Field".to_string(),
+                    "Transform.translation.x".to_string()
+                ),
+                ("Operation".to_string(), "To".to_string()),
+            ]
+        );
+        let edits = shape
+            .edits
+            .iter()
+            .map(|(_, edit)| *edit)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            edits,
+            [Edit::Duration, Edit::Delay, Edit::Ease, Edit::Interp]
+        );
+    }
+
+    #[test]
+    fn an_action_without_a_delay_shows_no_delay_row() {
+        let (values, id) = pooled(0.0);
+        let subject = SceneUid::Entity(EntityUid::new());
+        let world = world_of(scene(
+            vec![Node::action(action(subject, id))],
+            values,
+        ));
+        let shape = summarize(&world, &[0]).expect("an action");
+        assert!(
+            shape.edits.iter().all(|(_, edit)| *edit != Edit::Delay)
+        );
+    }
+
+    #[test]
+    fn a_block_summarizes_by_its_combinator() {
+        let (world, _) = action_world();
+        let flow = summarize(&world, &[1]).expect("a block");
+        assert_eq!(flow.kind, "Block");
+        assert_eq!(flow.combinator, Some("Flow"));
+        assert_eq!(flow.edits[0].1, Edit::Stagger);
+
+        let root = summarize(&world, &[]).expect("the root");
+        assert_eq!(root.combinator, Some("Chain"));
+        assert!(root.edits.is_empty(), "no stagger, no delay");
+    }
+
+    #[test]
+    fn a_draft_summarizes_with_placeholder_rows() {
+        let world = world_of(scene(
+            vec![draft(Some(Duration::ZERO))],
+            ValuePool::default(),
+        ));
+        let shape = summarize(&world, &[0]).expect("a draft");
+        assert_eq!(shape.kind, "Draft");
+        assert_eq!(shape.value, None);
+        assert_eq!(shape.rows[0].1, "Unassigned");
+        assert_eq!(shape.rows[1].1, "Unassigned");
+        assert_eq!(shape.edits.len(), 2, "duration and delay");
+    }
+
+    #[test]
+    fn a_path_off_the_tree_summarizes_to_nothing() {
+        let (world, _) = action_world();
+        assert!(summarize(&world, &[7]).is_none());
+        assert!(summarize(&world, &[1, 1]).is_none());
+        let shape = shape(&world);
+        assert_eq!(shape.path, None, "nothing is selected");
+    }
+
+    #[test]
+    fn the_shape_follows_the_selection_not_the_numbers() {
+        let (mut world, _) = action_world();
+        world.insert_resource(SelectedAction(Some(vec![0])));
+        let before = shape(&world);
+
+        let duration = property(&[0], Edit::Duration);
+        duration.set(&mut world, &9.0f32);
+        assert!(shape(&world) == before, "a number is no rebuild");
+
+        world.insert_resource(SelectedAction(Some(vec![1])));
+        assert!(shape(&world) != before);
+
+        world.insert_resource(SelectedAction(Some(vec![7])));
+        assert_eq!(shape(&world).kind, "");
+        assert_eq!(shape(&world).path, Some(vec![7]));
+    }
+
+    #[test]
+    fn seconds_read_back_what_they_wrote() {
+        let (mut world, _) = action_world();
+        let duration = property(&[0], Edit::Duration);
+        assert_eq!(read::<f32>(&duration, &world), 2.0);
+
+        duration.set(&mut world, &3.5f32);
+        assert_eq!(read::<f32>(&duration, &world), 3.5);
+
+        let delay = property(&[0], Edit::Delay);
+        delay.set(&mut world, &0.25f32);
+        assert_eq!(read::<f32>(&delay, &world), 0.25);
+
+        let stagger = property(&[1], Edit::Stagger);
+        assert_eq!(read::<f32>(&stagger, &world), 0.5);
+        stagger.set(&mut world, &1.0f32);
+        assert_eq!(read::<f32>(&stagger, &world), 1.0);
+    }
+
+    #[test]
+    fn a_duration_never_falls_below_the_minimum() {
+        let (mut world, _) = action_world();
+        world.init_resource::<EditorSettings>();
+        let min = world.resource::<EditorSettings>().min_duration();
+
+        let duration = property(&[0], Edit::Duration);
+        duration.set(&mut world, &0.0f32);
+        let Node::Action { action, .. } = node(&world, &[0]) else {
+            panic!("an action");
+        };
+        assert_eq!(action.duration, min);
+
+        duration.set(&mut world, &-4.0f32);
+        let Node::Action { action, .. } = node(&world, &[0]) else {
+            panic!("an action");
+        };
+        assert_eq!(action.duration, min, "never backwards");
+    }
+
+    #[test]
+    fn a_delay_clamps_at_zero() {
+        let (mut world, _) = action_world();
+        let delay = property(&[0], Edit::Delay);
+        delay.set(&mut world, &-1.0f32);
+        assert_eq!(read::<f32>(&delay, &world), 0.0);
+    }
+
+    #[test]
+    fn the_root_edits_its_own_name_and_stagger() {
+        let (mut world, _) = action_world();
+        let name = property(&[], Edit::Name);
+        assert_eq!(read::<String>(&name, &world), "");
+
+        name.set(&mut world, &"  Intro  ".to_string());
+        assert_eq!(read::<String>(&name, &world), "Intro");
+
+        // The root is a chain, so there is no stagger to read.
+        let stagger = property(&[], Edit::Stagger);
+        assert!(stagger.get(&world).is_none());
+        stagger.set(&mut world, &0.2f32);
+        assert_eq!(read::<f32>(&stagger, &world), 0.2);
+    }
+
+    #[test]
+    fn a_blank_name_clears_it() {
+        let (mut world, _) = action_world();
+        let name = property(&[0], Edit::Name);
+        name.set(&mut world, &"Move".to_string());
+        assert_eq!(read::<String>(&name, &world), "Move");
+
+        name.set(&mut world, &"   ".to_string());
+        let Node::Action { action, .. } = node(&world, &[0]) else {
+            panic!("an action");
+        };
+        assert_eq!(action.name, None);
+
+        // A draft and a block name themselves the same way.
+        for path in [&[1][..], &[1, 0][..]] {
+            let name = property(path, Edit::Name);
+            name.set(&mut world, &"Part".to_string());
+            assert_eq!(read::<String>(&name, &world), "Part");
+        }
+    }
+
+    #[test]
+    fn ease_shows_linear_while_unset() {
+        let (mut world, _) = action_world();
+        let ease = property(&[0], Edit::Ease);
+        assert_eq!(read::<AnimEase>(&ease, &world), AnimEase::Linear);
+
+        ease.set(&mut world, &AnimEase::CubicEaseInOut);
+        assert_eq!(
+            read::<AnimEase>(&ease, &world),
+            AnimEase::CubicEaseInOut
+        );
+        let Node::Action { action, .. } = node(&world, &[0]) else {
+            panic!("an action");
+        };
+        assert_eq!(action.ease, Some(AnimEase::CubicEaseInOut));
+    }
+
+    #[test]
+    fn interp_is_step_while_unset() {
+        let (mut world, _) = action_world();
+        let interp = property(&[0], Edit::Interp);
+        assert_eq!(
+            read::<InterpChoice>(&interp, &world),
+            InterpChoice::Step
+        );
+
+        interp.set(&mut world, &InterpChoice::Linear);
+        let Node::Action { action, .. } = node(&world, &[0]) else {
+            panic!("an action");
+        };
+        assert_eq!(action.interp, Some(AnimInterp::Linear));
+
+        interp.set(&mut world, &InterpChoice::Step);
+        let Node::Action { action, .. } = node(&world, &[0]) else {
+            panic!("an action");
+        };
+        assert_eq!(action.interp, None);
+    }
+
+    #[test]
+    fn a_property_the_node_lacks_reads_as_nothing() {
+        let (world, _) = action_world();
+        assert!(property(&[1], Edit::Ease).get(&world).is_none());
+        assert!(property(&[0], Edit::Stagger).get(&world).is_none());
+        assert!(property(&[9], Edit::Delay).get(&world).is_none());
+    }
+
+    #[test]
+    fn the_pooled_value_reads_and_writes_its_column() {
+        let (mut world, id) = action_world();
+        let value = Pooled(id);
+        assert_eq!(read::<f32>(&value, &world), 1.5);
+
+        value.set(&mut world, &4.0f32);
+        assert_eq!(read::<f32>(&value, &world), 4.0);
+
+        let gone = Pooled(Uuid::new_v4());
+        assert!(gone.get(&world).is_none());
+    }
+
+    #[test]
+    fn the_pooled_value_finds_vectors_and_quaternions() {
+        let mut values = ValuePool::default();
+        let vec3 = Uuid::new_v4();
+        let quat = Uuid::new_v4();
+        values.vec3.insert(vec3, Vec3::new(1.0, 2.0, 3.0));
+        values.quat.insert(quat, Quat::IDENTITY);
+        let mut world = world_of(scene(Vec::new(), values));
+
+        assert_eq!(
+            read::<Vec3>(&Pooled(vec3), &world),
+            Vec3::new(1.0, 2.0, 3.0)
+        );
+        assert_eq!(
+            read::<Quat>(&Pooled(quat), &world),
+            Quat::IDENTITY
+        );
+
+        Pooled(vec3).set(&mut world, &Vec3::ONE);
+        assert_eq!(read::<Vec3>(&Pooled(vec3), &world), Vec3::ONE);
+    }
+
+    #[test]
+    fn an_edit_marks_the_scene_dirty() {
+        let (mut world, _) = action_world();
+        let mut changed = property(&[0], Edit::Duration).changed();
+        assert!(changed(&world), "the first poll fires");
+        assert!(!changed(&world));
+
+        property(&[0], Edit::Duration).set(&mut world, &6.0f32);
+        assert!(changed(&world));
+    }
+
+    #[test]
+    fn the_type_picker_rewrites_the_combinator() {
+        let (mut world, _) = action_world();
+        let combinator = |world: &World| {
+            let scene = world.resource::<EditorScene>().scene();
+            match node_at(&scene.0.animation, &[1]) {
+                Some(Node::Block { block, .. }) => {
+                    block.combinator.clone()
+                }
+                _ => panic!("a block"),
+            }
+        };
+
+        set_combinator(&mut world, &[1], 0);
+        assert!(matches!(combinator(&world), Combinator::Chain));
+        set_combinator(&mut world, &[1], 1);
+        assert!(matches!(combinator(&world), Combinator::All));
+        set_combinator(&mut world, &[1], 2);
+        assert!(matches!(
+            combinator(&world),
+            Combinator::Flow(stagger) if stagger == DEFAULT_STAGGER
+        ));
+
+        set_combinator(&mut world, &[], 1);
+        let scene = world.resource::<EditorScene>().scene();
+        assert!(matches!(
+            scene.0.animation.combinator,
+            Combinator::All
+        ));
+    }
+
+    #[test]
+    fn the_type_picker_leaves_an_action_alone() {
+        let (mut world, _) = action_world();
+        set_combinator(&mut world, &[0], 2);
+        assert!(matches!(node(&world, &[0]), Node::Action { .. }));
+    }
+
+    #[test]
+    fn interp_choice_round_trips() {
+        for interp in [None, Some(AnimInterp::Linear)] {
+            let choice = InterpChoice::from(interp);
+            assert_eq!(Option::<AnimInterp>::from(choice), interp);
+        }
+    }
+
+    #[test]
+    fn a_field_name_falls_back_to_the_last_type_segment() {
+        let world = world_of(scene(Vec::new(), ValuePool::default()));
+        let field = FieldRef::new("some::crate::Thing", ".a.b");
+        assert_eq!(field_name(&world, &field), "Thing.a.b");
+    }
+
+    /// Opens the editor on `scene`, with `path` selected.
+    fn selecting(
+        scene: MotionGfxScene,
+        path: Option<Vec<usize>>,
+    ) -> Editor {
+        let mut editor = Editor::new();
+        editor.world().insert_resource(EditorScene::new(scene));
+        editor.world().insert_resource(SelectedAction(path));
+        editor.step(SETTLE);
+        editor
+    }
+
+    #[test]
+    fn the_panel_starts_empty_and_follows_the_selection() {
+        let mut editor = Editor::new();
+        // The inspector says it too.
+        assert_eq!(editor.texts("Nothing selected").len(), 2);
+
+        editor
+            .world()
+            .insert_resource(SelectedAction(Some(vec![3])));
+        editor.step(SETTLE);
+        editor.text("Selection is no longer in the scene");
+        assert_eq!(editor.texts("Nothing selected").len(), 1);
+
+        editor.world().insert_resource(SelectedAction(None));
+        editor.step(SETTLE);
+        assert!(
+            editor
+                .texts("Selection is no longer in the scene")
+                .is_empty()
+        );
+        assert_eq!(editor.texts("Nothing selected").len(), 2);
+    }
+
+    #[test]
+    fn a_draft_shows_its_rows() {
+        let mut editor = selecting(
+            scene(
+                vec![draft(Some(Duration::from_secs(1)))],
+                ValuePool::default(),
+            ),
+            Some(vec![0]),
+        );
+        editor.text("Duration");
+        editor.text("Delay");
+        assert_eq!(editor.texts("Unassigned").len(), 2);
+        assert!(editor.texts("Ease").is_empty());
+    }
+
+    #[test]
+    fn a_block_shows_the_type_picker_and_flow_adds_a_stagger() {
+        let mut editor = selecting(
+            scene(
+                vec![Node::block(Block::chain(vec![draft(None)]))],
+                ValuePool::default(),
+            ),
+            Some(vec![0]),
+        );
+        editor.text("Type");
+        // The timeline names the block too, so there is more than
+        // one.
+        assert!(!editor.texts("Chain").is_empty());
+        assert!(editor.texts("Stagger").is_empty());
+
+        editor.press("Flow");
+        let scene = editor
+            .world()
+            .resource::<EditorScene>()
+            .scene()
+            .0
+            .animation
+            .clone();
+        let Some(Node::Block { block, .. }) = node_at(&scene, &[0])
+        else {
+            panic!("a block");
+        };
+        assert!(matches!(block.combinator, Combinator::Flow(_)));
+        editor.text("Stagger");
+
+        editor.press("All");
+        assert!(editor.texts("Stagger").is_empty());
+    }
+
+    #[test]
+    fn an_action_shows_its_subject_target_and_pickers() {
+        let (values, id) = pooled(2.0);
+        let mut editor = Editor::new();
+        let cube = editor
+            .world()
+            .spawn((
+                Name::new("Cube"),
+                EntityUid::new(),
+                Transform::default(),
+            ))
+            .id();
+        editor.step(SETTLE);
+        let uid = *editor.world().get::<EntityUid>(cube).unwrap();
+        let head =
+            uid.to_string().chars().take(8).collect::<String>();
+
+        editor.world().insert_resource(EditorScene::new(scene(
+            vec![Node::Action {
+                delay: Some(Duration::ZERO),
+                action: action(SceneUid::Entity(uid), id),
+            }],
+            values,
+        )));
+        editor
+            .world()
+            .insert_resource(SelectedAction(Some(vec![0])));
+        editor.step(SETTLE);
+
+        editor.text("Subject");
+        editor.text(&format!("#{head}"));
+        editor.text("Transform.translation.x");
+        editor.text("To");
+        for row in
+            ["Duration", "Delay", "Ease", "Interpolation", "Value"]
+        {
+            editor.text(row);
+        }
+        // Each enum picker shows its active variant; a shut menu's
+        // rows are hidden.
+        editor.text("Linear");
+        editor.text("Step");
+    }
+
+    #[test]
+    fn typing_a_number_leaves_the_panel_standing() {
+        let mut editor = selecting(
+            scene(vec![draft(None)], ValuePool::default()),
+            Some(vec![0]),
+        );
+        let duration = editor.text("Duration");
+
+        property(&[0], Edit::Duration).set(editor.world(), &5.0f32);
+        editor.step(SETTLE);
+        assert_eq!(
+            editor.text("Duration"),
+            duration,
+            "the same node, not a rebuilt one"
+        );
+    }
 }

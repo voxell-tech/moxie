@@ -1,42 +1,36 @@
 //! Dragging a node's body elsewhere in the tree. Action leaves and
-//! block headers share this, each just a node at a path. Where it lands
-//! is [`landing`]'s.
+//! block headers share this, each just a node at a path. Where it
+//! lands is [`landing`]'s.
 //!
-//! The tree is written only when the drag ends. Until then the dragged
-//! box and its subtree are the preview, offset by how far the cursor
-//! has moved, while the rest of the layout stays put. A slim line or
-//! an outline marks where a release would land.
+//! The tree is written only when the drag ends. Until then the
+//! dragged box and its subtree are the preview, offset by how far the
+//! cursor has moved, while the rest of the layout stays put. A slim
+//! line or an outline marks where a release would land.
 
-use bevy::feathers::cursor::OverrideCursor;
 use bevy::picking::events::{DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
-use bevy_fynix::WorldEntityMut;
+use bevy_fynix::{AnyView, Bevy, OverrideCursor, Theme, View};
 use bevy_motiongfx::scene::backend::Backend;
-use fynix::element::Element;
-use fynix::ui::ElementMut;
 use motiongfx_scene::block::{Block, Node as SceneNode};
 use moxie_ui::cursor::{Cursor, PointerEventExt as _};
 use moxie_ui::drag::{Dragged, grab, ungrab};
 use moxie_ui::layout::logical_rect;
-use moxie_ui::reactive::{BevyFynix, FynixHost, FynixSet};
+use moxie_ui::theme::EditorTheme;
 
-use super::block_layout;
 use super::hint::HintNode;
 use super::landing::{self, Target, block_at_mut, under};
-use super::prune;
 use super::retime::{BoxPath, GapPath};
-use super::{BlockFoldState, RebuildTick, TrackViewport};
+use super::{
+    BlockFoldState, RebuildTick, TrackViewport, block_layout, prune,
+};
 use crate::{EditorScene, SelectedAction, TimelineView};
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<Dragging>()
         .add_systems(Update, cancel_on_escape)
-        .add_systems(
-            Update,
-            preview.run_if(Dragging::active).after(FynixSet),
-        )
+        .add_systems(Update, preview.run_if(Dragging::active))
         .add_observer(on_drag_end);
 }
 
@@ -54,74 +48,80 @@ impl Dragging {
 struct Gesture {
     path: Vec<usize>,
     cursor_start: Vec2,
-    /// Where the cursor sits inside the box, set on the first preview.
+    /// The cursor's offset inside the box, set on the first preview.
     hold: Option<Vec2>,
     target: Option<Target>,
 }
 
-/// Makes `handle` a node's own body: dragging it moves `path`
-/// elsewhere in the tree.
-pub(crate) fn body<'r, 'u, 'a, E: Element<FynixHost>>(
-    handle: &'r mut ElementMut<'u, 'a, FynixHost, E>,
+/// `handle` as a node's own body: dragging it moves `path` elsewhere
+/// in the tree.
+pub(crate) fn body(
+    handle: impl View<Bevy, EditorTheme> + 'static,
     path: Vec<usize>,
-) -> &'r mut ElementMut<'u, 'a, FynixHost, E> {
-    // Not `event_target()`: neither `Label` nor `Icon` ignores the
-    // pointer, so a grab on the text or the chevron reports that
-    // child instead of the box being wired here.
-    handle.observe(
-        move |start: On<Pointer<DragStart>>,
-              scale: Res<UiScale>,
-              q_viewport: Query<
-            (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
-            With<TrackViewport>,
-        >,
-              q_boxes: Query<(Entity, &BoxPath)>,
-              q_children: Query<&Children>,
-              mut kernel: ResMut<BevyFynix>,
-              mut dragging: ResMut<Dragging>,
-              mut override_cursor: ResMut<OverrideCursor>| {
-            if start.button != PointerButton::Primary
-                || path.is_empty()
-            {
-                // The root has nowhere to land.
-                return;
-            }
-            let Ok((node, transform, scroll)) = q_viewport.single()
-            else {
-                return;
-            };
-
-            let cursor = start.logical(&scale);
-            grab(&mut override_cursor);
-            // The box, not `start.entity`: a block's handle is its
-            // header button, inside the box. The rebuild that ends the
-            // drag respawns everything, so the tag never needs clearing.
-            if let Some((dragged, _)) = q_boxes
-                .iter()
-                .find(|(_, box_path)| box_path.0 == path)
-            {
-                for node in core::iter::once(dragged)
-                    .chain(q_children.iter_descendants(dragged))
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::new(move |cx| {
+        let node = cx.build(handle);
+        // Not `event_target()`: neither a label nor an icon ignores
+        // the pointer, so a grab on the text or the chevron reports
+        // that child instead of the box being wired here.
+        cx.world.entity_mut(node).observe(
+            move |start: On<Pointer<DragStart>>,
+                  scale: Res<UiScale>,
+                  q_viewport: Query<
+                (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+                With<TrackViewport>,
+            >,
+                  q_boxes: Query<(Entity, &BoxPath)>,
+                  q_children: Query<&Children>,
+                  mut dragging: ResMut<Dragging>,
+                  mut override_cursor: ResMut<OverrideCursor>,
+                  mut commands: Commands| {
+                if start.button != PointerButton::Primary
+                    || path.is_empty()
                 {
-                    kernel.set_tag(node, Dragged);
+                    // The root has nowhere to land.
+                    return;
                 }
-            }
-            dragging.0 = Some(Gesture {
-                path: path.clone(),
-                cursor_start: to_content(
-                    cursor, node, transform, scroll,
-                ),
-                hold: None,
-                target: None,
-            });
-        },
-    )
+                let Ok((node, transform, scroll)) =
+                    q_viewport.single()
+                else {
+                    return;
+                };
+
+                let cursor = start.logical(&scale);
+                grab(&mut override_cursor);
+                // The box, not `start.entity`: a block's handle is
+                // its header button, inside the box. The rebuild that
+                // ends the drag respawns everything, so the state
+                // never needs clearing.
+                if let Some((dragged, _)) = q_boxes
+                    .iter()
+                    .find(|(_, box_path)| box_path.0 == path)
+                {
+                    for node in core::iter::once(dragged)
+                        .chain(q_children.iter_descendants(dragged))
+                    {
+                        commands.entity(node).insert(Dragged);
+                    }
+                }
+                dragging.0 = Some(Gesture {
+                    path: path.clone(),
+                    cursor_start: to_content(
+                        cursor, node, transform, scroll,
+                    ),
+                    hold: None,
+                    target: None,
+                });
+            },
+        );
+        node
+    })
 }
 
 /// Each frame of a drag: lays the tree out, offsets the dragged
 /// subtree to the cursor, and marks where a release would land.
 fn preview(
-    kernel: Res<BevyFynix>,
+    theme: Res<Theme<EditorTheme>>,
     pointer: Cursor,
     hint: HintNode,
     editor_scene: Res<EditorScene>,
@@ -150,7 +150,7 @@ fn preview(
     };
     let viewport_rect =
         logical_rect(viewport_node, viewport_transform);
-    let drag_z = kernel.theme().layer.drag;
+    let drag_z = theme.0.layer.drag;
 
     let content = Vec2::new(
         cursor.x - viewport_rect.min.x,
@@ -161,7 +161,7 @@ fn preview(
         root,
         *view,
         folded.paths(),
-        kernel.theme().space,
+        theme.0.space,
     );
 
     // Detaches to the root's parent.
@@ -219,7 +219,7 @@ fn preview(
     landing::announce_hint(
         &mut commands,
         &hint,
-        kernel.theme(),
+        &theme.0,
         gesture.target.as_ref(),
         &layout,
         root,
@@ -239,8 +239,8 @@ pub(super) fn to_content(
 }
 
 /// Common tail of a committed drop and a cancel: drop the drag-wide
-/// cursor and bump [`RebuildTick`], so the box list respawns and every
-/// dragged box loses both its preview offset and its raised z.
+/// cursor and bump [`RebuildTick`], so the box list respawns and
+/// every dragged box loses both its preview offset and its raised z.
 fn end_drag(
     override_cursor: &mut OverrideCursor,
     commands: &mut Commands,

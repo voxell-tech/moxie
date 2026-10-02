@@ -17,9 +17,9 @@ pub enum Owner {
     Asset(UntypedAssetId),
 }
 
-/// Where an inspector reads and writes: one root value, a component of
-/// an entity or an asset, and the reflect path reaching a leaf inside
-/// it. The empty path is the root itself.
+/// The place an inspector reads and writes: one root value, a
+/// component of an entity or an asset, and the reflect path reaching
+/// a leaf inside it. The empty path is the root itself.
 ///
 /// A resource is a component too. Bevy parks each one on an entity
 /// of its own, so which it was handed never comes up. That entity is
@@ -63,9 +63,15 @@ impl Field {
     }
 
     /// The leaf one step further in, which is how the walk descends.
+    ///
+    /// `name` may be a field, a tuple index, or an index into a list
+    /// in brackets, as in `[2]`. An empty one is this field itself.
     pub fn child(&self, name: &str) -> Self {
-        let path = if self.path.is_empty() {
-            name.to_string()
+        let joined = self.path.is_empty()
+            || name.is_empty()
+            || name.starts_with('[');
+        let path = if joined {
+            format!("{}{name}", self.path)
         } else {
             format!("{}.{name}", self.path)
         };
@@ -115,8 +121,8 @@ impl Field {
         moxie_asset::type_data::<D>(world, self.root)
     }
 
-    /// Runs `read` against the whole root, or returns `None` when it is
-    /// gone or its type was never registered with
+    /// Runs `read` against the whole root, or returns `None` when it
+    /// is gone or its type was never registered with
     /// `#[reflect(Component)]` / `#[reflect(Resource)]` /
     /// `#[reflect(Asset)]`.
     pub fn read<R>(
@@ -136,7 +142,8 @@ impl Field {
     }
 
     /// As [`Self::read`], resolved to this field's own leaf rather
-    /// than the component root. Misses if the path no longer resolves.
+    /// than the component root. Misses if the path no longer
+    /// resolves.
     pub fn read_at<R>(
         &self,
         world: &World,
@@ -222,6 +229,26 @@ impl Field {
     }
 }
 
+/// Fires when the tick `read` returns differs from the last poll, and
+/// on the first poll.
+///
+/// A write made without a system running in between gets the tick
+/// already seen, so a tick that could still be written to counts as
+/// changed until the next one.
+pub(super) fn tick_changed(
+    read: impl Fn(&World) -> Option<Tick> + Send + Sync + 'static,
+) -> impl FnMut(&World) -> bool + Send + Sync + 'static {
+    let mut seen: Option<Option<Tick>> = None;
+    let mut open = false;
+    move |world| {
+        let tick = read(world);
+        let fires = open || seen != Some(tick);
+        seen = Some(tick);
+        open = tick == Some(world.read_change_tick());
+        fires
+    }
+}
+
 /// The leaf, read and written through reflection.
 ///
 /// Change detection rides the component's tick rather than the value,
@@ -245,7 +272,10 @@ impl Source for Field {
             match leaf {
                 Ok(leaf) => {
                     if let Err(err) = leaf.try_apply(value) {
-                        warn!("inspector could not write {path}: {err:?}");
+                        warn!(
+                            "inspector could not write {path}: \
+                             {err:?}"
+                        );
                     }
                 }
                 Err(err) => {
@@ -259,9 +289,7 @@ impl Source for Field {
         &self,
     ) -> Box<dyn FnMut(&World) -> bool + Send + Sync> {
         let field = self.clone();
-        Box::new(crate::reactive::tick_changed(move |world| {
-            field.changed_tick(world)
-        }))
+        Box::new(tick_changed(move |world| field.changed_tick(world)))
     }
 
     fn boxed(&self) -> Box<dyn Source> {

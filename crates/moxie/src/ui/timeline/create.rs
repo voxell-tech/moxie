@@ -3,9 +3,9 @@
 //!
 //! The pickup and the tag that follows the cursor are `moxie_ui`'s
 //! generic field drag ([`DraggedField`]). This module is the timeline
-//! half: the landing preview while a field is held over the track, and
-//! on release splicing a fresh [`SceneNode::Action`] into the tree.
-//! Where it lands, and the hint marking it, are [`landing`]'s.
+//! half: the landing preview while a field is held over the track,
+//! and on release splicing a fresh [`SceneNode::Action`] into the
+//! tree. Where it lands, and the hint marking it, are [`landing`]'s.
 
 use core::time::Duration;
 use std::collections::BTreeSet;
@@ -14,6 +14,7 @@ use bevy::asset::uuid::Uuid;
 use bevy::picking::events::{DragDrop, Pointer};
 use bevy::prelude::*;
 use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
+use bevy_fynix::Theme;
 use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
 use bevy_motiongfx::scene::id::SceneUid;
 use bevy_motiongfx::scene::value_pool::insert_scene_value;
@@ -23,12 +24,12 @@ use motiongfx_scene::scene::{FieldSeed, Scene, Subject};
 use moxie_ui::cursor::{Cursor, PointerEventExt as _};
 use moxie_ui::inspector::{DraggedField, Field};
 use moxie_ui::layout::logical_rect;
-use moxie_ui::reactive::{BevyFynix, FynixSet};
+use moxie_ui::theme::EditorTheme;
 
-use super::block_layout;
 use super::hint::HintNode;
-use super::landing;
-use super::{BlockFoldState, RebuildTick, TrackViewport};
+use super::{
+    BlockFoldState, RebuildTick, TrackViewport, block_layout, landing,
+};
 use crate::{EditorScene, SelectedAction, TimelineView, subject};
 
 /// A dropped field's action runs this long until there is a reason to
@@ -36,14 +37,13 @@ use crate::{EditorScene, SelectedAction, TimelineView, subject};
 const DEFAULT_DURATION: Duration = Duration::from_secs(1);
 
 pub(super) fn plugin(app: &mut App) {
-    app.add_systems(Update, preview.after(FynixSet))
-        .add_observer(on_drop);
+    app.add_systems(Update, preview).add_observer(on_drop);
 }
 
 /// Each frame a field is held: resolve where a release would land and
 /// draw its hint.
 fn preview(
-    kernel: Res<BevyFynix>,
+    theme: Res<Theme<EditorTheme>>,
     pointer: Cursor,
     hint: HintNode,
     dragged: Res<DraggedField>,
@@ -95,14 +95,14 @@ fn preview(
         root,
         *view,
         folded.paths(),
-        kernel.theme().space,
+        theme.0.space,
     );
     let target = landing::resolve(content, &layout, root, None);
 
     landing::announce_hint(
         &mut commands,
         &hint,
-        kernel.theme(),
+        &theme.0,
         target.as_ref(),
         &layout,
         root,
@@ -179,7 +179,7 @@ fn create(
     let target = {
         let root =
             &world.resource::<EditorScene>().scene().0.animation;
-        let space = world.resource::<BevyFynix>().theme().space;
+        let space = world.resource::<Theme<EditorTheme>>().0.space;
         let layout = block_layout::layout(root, view, folded, space);
         landing::resolve(content, &layout, root, None)
     };
@@ -241,10 +241,10 @@ fn create(
     RebuildTick::bump_in(world);
 }
 
-/// Stages `field` on `subject` at what `pool` pools, unless it already
-/// is: only the first action ever created for a field needs one, and
-/// every later one's start comes from replaying what came before it.
-/// `None` when `pool` fails.
+/// Stages `field` on `subject` at what `pool` pools, unless it
+/// already is: only the first action ever created for a field needs
+/// one, and every later one's start comes from replaying what came
+/// before it. `None` when `pool` fails.
 fn seed_field(
     subjects: &mut Vec<Subject<Backend>>,
     subject: SceneUid,
@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn a_field_is_seeded_once() {
         let subject = SceneUid::Entity(EntityUid::new());
-        let field = FieldRef::new("T", "::x");
+        let field = FieldRef::new("T", ".x");
         let mut subjects = Vec::new();
 
         let first = Uuid::new_v4();
@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn a_failed_pool_stages_nothing() {
         let subject = SceneUid::Entity(EntityUid::new());
-        let field = FieldRef::new("T", "::x");
+        let field = FieldRef::new("T", ".x");
         let mut subjects = Vec::new();
 
         assert!(

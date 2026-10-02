@@ -2,7 +2,8 @@
 #![allow(
     clippy::type_complexity,
     clippy::too_many_arguments,
-    reason = "Inherent to Bevy ECS: systems take many params and query tuples."
+    reason = "Inherent to Bevy ECS: systems take many params and \
+              query tuples."
 )]
 
 pub mod asset;
@@ -13,72 +14,60 @@ pub mod drag;
 pub mod elements;
 pub mod field_icon;
 pub mod fold;
+pub mod gaps;
 pub mod icons;
 pub mod inspector;
 pub mod layout;
-pub mod reactive;
+#[cfg(test)]
+mod tests;
 pub mod theme;
 pub mod widgets;
 
-/// The backend `#[element]` builds against by default.
-pub use reactive::{FynixBuild, FynixHost};
-
-// Unreferenced by name, but load-bearing: any `#[elem(anim(...))]`
-// field's default `Interpolation<_>` inference only finds
-// `bevy_motiongfx`'s impls once something in this crate names its
-// `interpolation` module.
-#[expect(unused_imports)]
-use bevy_motiongfx::interpolation::Bevy;
-
-use bevy::feathers::FeathersPlugins;
-use bevy::feathers::dark_theme::create_dark_theme;
-use bevy::feathers::theme::UiTheme;
-use bevy::feathers::tokens;
-use bevy::prelude::*;
-
 use asset::AssetDragging;
+use bevy::prelude::*;
+use bevy_fynix::dock::{DockIcons, DockPlugin};
+use bevy_fynix::{FynixPlugin, Theme};
 use inspector::InspectPlugin;
 use moxie_asset::{AssetTypes, FoundAssets};
-use reactive::FynixPlugin;
 use theme::EditorTheme;
-use widgets::dock::DockPlugin;
-use widgets::tooltip::TooltipPlugin;
 
-/// Everything a consumer needs to render a moxie UI: feathers theming,
-/// the dock engine, the
-/// default reflect-inspector widgets, and the kernel.
+/// Everything a consumer needs to render a moxie UI: the fynix
+/// kernel and the dock, themed by [`EditorTheme`].
 ///
-/// Doesn't build a root itself; spawn one and call
-/// [`reactive::watch_root`] wherever the app does its own `Startup`
-/// setup.
+/// Doesn't mount a root itself; call [`bevy_fynix::mount`] wherever
+/// the app does its own `Startup` setup.
 #[derive(Default)]
 pub struct MoxieUiPlugin;
 
 impl Plugin for MoxieUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            FeathersPlugins,
-            DockPlugin,
-            TooltipPlugin,
-            FynixPlugin::default(),
+            FynixPlugin::<EditorTheme>::default(),
+            DockPlugin::<EditorTheme>::default(),
             InspectPlugin,
             asset_picker::plugin,
         ))
-        // Seed the feathers palette (its default theme is empty).
-        .insert_resource(ui_theme())
+        .insert_resource(Theme(EditorTheme::default()))
         .add_systems(Update, elements::fit_action_icons)
         .init_resource::<AssetTypes>()
         .init_resource::<FoundAssets>()
-        .init_resource::<AssetDragging>();
+        .init_resource::<AssetDragging>()
+        .add_systems(PreStartup, dock_icons);
     }
 }
 
-/// Feathers' dark theme, with the editor's own caret.
-fn ui_theme() -> UiTheme {
-    let mut theme = create_dark_theme();
-    theme.color.insert(
-        tokens::TEXT_INPUT_CURSOR,
-        EditorTheme::default().palette.base[5],
-    );
-    UiTheme(theme)
+/// Gives the dock the editor's icons for its tab buttons, before
+/// anything builds a dock. Nothing in an app without image assets.
+fn dock_icons(
+    mut commands: Commands,
+    assets: Option<Res<AssetServer>>,
+    images: Option<Res<Assets<Image>>>,
+) {
+    let (Some(assets), Some(_)) = (assets, images) else {
+        return;
+    };
+    commands.insert_resource(DockIcons {
+        close: Some(assets.load(icons::CLOSE)),
+        add: Some(assets.load(icons::PLUS)),
+    });
 }

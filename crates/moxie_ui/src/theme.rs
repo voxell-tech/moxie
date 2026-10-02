@@ -8,7 +8,13 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use fynix::prelude::motiongfx_interp::ease::{self, EaseFn};
+use bevy_fynix::tokens::{
+    Curve, Motion as MotionKind, MotionTokens, SpacingTokens,
+    SurfaceTokens, TextTokens, Tone,
+};
+use bevy_motiongfx::motiongfx::motiongfx_interp::ease::{
+    self, EaseFn,
+};
 
 /// The editor's ground colour, also [`Colors::bg`].
 pub const BG: Color = Color::srgb_u8(0x19, 0x18, 0x1A);
@@ -22,7 +28,7 @@ pub struct Palette {
     pub green: Color,
     pub blue: Color,
     pub purple: Color,
-    /// Darkest → lightest neutrals.
+    /// Neutrals, darkest to lightest.
     pub base: [Color; 9],
 }
 
@@ -128,18 +134,15 @@ pub struct Spacing {
     pub fold_toggle: f32,
     /// How far a fold's rail sets its body in from the header.
     pub fold_indent: f32,
-    /// A menu row's own corner ([`DropdownItem`](
-    /// crate::elements::DropdownItem), [`menu_item`](
-    /// crate::elements::menu_item)), fixed rather than set per call
-    /// site so every menu rounds the same.
+    /// A menu row's own corner.
     pub menu_item_radius: f32,
     /// A menu's own padding around its rows.
     pub menu_padding: f32,
     /// A menu's own corner - concentric with `menu_item_radius`
     /// across `menu_padding`; see `toolbars.md` in the Apple HIG.
     pub menu_radius: f32,
-    /// How close a menu is allowed to sit to the window's edge before
-    /// it flips to the other side.
+    /// The closest a menu sits to the window's edge before it flips
+    /// to the other side.
     pub menu_margin: f32,
     /// A component card's own corner, in the entity inspector.
     pub card_radius: f32,
@@ -169,13 +172,17 @@ pub struct TextScale {
     pub label: f32,
 }
 
-/// How the UI moves.
+/// Durations and curves of the UI's motion.
 #[derive(Clone, Copy, Debug)]
 pub struct Motion {
-    /// How long a hover or press fade takes.
+    /// A hover or press fade's duration.
     pub interact: Duration,
     /// The curve an interaction fade follows.
     pub ease: EaseFn,
+    /// The duration of something opening or growing.
+    pub expand: Duration,
+    /// The curve an expansion follows.
+    pub expand_ease: EaseFn,
 }
 
 impl Default for EditorTheme {
@@ -233,6 +240,8 @@ impl Default for EditorTheme {
             motion: Motion {
                 interact: Duration::from_millis(120),
                 ease: ease::cubic::ease_out,
+                expand: Duration::from_millis(240),
+                expand_ease: ease::cubic::ease_in_out,
             },
             layer: Layers {
                 drop_hint: 150,
@@ -241,6 +250,112 @@ impl Default for EditorTheme {
                 tooltip: 300,
             },
             palette,
+        }
+    }
+}
+
+impl TextTokens for EditorTheme {
+    fn tone(&self, tone: Tone) -> Color {
+        match tone {
+            Tone::Body => self.color.text,
+            Tone::Dim => self.color.text_dim,
+            Tone::Faint => self.color.text_faint,
+            Tone::Accent => self.color.accent,
+            Tone::Critical => self.color.critical,
+            // The accent is light, so text on it is the ground
+            // colour.
+            Tone::OnAccent => self.color.bg,
+        }
+    }
+
+    fn body_size(&self) -> f32 {
+        self.text.body
+    }
+
+    fn small_size(&self) -> f32 {
+        self.text.small
+    }
+}
+
+impl SurfaceTokens for EditorTheme {
+    fn fill(&self) -> Color {
+        self.color.fill
+    }
+
+    fn hover(&self) -> Color {
+        self.color.hover
+    }
+
+    fn panel(&self) -> Color {
+        self.color.panel
+    }
+
+    fn hairline(&self) -> Color {
+        self.color.hairline
+    }
+
+    fn selection(&self) -> Color {
+        self.color.selection
+    }
+
+    fn accent(&self) -> Color {
+        self.color.accent
+    }
+}
+
+impl SpacingTokens for EditorTheme {
+    fn gap(&self) -> f32 {
+        self.space.md
+    }
+
+    fn row(&self) -> f32 {
+        self.space.row
+    }
+
+    fn radius(&self) -> f32 {
+        self.space.radius
+    }
+
+    fn menu_radius(&self) -> f32 {
+        self.space.menu_radius
+    }
+
+    fn menu_padding(&self) -> f32 {
+        self.space.menu_padding
+    }
+
+    fn menu_item_radius(&self) -> f32 {
+        self.space.menu_item_radius
+    }
+
+    fn menu_margin(&self) -> f32 {
+        self.space.menu_margin
+    }
+
+    fn divider(&self) -> f32 {
+        self.space.edge
+    }
+
+    fn tab_padding(&self) -> f32 {
+        self.space.lg
+    }
+
+    fn tab_gap(&self) -> f32 {
+        self.space.xs
+    }
+}
+
+impl MotionTokens for EditorTheme {
+    fn motion(&self, motion: MotionKind) -> Curve {
+        match motion {
+            MotionKind::Interact => Curve {
+                duration: self.motion.interact,
+                ease: self.motion.ease,
+            },
+            MotionKind::Expand => Curve {
+                duration: self.motion.expand,
+                ease: self.motion.expand_ease,
+            },
         }
     }
 }

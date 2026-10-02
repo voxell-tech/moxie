@@ -11,9 +11,10 @@ readme = "./README.md"
 bevy_fynix = { workspace = true }
 bevy_motiongfx = { workspace = true }
 fynix = { workspace = true }
+# `#[element]` derives `Lenz`, whose output names this crate.
+lenz = { workspace = true }
 moxie_asset = { workspace = true }
 bevy = { workspace = true, default-features = true, features = [
-    "bevy_feathers",
     "bevy_ui_widgets",
 ] }
 

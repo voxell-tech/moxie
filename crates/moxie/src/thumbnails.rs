@@ -2,10 +2,10 @@
 //!
 //! Each thumbnail gets a rig of its own - camera, subject and light -
 //! on a render layer no other camera sees. Asking for one only queues
-//! it: rigs start a few a frame, so a picker listing hundreds of assets
-//! doesn't stall. A rig's camera stays off until its subject has loaded
-//! and been framed, renders into the thumbnail's image for a few
-//! frames, and then the rig is despawned and the image kept.
+//! it: rigs start a few a frame, so a picker listing hundreds of
+//! assets doesn't stall. A rig's camera stays off until its subject
+//! has loaded and been framed, renders into the thumbnail's image for
+//! a few frames, and then the rig is despawned and the image kept.
 
 use core::f32::consts::FRAC_PI_4;
 use std::collections::VecDeque;
@@ -28,7 +28,8 @@ const MAX_LIVE: usize = 8;
 /// Rigs started in one frame.
 const START_PER_FRAME: usize = 2;
 /// Frames a rig may wait for its subject before it is given up on: a
-/// material removed while it waits never loads, and never fails either.
+/// material removed while it waits never loads, and never fails
+/// either.
 const MAX_WAIT: u32 = 600;
 /// Frames a framed rig keeps rendering before it is torn down, so the
 /// image has been written at least once.
@@ -55,8 +56,9 @@ struct Studio {
     free_layers: Vec<usize>,
     /// The render layer the next rig gets when none is free.
     next_layer: usize,
-    /// One light for every rig, on each live rig's layer: directional
-    /// lights are capped per world whatever layer they are on.
+    /// One light for every rig, on each live rig's layer:
+    /// directional lights are capped per world whatever layer
+    /// they are on.
     light: Option<Entity>,
 }
 
@@ -110,8 +112,8 @@ fn render_material(
     Some(queue(world, mesh, material))
 }
 
-/// Queues a thumbnail of `mesh` in `material`, and returns the image it
-/// will render into. The image stays blank until its rig has run.
+/// Queues a thumbnail of `mesh` in `material`, and returns the image
+/// it will render into. The image stays blank until its rig has run.
 fn queue(
     world: &mut World,
     mesh: Handle<Mesh>,
@@ -243,7 +245,8 @@ fn develop(
                     LoadState::Failed(_)
                 );
                 // Through `Assets` rather than the server: a material
-                // kept under a UUID was never loaded, so never finishes.
+                // kept under a UUID was never loaded, so never
+                // finishes.
                 let loaded = meshes
                     .get(&rig.mesh)
                     .filter(|_| materials.contains(&rig.material));

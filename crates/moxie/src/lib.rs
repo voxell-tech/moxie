@@ -2,7 +2,8 @@
 #![allow(
     clippy::type_complexity,
     clippy::too_many_arguments,
-    reason = "Inherent to Bevy ECS: systems take many params and query tuples."
+    reason = "Inherent to Bevy ECS: systems take many params and \
+              query tuples."
 )]
 
 mod catalog;
@@ -31,8 +32,8 @@ use bevy::settings::{
 use bevy_motiongfx::BevyMotionGfxPlugin;
 use bevy_motiongfx::prelude::TimelineId;
 use bevy_motiongfx::scene::id::EntityUid;
-
 use moxie_asset::{MoxieAssetPlugin, register_absolute_source};
+pub use project::open_path;
 pub use scene::EditorScene;
 
 /// Bevy's [`DefaultPlugins`], with assets set up the way the editor
@@ -181,8 +182,8 @@ impl TimelineView {
         self.pan_by(anchor_x);
     }
 
-    /// Slide the view `delta_x` pixels along the timeline, stopping at
-    /// the start.
+    /// Slide the view `delta_x` pixels along the timeline, stopping
+    /// at the start.
     pub(crate) fn pan_by(&mut self, delta_x: f32) {
         self.offset = self.time_from_x(-delta_x);
     }
@@ -213,7 +214,8 @@ pub(crate) struct PreviewImage(pub(crate) Handle<Image>);
 pub(crate) struct EditorState {
     pub(crate) timeline: Option<TimelineId>,
     pub(crate) duration: Duration,
-    /// Mirrored from the first [`RealtimePlayer`](bevy_motiongfx::prelude::RealtimePlayer)
+    /// Mirrored from the first
+    /// [`RealtimePlayer`](bevy_motiongfx::prelude::RealtimePlayer)
     /// so the play/pause label can bind to this resource instead of
     /// polling a component query.
     pub(crate) is_playing: bool,

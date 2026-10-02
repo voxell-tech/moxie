@@ -3,131 +3,160 @@
 
 use core::time::Duration;
 
-use bevy::feathers::controls::{NumberFormat, NumberInputValue};
 use bevy::prelude::*;
-use bevy::ui_widgets::ValueChange;
+use bevy_fynix::views::{Number, checkbox, number_field};
+use bevy_fynix::{AnyView, Bevy, View, ViewExt as _};
 
-use bevy_fynix::WorldEntityMut;
-use fynix::prelude::*;
+use super::{Binding, Inspect};
+use crate::theme::EditorTheme;
 
-use crate::elements::{
-    CheckBox, CheckBoxCursor, NumberField, NumberFieldCursor,
-};
-use crate::reactive::BevyUi;
-
-use super::{Inspect, Source, SourceExt, when_changed};
-
-/// A checkbox. `Checked` is a marker, inserted or removed rather than
-/// written, so this binds raw instead of writing a component.
+/// A checkbox. It never toggles itself: what it shows follows the
+/// value it edits, and only moves once the write has landed.
 impl Inspect for bool {
-    fn build(source: &dyn Source, ui: &mut BevyUi) {
-        let edited = source.boxed();
-        let read = source.boxed();
-        let checked = read.read::<bool>(ui.world).unwrap_or_default();
-
-        ui.elem(elem!(CheckBox, checked = checked))
-            .observe(
-                move |change: On<ValueChange<bool>>,
-                      mut commands: Commands| {
-                    let (source, value) =
-                        (edited.boxed(), change.value);
-
-                    commands.queue(move |world: &mut World| {
-                        source.write(world, value);
-                    });
-                },
-            )
-            // Controlled: what it shows follows the value it edits,
-            // and only moves once the write has landed.
-            .bind(
-                |b| b.checked(),
-                when_changed(source),
-                move |WorldNodeRef { world, .. }| {
-                    read.read::<bool>(world).unwrap_or_default()
-                },
-            );
+    fn build(binding: Binding) -> AnyView<Bevy, EditorTheme> {
+        let written = binding.clone();
+        checkbox(binding.signal::<bool>())
+            .on_change(move |world, checked| {
+                written.write(world, checked);
+            })
+            .boxed()
     }
 }
 
-/// A number input for a numeric leaf.
-///
-/// `V` is the payload `number_field` emits, which follows
-/// `format` rather than the field's own type - a `u32` is edited
-/// through an `i64` input and converted on the way in and out.
-/// `width` is exposed rather than left at the widget's own default so
-/// a vector's per-axis fields can sit narrower than a lone scalar.
-pub(super) fn number_field<T, V>(
-    source: &dyn Source,
-    ui: &mut BevyUi,
-    format: NumberFormat,
-    to_value: fn(V) -> T,
-    to_input: fn(T) -> NumberInputValue,
-) where
-    T: FromReflect,
-    V: Clone + Send + Sync + 'static,
-    ValueChange<V>: EntityEvent,
+/// A number field for a numeric leaf.
+pub(super) fn number<N>(
+    binding: Binding,
+) -> impl View<Bevy, EditorTheme>
+where
+    N: Number + FromReflect + PartialReflect + Default,
 {
-    let edited = source.boxed();
-    let read = source.boxed();
-
-    let shown = read.read::<T>(ui.world).map(to_input);
-
-    ui.elem(elem!(
-        NumberField,
-        format = format,
-        value = shown.unwrap_or(NumberInputValue::F32(0.0))
-    ))
-    .observe(
-        move |change: On<ValueChange<V>>, mut commands: Commands| {
-            let (source, value) =
-                (edited.boxed(), change.value.clone());
-
-            commands.queue(move |world: &mut World| {
-                source.write(world, to_value(value));
-            });
-        },
-    )
-    .bind(
-        |input| input.value(),
-        when_changed(source),
-        move |WorldNodeRef { world, .. }| {
-            read.read::<T>(world)
-                .map(to_input)
-                .unwrap_or(NumberInputValue::F32(0.0))
-        },
-    );
+    let written = binding.clone();
+    number_field(binding.signal::<N>(), move |world, value: N| {
+        written.write(world, value);
+    })
 }
 
-/// Implements [`Inspect`] for a numeric type, given the input format
-/// it is edited through and the conversions to and from that input's
-/// payload.
-macro_rules! number_widget {
-    ($(
-        $ty:ty => $format:ident, $value:ident, $payload:ty,
-        $to_field:expr, $to_input:expr;
-    )*) => {$(
+/// Implements [`Inspect`] for a numeric type the number field edits
+/// as itself.
+macro_rules! number_editor {
+    ($($ty:ty),*) => {$(
         impl Inspect for $ty {
-            fn build(source: &dyn Source, ui: &mut BevyUi) {
-                number_field::<$ty, $payload>(
-                    source,
-                    ui,
-                    NumberFormat::$format,
-                    $to_field,
-                    |value| NumberInputValue::$value($to_input(value)),
-                );
+            fn build(binding: Binding) -> AnyView<Bevy, EditorTheme> {
+                number::<$ty>(binding).boxed()
             }
         }
     )*};
 }
 
-number_widget! {
-    f32 => F32, F32, f32, |value| value, |value| value;
-    f64 => F64, F64, f64, |value| value, |value| value;
-    i32 => I32, I32, i32, |value| value, |value| value;
-    i64 => I64, I64, i64, |value| value, |value| value;
-    // There is no unsigned input format, so these ride an `i64` and
-    // clamp on the way back - `as` alone would wrap or truncate.
-    u32 => I64, I64, i64, |value: i64| value.clamp(0, u32::MAX as i64) as u32, |value| value as i64;
-    u64 => I64, I64, i64, |value: i64| value.max(0) as u64, |value| value as i64;
-    Duration => F32, F32, f32, |secs: f32| Duration::from_secs_f32(secs.max(0.0)), |value: Duration| value.as_secs_f32();
+number_editor!(f32, f64, i32, i64, u32, u64);
+
+/// A length of time, edited as seconds.
+impl Inspect for Duration {
+    fn build(binding: Binding) -> AnyView<Bevy, EditorTheme> {
+        let written = binding.clone();
+        number_field(
+            binding
+                .signal::<Duration>()
+                .map(|time| time.as_secs_f32()),
+            move |world, secs: f32| {
+                written.write(
+                    world,
+                    Duration::from_secs_f32(secs.max(0.0)),
+                );
+            },
+        )
+        .boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ui::Checked;
+    use bevy::ui_widgets::ValueChange;
+
+    use super::*;
+    use crate::inspector::Field;
+    use crate::tests::{self, Probe};
+
+    fn probe_field(app: &mut App, path: &str) -> (Entity, Binding) {
+        let probe = app.world_mut().spawn(Probe::default()).id();
+        let field = Field::of::<Probe>(probe).child(path);
+        (probe, Binding::from(field))
+    }
+
+    fn probe_of(app: &App, probe: Entity) -> Probe {
+        app.world().get::<Probe>(probe).unwrap().clone()
+    }
+
+    #[test]
+    fn a_checkbox_shows_follows_and_writes_the_world() {
+        let (mut app, _) = tests::probe_app();
+        let (probe, binding) = probe_field(&mut app, "on");
+        let node = tests::show(&mut app, bool::build(binding));
+        let checked =
+            |app: &App| app.world().get::<Checked>(node).is_some();
+        assert!(!checked(&app));
+
+        app.world_mut().get_mut::<Probe>(probe).unwrap().on = true;
+        app.update();
+        assert!(checked(&app));
+
+        app.world_mut().trigger(ValueChange {
+            source: node,
+            value: false,
+            is_final: true,
+        });
+        app.update();
+        assert!(!probe_of(&app, probe).on, "the write landed");
+        assert!(!checked(&app), "and the box followed it");
+    }
+
+    #[test]
+    fn a_number_shows_follows_and_scrubs_the_world() {
+        let (mut app, _) = tests::probe_app();
+        let (probe, binding) = probe_field(&mut app, "level");
+        app.world_mut().get_mut::<Probe>(probe).unwrap().level = 2.5;
+        let root = tests::show(&mut app, f32::build(binding));
+        assert_eq!(tests::inputs(&app, root), ["2.5"]);
+
+        app.world_mut().get_mut::<Probe>(probe).unwrap().level = 4.0;
+        app.update();
+        assert_eq!(tests::inputs(&app, root), ["4"]);
+
+        let field = tests::field_root(&app, root);
+        tests::drag(&mut app, field, 10.0);
+        assert_eq!(probe_of(&app, probe).level, 4.1);
+        assert_eq!(tests::inputs(&app, root), ["4.1"]);
+    }
+
+    #[test]
+    fn scrubbing_a_number_rebuilds_nothing() {
+        let (mut app, _) = tests::probe_app();
+        let (_, binding) = probe_field(&mut app, "level");
+        let root = tests::show(&mut app, f32::build(binding));
+        let before = tests::below(&app, root);
+
+        let field = tests::field_root(&app, root);
+        tests::drag(&mut app, field, 10.0);
+        tests::drag(&mut app, field, 20.0);
+
+        assert_eq!(tests::below(&app, root), before);
+    }
+
+    #[test]
+    fn a_duration_is_edited_as_seconds() {
+        let (mut app, _) = tests::probe_app();
+        let (probe, binding) = probe_field(&mut app, "time");
+        app.world_mut().get_mut::<Probe>(probe).unwrap().time =
+            Duration::from_millis(1500);
+        let root = tests::show(&mut app, Duration::build(binding));
+        assert_eq!(tests::inputs(&app, root), ["1.5"]);
+
+        let field = tests::field_root(&app, root);
+        tests::drag(&mut app, field, -1000.0);
+        assert_eq!(
+            probe_of(&app, probe).time,
+            Duration::from_secs(0)
+        );
+    }
 }

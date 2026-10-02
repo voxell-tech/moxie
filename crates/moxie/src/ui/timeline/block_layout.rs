@@ -57,23 +57,24 @@ pub(crate) struct Placed {
     /// The field an action leaf drives. `None` for a block or a
     /// draft, which has none yet.
     pub(crate) field: Option<FieldRef>,
-    /// `true` when a block's children are folded away. Always `false`
-    /// for an action leaf.
+    /// `true` when a block's children are folded away. Always
+    /// `false` for an action leaf.
     pub(crate) folded: bool,
     /// `true` for a `Node::Draft` leaf - an unassigned slot, styled
     /// apart from a real action.
     pub(crate) draft: bool,
     /// Where this node's own `delay` begins, if it has one - the
-    /// stretch from here to `x` is time reserved but not yet running.
-    /// `None` when there's no delay to show.
+    /// stretch from here to `x` is time reserved but not yet
+    /// running. `None` when there's no delay to show.
     pub(crate) gap_x: Option<f32>,
     /// `Some` for a flow block's child after the first.
     pub(crate) link: Option<Link>,
     /// The enclosing block's box, `None` for the root.
     pub(crate) parent: Option<Bounds>,
     /// This node's position in `animation`'s tree: child index at
-    /// each depth, root first. What [`crate::SelectedAction`] compares
-    /// against, so a click can name exactly which node it landed on.
+    /// each depth, root first. What [`crate::SelectedAction`]
+    /// compares against, so a click can name exactly which node
+    /// it landed on.
     pub(crate) path: Vec<usize>,
 }
 
@@ -398,8 +399,8 @@ fn measure_children(
         // Children never overlap in time by construction, so they all
         // share one row.
         Combinator::Chain => vec![0.0; measured.len()],
-        // `All`/`Flow` children can genuinely overlap in time, so each
-        // always gets its own dedicated row.
+        // `All`/`Flow` children can genuinely overlap in time, so
+        // each always gets its own dedicated row.
         Combinator::All | Combinator::Flow(_) => {
             let mut y = 0.0;
             measured
@@ -540,8 +541,9 @@ fn flatten(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use moxie_ui::theme::EditorTheme;
+
+    use super::*;
 
     fn placed(x: f32, w: f32, parent: Option<Bounds>) -> Placed {
         Placed {

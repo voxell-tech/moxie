@@ -1,313 +1,277 @@
-//! Inspectors, as composers.
+//! Inspectors, as views.
 //!
 //! What an inspector is handed (an entity, a component's type, a
-//! resource's type) decides what its subtree *is*. There is no patch
-//! for "build something else instead", so these read their input
-//! once, while building, exactly a [`Composer`]'s window.
-//!
-//! Each is empty when what it points at is not there. A missing
+//! resource's type) decides what its subtree *is*, and it follows
+//! that as the world changes: each is empty while what it points at
+//! is not there, and builds its rows when it appears. A missing
 //! component and an inspector pointed nowhere read the same.
 
 use std::any::TypeId;
 use std::borrow::Cow;
 
-use bevy::asset::UntypedAssetId;
+use bevy::asset::{AssetServer, UntypedAssetId};
 use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
 use bevy::reflect::TypeRegistration;
 use bevy::reflect::std_traits::ReflectDefault;
-use bevy::ui_widgets::{Activate, ActivateOnPress, MenuButton};
-
-use bevy_fynix::WorldEntityMut;
-use fynix::composer::Composer;
-use fynix::prelude::*;
-use fynix::records::{BuildFn, ChangedFn};
-
-use super::button::ButtonCursor;
-use super::frame::FrameCursor;
-use super::icon::IconCursor;
-use super::{
-    Dropdown, DropdownItem, DropdownList, DropdownMenu, Frame, Icon,
-    Label, TintButton, menu_item,
+use bevy_fynix::tokens::{Motion, Tone};
+use bevy_fynix::views::{
+    BehaviorExt as _, ContextMenuExt as _, FrameProps as _,
+    MenuEntry, Open, button, column, frame, icon, label, menu_button,
+    menu_item, row, tint,
 };
-use crate::context_menu::context_menu;
+use bevy_fynix::{
+    AnyView, Bevy, Cx, ScopedExt as _, View, ViewExt as _, component,
+    each, keyed,
+};
+
 use crate::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
+use crate::gaps::{anchored, changing_under};
 use crate::icons;
 use crate::inspector::{
-    ClonableSource, Field, FieldAnimatable, FieldRow,
-    InspectorFields, ReflectEssential, ReflectInspectGroup,
-    ReflectInspectable, Source, draggable_field, inspect_value,
+    Binding, Field, FieldAnimatable, ReflectEssential,
+    ReflectInspectGroup, ReflectInspectable, draggable_field,
+    field_name, field_row, inspect_value, inspector_fields,
     root_leaf, section_open, toggle_section,
 };
-use crate::reactive::{
-    BevyUi, FynixHost, component_changed_on, value_changed,
-};
-use crate::widgets::tooltip::TooltipExt as _;
+use crate::theme::EditorTheme;
 
-/// Inspector for a [`Component`].
-pub struct ComponentInspector {
-    pub entity: Entity,
-    pub component: TypeId,
-    /// How many [`Foldable`](crate::fold::Foldable) bodies this sits
-    /// under, for `FieldRow` to keep its columns aligned. `0` for
-    /// a call site with none of its own.
-    pub depth: u32,
+type Item = AnyView<Bevy, EditorTheme>;
+
+/// The gap between the rows of one component's fields, and between
+/// the rows of a card's body.
+const FIELD_GAP: f32 = 4.0;
+
+/// The gap between whole components.
+const CARD_GAP: f32 = 8.0;
+
+/// A column of `gap`-spaced rows, filling its parent.
+fn rows(gap: f32) -> impl View<Bevy, EditorTheme> {
+    frame()
+        .direction(FlexDirection::Column)
+        .width(percent(100.0))
+        .gap(gap)
 }
 
-impl ComponentInspector {
-    /// Names the component by type, for a call site that has one
-    /// rather than a [`TypeId`].
-    pub fn of<T: Component + Reflect>(entity: Entity) -> Self {
-        Self {
-            entity,
-            component: TypeId::of::<T>(),
-            depth: 0,
-        }
-    }
+/// Inspector for a [`Component`] of `entity`, named by its type.
+///
+/// `depth` is how many [`Foldable`](crate::fold::Foldable) bodies it
+/// sits under, for its rows to keep their columns aligned. `0` for a
+/// call site with none of its own.
+pub fn component_inspector(
+    entity: Entity,
+    component: TypeId,
+    depth: u32,
+) -> impl View<Bevy, EditorTheme> {
+    root_inspector(Field::new(entity, component), depth)
 }
 
-impl Composer<FynixHost> for ComponentInspector {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        RootInspector {
-            root: Field::new(self.entity, self.component),
-            depth: self.depth,
-        }
-        .compose(ui)
-    }
+/// As [`component_inspector`], for a call site that has the type
+/// rather than a [`TypeId`], at depth `0`.
+pub fn component_inspector_of<T: Component + Reflect>(
+    entity: Entity,
+) -> impl View<Bevy, EditorTheme> {
+    component_inspector(entity, TypeId::of::<T>(), 0)
 }
 
 /// Inspector for a [`Field`]'s whole root: a component or an asset.
-pub struct RootInspector {
-    pub root: Field,
-    /// How many [`Foldable`](crate::fold::Foldable) bodies this sits
-    /// under, for `FieldRow` to keep its columns aligned.
-    pub depth: u32,
-}
-
-impl Composer<FynixHost> for RootInspector {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let field = self.root;
-        let built = field.clone();
-        let depth = self.depth;
-
-        column(ui, px(4), presence_changed(field), move |ui| {
-            if built.exists(ui.world) {
-                ui.compose(InspectorFields {
-                    root: built.clone(),
-                    depth,
-                });
-            }
-        })
-    }
-}
-
-/// Inspector for a [`Resource`].
-pub struct ResourceInspector {
-    pub resource: TypeId,
-}
-
-impl ResourceInspector {
-    /// Names the resource by type, for a call site that has one
-    /// rather than a [`TypeId`].
-    pub fn of<T: Resource + Reflect>() -> Self {
-        Self {
-            resource: TypeId::of::<T>(),
-        }
-    }
-}
-
-impl Composer<FynixHost> for ResourceInspector {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let resource = self.resource;
-
-        column(ui, px(4), entity_changed(resource), move |ui| {
-            let Some(entity) = resource_entity(ui.world, resource)
-            else {
-                return;
-            };
-            ui.compose(InspectorFields {
-                root: Field::new(entity, resource),
-                depth: 0,
-            });
-        })
-    }
-}
-
-/// Inspector for all of the [`Component`]s on an [`Entity`].
-pub struct EntityInspector {
-    pub entity: Entity,
-}
-
-impl Composer<FynixHost> for EntityInspector {
-    type Element = Frame;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, Frame> {
-        let entity = self.entity;
-
-        column(ui, px(8), components_changed(entity), move |ui| {
-            // `None` sorts first, so an ungrouped run never gets
-            // mistaken for one under its own (absent) heading.
-            let mut shown_group: Option<Option<&'static str>> = None;
-            for (component, name, group) in
-                inspectable(ui.world, entity)
-            {
-                if shown_group != Some(group) {
-                    shown_group = Some(group);
-                    if let Some(group) = group {
-                        group_heading(ui, group);
-                    }
+/// `depth` is as for [`component_inspector`].
+pub fn root_inspector(
+    root: Field,
+    depth: u32,
+) -> impl View<Bevy, EditorTheme> {
+    anchored::<EditorTheme, _>(move |anchor| {
+        let present = root.clone();
+        keyed::<EditorTheme, bool>(
+            changing_under(anchor, move |world: &World| {
+                present.exists(world)
+            }),
+            move |exists| {
+                if *exists {
+                    inspector_fields(root.clone(), depth).boxed()
+                } else {
+                    frame().boxed()
                 }
-
-                component_card(
-                    ui,
-                    entity,
-                    component,
-                    name.to_string(),
-                );
-            }
-
-            ui.compose(AddComponent { entity });
-        })
-    }
+            },
+        )
+        .within(rows(FIELD_GAP))
+    })
 }
 
-/// The menu that adds a component to [`Entity`].
-struct AddComponent {
+/// Inspector for a [`Resource`], named by its type.
+pub fn resource_inspector(
+    resource: TypeId,
+) -> impl View<Bevy, EditorTheme> {
+    anchored::<EditorTheme, _>(move |anchor| {
+        keyed::<EditorTheme, Option<Entity>>(
+            changing_under(anchor, move |world: &World| {
+                resource_entity(world, resource)
+            }),
+            move |entity| match entity {
+                Some(entity) => {
+                    inspector_fields(Field::new(*entity, resource), 0)
+                        .boxed()
+                }
+                None => frame().boxed(),
+            },
+        )
+        .within(rows(FIELD_GAP))
+    })
+}
+
+/// As [`resource_inspector`], for a call site that has the type
+/// rather than a [`TypeId`].
+pub fn resource_inspector_of<T: Resource + Reflect>()
+-> impl View<Bevy, EditorTheme> {
+    resource_inspector(TypeId::of::<T>())
+}
+
+/// A component's type, its section name and its group.
+type Inspectable = (TypeId, Cow<'static, str>, Option<&'static str>);
+
+/// One row of an entity's inspector.
+#[derive(Clone, PartialEq)]
+enum Section {
+    /// A group's own name, heading the run of cards under it.
+    Heading(&'static str),
+    /// One component's card.
+    Card { component: TypeId, name: String },
+}
+
+/// Inspector for all of the [`Component`]s on an [`Entity`]: a card
+/// each, and a menu to add another.
+///
+/// A component added or removed builds or drops its own card and
+/// leaves the others alone.
+pub fn entity_inspector(
     entity: Entity,
-}
-
-impl Composer<FynixHost> for AddComponent {
-    type Element = DropdownMenu;
-
-    fn compose(
-        self,
-        ui: &mut BevyUi,
-    ) -> ElementHandle<FynixHost, DropdownMenu> {
-        let entity = self.entity;
-        let theme = ui.theme;
-        let options = addable(ui.world, entity);
-        let width = Dropdown::width_for(
-            &options
-                .iter()
-                .map(|(_, name, _)| name.to_string())
-                .collect::<Vec<_>>(),
-            12.0,
-        );
-
-        ui.elem(elem!(DropdownMenu))
-            .with(move |ui| {
-                let mut add_button = ui.elem(elem!(
-                    !TintButton::default(),
-                    icon = elem!(
-                        Icon,
-                        image = icons::PLUS,
-                        color = theme.color.text_dim
-                    )
-                ));
-                add_button
-                    .insert((MenuButton, ActivateOnPress))
-                    .tooltip("Add component");
-
-                ui.elem(elem!(DropdownList, width = width)).with(
-                    move |ui| {
-                        // A menu popup only opens with a focusable
-                        // child, so an empty list says why it's
-                        // empty instead of showing nothing.
-                        if options.is_empty() {
-                            ui.elem(elem!(
-                                DropdownItem,
-                                label = elem!(
-                                    Label,
-                                    text = "Nothing left to add"
-                                        .to_string(),
-                                    color = theme.color.text_dim
-                                )
-                            ));
-                            return;
-                        }
-
-                        // `None` sorts first, so an ungrouped run
-                        // never gets mistaken for one under its own
-                        // (absent) heading.
-                        let mut shown_group: Option<
-                            Option<&'static str>,
-                        > = None;
-                        for (component, name, group) in options {
-                            if shown_group != Some(group) {
-                                shown_group = Some(group);
-                                if let Some(group) = group {
-                                    group_heading(ui, group);
-                                }
-                            }
-                            add_component_item(
-                                ui, entity, component, &name,
-                            );
-                        }
-                    },
-                );
-            })
-            .handle()
-    }
-}
-
-/// A group's own name, heading the run of [`add_component_item`]s
-/// under it.
-fn group_heading(ui: &mut BevyUi, name: &str) {
-    let theme = ui.theme;
-    let (fill, radius, small, text_dim) = (
-        theme.color.fill,
-        theme.space.menu_item_radius,
-        theme.text.small,
-        theme.color.text_dim,
-    );
-    ui.elem(elem!(
-        Frame,
-        width = percent(100),
-        padding = UiRect::new(px(8), px(8), px(4), px(4)),
-        background = fill,
-        radius = px(radius)
+) -> impl View<Bevy, EditorTheme> {
+    column((
+        anchored::<EditorTheme, _>(move |anchor| {
+            each::<EditorTheme, Section, Section>(
+                changing_under(anchor, move |world: &World| {
+                    sections(world, entity)
+                }),
+                |section| section.clone(),
+                move |section| match section {
+                    Section::Heading(name) => group_heading(name),
+                    Section::Card { component, name } => {
+                        component_card(
+                            entity,
+                            *component,
+                            name.clone(),
+                        )
+                    }
+                },
+            )
+            .within(rows(CARD_GAP))
+        }),
+        add_component_menu(entity),
     ))
-    .with(move |ui| {
-        ui.elem(elem!(
-            Label,
-            text = name.to_string(),
-            size = small,
-            bold = true,
-            wrap = false,
-            color = text_dim
-        ));
-    });
+    .width(percent(100.0))
+    .gap(CARD_GAP)
 }
 
-/// One entry in [`AddComponent`]'s list. Picking it inserts the
-/// component and closes the list.
-fn add_component_item(
-    ui: &mut BevyUi,
+/// The cards `entity` shows, each group's under a heading.
+fn sections(world: &World, entity: Entity) -> Vec<Section> {
+    // `None` sorts first, so an ungrouped run never gets mistaken
+    // for one under its own (absent) heading.
+    let mut shown_group: Option<Option<&'static str>> = None;
+    let mut out = Vec::new();
+    for (component, name, group) in inspectable(world, entity) {
+        if shown_group != Some(group) {
+            shown_group = Some(group);
+            if let Some(group) = group {
+                out.push(Section::Heading(group));
+            }
+        }
+        out.push(Section::Card {
+            component,
+            name: name.to_string(),
+        });
+    }
+    out
+}
+
+/// A group's own name, heading the run of cards under it.
+fn group_heading(name: &'static str) -> Item {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let theme = cx.theme();
+        let (fill, radius, small) = (
+            theme.color.fill,
+            theme.space.menu_item_radius,
+            theme.text.small,
+        );
+        cx.build(
+            column((label(name)
+                .size(small)
+                .bold(true)
+                .wrap(false)
+                .tone(Tone::Dim),))
+            .width(percent(100.0))
+            .padding(UiRect::axes(px(8.0), px(4.0)))
+            .fill(fill)
+            .radius(radius),
+        )
+    })
+}
+
+/// The menu that adds a component to `entity`, rebuilt as components
+/// come and go.
+fn add_component_menu(
     entity: Entity,
-    component: TypeId,
-    name: &str,
-) {
-    menu_item(ui, None, name, move |world| {
-        add_component(world, entity, component);
-    });
+) -> impl View<Bevy, EditorTheme> {
+    anchored::<EditorTheme, _>(move |anchor| {
+        keyed::<EditorTheme, Vec<Inspectable>>(
+            changing_under(anchor, move |world: &World| {
+                addable(world, entity)
+            }),
+            move |options| {
+                add_component_button(entity, options.clone())
+            },
+        )
+    })
+}
+
+/// A plus button opening a menu of `options`, each a component to
+/// add, under a heading per group.
+fn add_component_button(
+    entity: Entity,
+    options: Vec<Inspectable>,
+) -> Item {
+    // A menu popup only opens with a focusable child, so an empty
+    // list says why it's empty instead of showing nothing.
+    let mut entries = Vec::<MenuEntry>::new();
+    let mut group = None;
+    for (_, name, next) in &options {
+        if *next != group {
+            group = *next;
+            if let Some(group) = group {
+                entries.push(MenuEntry::section(group));
+            }
+        }
+        entries.push(name.to_string().into());
+    }
+    if options.is_empty() {
+        entries.push("Nothing left to add".into());
+    }
+    let components = options
+        .iter()
+        .map(|(component, ..)| *component)
+        .collect::<Vec<_>>();
+
+    AnyView::new(move |cx: &mut Cx<'_, Bevy, EditorTheme>| {
+        let plus =
+            cx.world.resource::<AssetServer>().load(icons::PLUS);
+        cx.build(
+            menu_button("", entries, move |world, at| {
+                if let Some(component) = components.get(at) {
+                    add_component(world, entity, *component);
+                }
+            })
+            .icon(plus),
+        )
+    })
 }
 
 /// Every [`register_inspectable`](
@@ -319,20 +283,13 @@ fn add_component_item(
 /// crate::inspector::InspectAppExt::with_inspect_group)'s group
 /// (ungrouped first), then by name within it, for the same reason
 /// [`inspectable`] sorts by name.
-fn addable(
-    world: &World,
-    entity: Entity,
-) -> Vec<(TypeId, Cow<'static, str>, Option<&'static str>)> {
+fn addable(world: &World, entity: Entity) -> Vec<Inspectable> {
     let Ok(entity_ref) = world.get_entity(entity) else {
         return Vec::new();
     };
 
     let registry = world.resource::<AppTypeRegistry>().read();
-    let mut out: Vec<(
-        TypeId,
-        Cow<'static, str>,
-        Option<&'static str>,
-    )> = registry
+    let mut out = registry
         .iter()
         .filter(|registration| {
             registration.data::<ReflectInspectable>().is_some()
@@ -353,7 +310,7 @@ fn addable(
                 group,
             ))
         })
-        .collect();
+        .collect::<Vec<Inspectable>>();
 
     out.sort_by(|(_, a_name, a_group), (_, b_name, b_group)| {
         a_group.cmp(b_group).then_with(|| a_name.cmp(b_name))
@@ -432,194 +389,178 @@ fn essential(world: &World, component: TypeId) -> bool {
     })
 }
 
-/// A card's own fold state, distinct from the shared nested-fold
-/// hierarchy `crate::fold` builds: a component's title bar is not
-/// another level of that, just a bar on top of its card, so its body
-/// sits flush with no rail or indent under it.
-#[derive(Component)]
-struct CardClosed;
-
-/// One asset's own card, the same as a component's, titled `name`.
+/// One asset's own card, the same as a component's, titled `title`.
 /// With `rename`, a Name row above its fields edits what the asset is
 /// called.
 pub fn asset_card(
-    ui: &mut BevyUi,
     id: UntypedAssetId,
     title: String,
-    rename: Option<&dyn Source>,
-) {
-    let rename = rename.map(|source| ClonableSource(source.boxed()));
-    root_card(ui, Field::asset(id), title, rename);
+    rename: Option<Binding>,
+) -> impl View<Bevy, EditorTheme> {
+    root_card(Field::asset(id), title, rename)
 }
 
 /// One component's own card.
 fn component_card(
-    ui: &mut BevyUi,
     entity: Entity,
     component: TypeId,
     name: String,
-) {
-    root_card(ui, Field::new(entity, component), name, None);
+) -> Item {
+    root_card(Field::new(entity, component), name, None).boxed()
 }
 
-/// One root's own card: a title that's always there, above a body that
-/// folds flush under it - no rail, no indent, each field reading like
-/// its own root - like Unity's per-component panel.
+/// One root's own card: a title above a body that folds flush under
+/// it, with no rail or indent.
+///
+/// Its open state is an [`Open`] on the card's own node, mirrored
+/// into the nested sections' store so it survives a rebuild.
 fn root_card(
-    ui: &mut BevyUi,
     root: Field,
     name: String,
-    rename: Option<ClonableSource>,
-) {
-    let (owner, root_type) = (root.owner(), root.root_type());
-    // Only a component can be taken off what holds it.
-    let deletable =
-        root.entity().filter(|_| !essential(ui.world, root_type));
-    let open = section_open(ui.world, owner, root_type, "");
-    // The title stands in for a genuine field's own name when the
-    // whole root is one nameless leaf, so it carries that field's drag
-    // source too, same as `FieldName` gives a row of its own.
-    let drag_field = root_leaf(ui.world, &root).filter(|field| {
-        ui.world
-            .resource::<FieldAnimatable>()
-            .allows(ui.world, field)
-    });
-    let background = ui.theme.color.panel;
-    let radius = ui.theme.space.card_radius;
-    let padding = ui.theme.space.card_padding;
-    let muted = ui.theme.color.text_dim;
-    let primary = ui.theme.color.text;
-    let title = name.clone();
+    rename: Option<Binding>,
+) -> impl View<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let (owner, root_type) = (root.owner(), root.root_type());
+        // Only a component can be taken off what holds it.
+        let deletable =
+            root.entity().filter(|_| !essential(cx.world, root_type));
+        let open = section_open(cx.world, owner, root_type, "");
+        // The title stands in for a genuine field's own name when
+        // the whole root is one nameless leaf, so it carries that
+        // field's drag source too, same as `field_name` gives a row
+        // of its own.
+        let drag_field = root_leaf(cx.world, &root).filter(|field| {
+            cx.world
+                .resource::<FieldAnimatable>()
+                .allows(cx.world, field)
+        });
+        let assets = cx.world.resource::<AssetServer>();
+        let chevron = assets.load(icons::CHEVRON);
+        let trash = assets.load::<Image>(icons::TRASH);
+        let theme = cx.theme();
+        let space = theme.space;
+        let panel = theme.color.panel;
 
-    let mut card = ui.elem(elem!(
-        Frame,
-        width = percent(100),
-        direction = FlexDirection::Column,
-        background = background,
-        radius = px(radius),
-        padding = UiRect::all(px(padding)),
-        overflow = Overflow::clip()
-    ));
-    let node = card.id();
-    if !open {
-        card.insert(CardClosed);
-    }
-
-    card.with(move |ui| {
-        let mut header = ui.elem(elem!(
-            !TintButton::default(),
-            width = percent(100),
-            justify = JustifyContent::FlexStart,
-            icon = elem!(
-                Icon,
-                image = icons::CHEVRON,
-                color = muted,
-                rotation =
-                    if open { CHEVRON_OPEN } else { CHEVRON_SHUT }
-            ),
-            label = elem!(
-                Label,
-                text = title,
-                color = primary,
-                bold = true
-            )
-        ));
-        header
-            .observe(
-                move |_: On<Activate>, mut commands: Commands| {
-                    commands.queue(move |world: &mut World| {
-                        let opening =
-                            world.get::<CardClosed>(node).is_some();
-                        if let Ok(mut card) =
-                            world.get_entity_mut(node)
-                        {
-                            if opening {
-                                card.remove::<CardClosed>();
-                            } else {
-                                card.insert(CardClosed);
-                            }
-                        }
-                        toggle_section(
-                            world,
-                            owner,
-                            root_type,
-                            String::new(),
-                            opening,
-                        );
-                    });
-                },
-            )
-            .bind(
-                |button| button.icon().rotation(),
-                component_changed_on::<CardClosed>(node),
-                move |WorldNodeRef { world, .. }| {
-                    if world.get::<CardClosed>(node).is_some() {
-                        CHEVRON_SHUT
-                    } else {
-                        CHEVRON_OPEN
-                    }
-                },
-            );
-
-        if let Some(field) = drag_field.clone() {
-            draggable_field(&mut header, field, name);
+        let card = cx.build(
+            frame()
+                .direction(FlexDirection::Column)
+                .width(percent(100.0))
+                .gap(0.0)
+                .fill(panel)
+                .radius(space.card_radius)
+                .padding(UiRect::all(px(space.card_padding)))
+                .overflow(Overflow::clip()),
+        );
+        if open {
+            cx.world.entity_mut(card).insert(Open);
         }
 
-        if let Some(entity) = deletable {
-            context_menu(&mut header, move |menu| {
-                let critical = menu.theme().color.critical;
-                menu.item(
-                    Some((icons::TRASH, critical)),
-                    "Delete",
-                    move |world| {
-                        remove_component(world, entity, root_type);
-                    },
-                );
-            });
-        }
-
-        ui.elem(elem!(
-            Frame,
-            width = percent(100),
-            direction = FlexDirection::Column
-        ))
-        .bind(
-            |frame| frame.display(),
-            component_changed_on::<CardClosed>(node),
-            move |WorldNodeRef { world, .. }| {
-                if world.get::<CardClosed>(node).is_some() {
-                    Display::None
+        let chevron = icon(chevron)
+            .tone(Tone::Dim)
+            .size(space.icon)
+            .rotation(component::<Open, _>(card, |open| {
+                if open.is_some() {
+                    CHEVRON_OPEN
                 } else {
-                    Display::Flex
+                    CHEVRON_SHUT
+                }
+            }))
+            .transition(Motion::Interact);
+        let title = name.clone();
+        let mut header = button(
+            row((chevron, label(title).bold(true).wrap(false)))
+                .align(AlignItems::Center)
+                .gap(space.sm),
+        )
+        .width(percent(100.0))
+        .justify(JustifyContent::FlexStart)
+        .rules(tint)
+        .on_activate(move |world| {
+            let opening = world.get::<Open>(card).is_none();
+            if let Ok(mut card) = world.get_entity_mut(card) {
+                if opening {
+                    card.insert(Open);
+                } else {
+                    card.remove::<Open>();
+                }
+            }
+            toggle_section(
+                world,
+                owner,
+                root_type,
+                String::new(),
+                opening,
+            );
+        })
+        .boxed();
+
+        if let Some(field) = drag_field {
+            header = draggable_field(header, field, name).boxed();
+        }
+        if let Some(entity) = deletable {
+            header = header
+                .context_menu(move || {
+                    (menu_item(
+                        row((
+                            icon(trash.clone()),
+                            label("Delete").wrap(false),
+                        ))
+                        .align(AlignItems::Center)
+                        .gap(space.md)
+                        .toned(Tone::Critical),
+                    )
+                    .on_activate(move |world| {
+                        remove_component(world, entity, root_type);
+                    }),)
+                })
+                .boxed();
+        }
+
+        // Built while open and dropped while shut, as a fold's body.
+        let body = keyed::<EditorTheme, bool>(
+            changing_under(Some(card), move |world: &World| {
+                world.get::<Open>(card).is_some()
+            }),
+            move |open| {
+                if *open {
+                    card_body(root.clone(), rename.clone())
+                } else {
+                    frame().boxed()
                 }
             },
         )
-        .watch(
-            component_changed_on::<CardClosed>(node),
-            move |ui| {
-                if ui.world.get::<CardClosed>(node).is_some() {
-                    return;
-                }
-                if let Some(rename) = rename.clone() {
-                    let muted = ui.theme.color.text_dim;
-                    ui.compose(FieldRow {
-                        label: "Name".to_string(),
-                        color: muted,
-                        bold: false,
-                        depth: 0,
-                        field: None,
-                        value: move |ui: &mut BevyUi| {
-                            inspect_value(ui, &*rename.0);
-                        },
-                    });
-                }
-                ui.compose(RootInspector {
-                    root: root.clone(),
-                    depth: 0,
-                });
-            },
+        .within(
+            frame()
+                .direction(FlexDirection::Column)
+                .width(percent(100.0))
+                .gap(0.0),
         );
-    });
+        cx.under(card, |cx| {
+            cx.build(header);
+            cx.build(body);
+        });
+        card
+    })
+}
+
+/// An open card's body: the optional Name row, then the root's
+/// fields.
+fn card_body(root: Field, rename: Option<Binding>) -> Item {
+    let mut rows = Vec::<Item>::new();
+    if let Some(rename) = rename {
+        rows.push(
+            field_row(
+                Some(
+                    field_name(None, "Name").tone(Tone::Dim).boxed(),
+                ),
+                inspect_value(rename),
+                0,
+            )
+            .boxed(),
+        );
+    }
+    rows.push(root_inspector(root, 0).boxed());
+    column(rows).width(percent(100.0)).gap(0.0).boxed()
 }
 
 /// The entity bevy is currently keeping `resource` on.
@@ -631,28 +572,6 @@ fn resource_entity(
     world.resource_entities().get(id)
 }
 
-/// Fires when the entity holding `resource` changes, and on the
-/// first poll.
-///
-/// Only moves when the resource is removed and re-inserted: a
-/// different entity means the subtree should rebuild.
-fn entity_changed(
-    resource: TypeId,
-) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool {
-    value_changed(move |world, _| resource_entity(world, resource))
-}
-
-/// Fires when `entity`'s set of inspectable components changes, and
-/// on the first poll.
-///
-/// A component's *value* is each section's own business. This only
-/// rebuilds when one is added, removed, or the entity goes.
-fn components_changed(
-    entity: Entity,
-) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool {
-    value_changed(move |world, _| inspectable(world, entity))
-}
-
 /// Every component on `entity` the inspector can reach and shows, by
 /// type, the name its section is headed with, and its
 /// [`with_inspect_group`](
@@ -662,23 +581,17 @@ fn components_changed(
 /// archetype lists what it holds in whatever order it happens to, and
 /// a panel whose sections reshuffle when a component is added is no
 /// use to read.
-fn inspectable(
-    world: &World,
-    entity: Entity,
-) -> Vec<(TypeId, Cow<'static, str>, Option<&'static str>)> {
+fn inspectable(world: &World, entity: Entity) -> Vec<Inspectable> {
     let Ok(components) = world.inspect_entity(entity) else {
         return Vec::new();
     };
     // Collected before the registry is read: both borrow the world.
-    let ids: Vec<TypeId> =
-        components.filter_map(|info| info.type_id()).collect();
+    let ids = components
+        .filter_map(|info| info.type_id())
+        .collect::<Vec<_>>();
 
     let registry = world.resource::<AppTypeRegistry>().read();
-    let mut out: Vec<(
-        TypeId,
-        Cow<'static, str>,
-        Option<&'static str>,
-    )> = ids
+    let mut out = ids
         .into_iter()
         .filter_map(|id| {
             let registration = registry.get(id)?;
@@ -692,7 +605,7 @@ fn inspectable(
                 .map(|group| group.0);
             Some((id, display_name(registration), group))
         })
-        .collect();
+        .collect::<Vec<Inspectable>>();
 
     out.sort_by(|(_, a_name, a_group), (_, b_name, b_group)| {
         a_group.cmp(b_group).then_with(|| a_name.cmp(b_name))
@@ -738,33 +651,282 @@ fn humanize(name: &str) -> String {
     out
 }
 
-/// The column an inspector fills, and the watcher that fills it.
-///
-/// `gap` is what separates its rows: wider between whole components
-/// than between the fields of one.
-fn column(
-    ui: &mut BevyUi,
-    gap: Val,
-    changed: impl ChangedFn<FynixHost>,
-    build: impl BuildFn<FynixHost>,
-) -> ElementHandle<FynixHost, Frame> {
-    ui.elem(elem!(
-        Frame,
-        width = percent(100),
-        direction = FlexDirection::Column,
-        row_gap = gap
-    ))
-    .watch(changed, build)
-    .handle()
-}
+#[cfg(test)]
+mod tests {
+    use bevy::text::EditableText;
+    use bevy::ui_widgets::{Activate, Button, MenuItem};
 
-/// Fires when `field`'s component appears or disappears, and on the
-/// first poll.
-///
-/// Presence only. What the component holds is
-/// [`InspectorFields`]' own business, with its own watcher for that.
-fn presence_changed(
-    field: Field,
-) -> impl for<'w> FnMut(WorldNodeRef<'w, FynixHost>) -> bool {
-    value_changed(move |world, _| field.exists(world))
+    use super::*;
+    use crate::inspector::InspectAppExt as _;
+    use crate::tests::{self, Probe};
+
+    /// A resource with one field to edit.
+    #[derive(Resource, Reflect, Default)]
+    #[reflect(Resource, Default)]
+    struct Gain {
+        amount: f32,
+    }
+
+    fn inputs(app: &App, root: Entity) -> Vec<String> {
+        tests::inputs(app, root)
+    }
+
+    fn labels(app: &App, root: Entity) -> Vec<String> {
+        tests::all::<Text>(app, root)
+            .into_iter()
+            .map(|node| {
+                app.world().get::<Text>(node).unwrap().0.clone()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_component_inspector_follows_its_component_in_and_out() {
+        let (mut app, probe) = tests::probe_app();
+        let root = tests::show(
+            &mut app,
+            component_inspector_of::<Probe>(probe),
+        );
+        assert_eq!(inputs(&app, root).len(), 10);
+
+        app.world_mut().entity_mut(probe).remove::<Probe>();
+        app.update();
+        assert!(inputs(&app, root).is_empty());
+
+        app.world_mut().entity_mut(probe).insert(Probe {
+            level: 2.0,
+            ..Probe::default()
+        });
+        app.update();
+        assert_eq!(inputs(&app, root).len(), 10);
+        assert!(inputs(&app, root).contains(&"2".to_string()));
+    }
+
+    #[test]
+    fn a_resource_inspector_follows_its_resource_in_and_out() {
+        let mut app = tests::app();
+        app.register_type::<Gain>()
+            .insert_resource(Gain { amount: 3.0 });
+        let root =
+            tests::show(&mut app, resource_inspector_of::<Gain>());
+        assert_eq!(inputs(&app, root), ["3"]);
+
+        app.world_mut().remove_resource::<Gain>();
+        app.update();
+        assert!(inputs(&app, root).is_empty());
+
+        app.insert_resource(Gain { amount: 5.0 });
+        app.update();
+        assert_eq!(inputs(&app, root), ["5"]);
+    }
+
+    fn cube(app: &mut App) -> Entity {
+        app.world_mut()
+            .spawn((Name::new("cube"), Transform::default()))
+            .id()
+    }
+
+    #[test]
+    fn an_entity_inspector_has_a_card_per_inspectable_component() {
+        let mut app = tests::app();
+        let entity = cube(&mut app);
+        let root = tests::show(&mut app, entity_inspector(entity));
+
+        let names = labels(&app, root);
+        assert!(names.contains(&"Name".to_string()), "{names:?}");
+        assert!(names.contains(&"Transform".to_string()));
+        assert!(
+            !names.contains(&"Global Transform".to_string()),
+            "reflected, never opted in"
+        );
+        assert!(inputs(&app, root).contains(&"cube".to_string()));
+    }
+
+    #[test]
+    fn a_component_added_builds_its_card_and_leaves_the_others() {
+        let mut app = tests::app();
+        let entity = cube(&mut app);
+        let root = tests::show(&mut app, entity_inspector(entity));
+        let before = tests::below(&app, root);
+
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(Visibility::Hidden);
+        app.update();
+
+        assert!(
+            labels(&app, root).contains(&"Visibility".to_string())
+        );
+        let after = tests::below(&app, root);
+        // The add menu rebuilds as its list shortens, so the cards
+        // are what has to be there still.
+        assert!(
+            before
+                .iter()
+                .filter(|node| {
+                    app.world().get::<Open>(**node).is_some()
+                })
+                .all(|card| after.contains(card)),
+            "the cards there before are still there"
+        );
+    }
+
+    #[test]
+    fn the_add_menu_lists_what_is_left_and_adds_what_is_picked() {
+        let mut app = tests::app();
+        let entity = cube(&mut app);
+        let root = tests::show(&mut app, entity_inspector(entity));
+
+        let options = labels(&app, root);
+        assert!(
+            options.contains(&"Cameras".to_string()),
+            "a heading per group: {options:?}"
+        );
+        assert!(
+            options.contains(&"Camera 2d".to_string()),
+            "{options:?}"
+        );
+
+        let item = tests::all::<MenuItem>(&app, root)
+            .into_iter()
+            .find(|item| {
+                tests::all::<Text>(&app, *item).iter().any(|text| {
+                    app.world().get::<Text>(*text).unwrap().0
+                        == "Camera 2d"
+                })
+            })
+            .expect("a row for Camera 2d");
+        app.world_mut().trigger(Activate { entity: item });
+        app.update();
+
+        assert!(app.world().get::<Camera2d>(entity).is_some());
+        let after = labels(&app, root);
+        assert_eq!(
+            after
+                .iter()
+                .filter(|label| *label == "Camera 2d")
+                .count(),
+            1,
+            "the card for the new component, and no row left for it"
+        );
+    }
+
+    #[test]
+    fn a_card_folds_its_body_and_remembers_it() {
+        let (mut app, probe) = tests::probe_app();
+        let root = tests::show(
+            &mut app,
+            root_card(
+                Field::of::<Probe>(probe),
+                "Probe".to_string(),
+                None,
+            ),
+        );
+        assert!(app.world().get::<Open>(root).is_some());
+        assert_eq!(inputs(&app, root).len(), 10);
+        let header = tests::all::<Button>(&app, root)[0];
+
+        app.world_mut().trigger(Activate { entity: header });
+        app.update();
+
+        assert!(app.world().get::<Open>(root).is_none());
+        assert!(inputs(&app, root).is_empty());
+        assert!(!section_open(
+            app.world(),
+            crate::inspector::Owner::Entity(probe),
+            TypeId::of::<Probe>(),
+            ""
+        ));
+
+        app.world_mut().trigger(Activate { entity: header });
+        app.update();
+        assert_eq!(inputs(&app, root).len(), 10);
+    }
+
+    #[test]
+    fn a_card_built_again_comes_back_shut() {
+        let (mut app, probe) = tests::probe_app();
+        toggle_section(
+            app.world_mut(),
+            crate::inspector::Owner::Entity(probe),
+            TypeId::of::<Probe>(),
+            String::new(),
+            false,
+        );
+        let root = tests::show(
+            &mut app,
+            root_card(
+                Field::of::<Probe>(probe),
+                "Probe".to_string(),
+                None,
+            ),
+        );
+
+        assert!(app.world().get::<Open>(root).is_none());
+        assert!(inputs(&app, root).is_empty());
+    }
+
+    #[test]
+    fn a_rename_row_edits_what_the_card_is_called() {
+        let (mut app, probe) = tests::probe_app();
+        app.world_mut().get_mut::<Probe>(probe).unwrap().name =
+            "ada".into();
+        let rename =
+            Binding::from(Field::of::<Probe>(probe).child("name"));
+        let root = tests::show(
+            &mut app,
+            root_card(
+                Field::of::<Probe>(probe),
+                "Probe".to_string(),
+                Some(rename),
+            ),
+        );
+
+        assert_eq!(labels(&app, root)[1], "Name");
+        assert_eq!(inputs(&app, root)[0], "ada");
+        assert!(
+            tests::all::<EditableText>(&app, root).len() == 11,
+            "the rename input comes first, then the ten fields"
+        );
+    }
+
+    #[test]
+    fn an_essential_component_cannot_be_removed() {
+        let mut app = tests::app();
+        let entity = app
+            .world_mut()
+            .spawn((Transform::default(), Camera2d))
+            .id();
+
+        remove_component(
+            app.world_mut(),
+            entity,
+            TypeId::of::<Transform>(),
+        );
+        remove_component(
+            app.world_mut(),
+            entity,
+            TypeId::of::<Camera2d>(),
+        );
+
+        assert!(app.world().get::<Transform>(entity).is_some());
+        assert!(app.world().get::<Camera2d>(entity).is_none());
+    }
+
+    #[test]
+    fn a_section_is_named_by_its_type_unless_it_says_otherwise() {
+        let mut app = tests::app();
+        app.register_inspectable::<Probe>();
+        let registry =
+            app.world().resource::<AppTypeRegistry>().read();
+        let name = |id| display_name(registry.get(id).unwrap());
+
+        assert_eq!(name(TypeId::of::<Probe>()), "Probe");
+        assert_eq!(
+            name(TypeId::of::<MeshMaterial3d<StandardMaterial>>()),
+            "PBR Material"
+        );
+        assert_eq!(name(TypeId::of::<Camera2d>()), "Camera 2d");
+        assert_eq!(humanize("DirectionalLight"), "Directional Light");
+    }
 }

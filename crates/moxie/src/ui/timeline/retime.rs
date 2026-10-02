@@ -1,6 +1,6 @@
 //! Retiming a node by dragging one of its box's edges: the left edge
-//! edits `delay`, the right edge `duration` (leaves only - a block has
-//! no `duration`). Dedicated handles leave the body free for
+//! edits `delay`, the right edge `duration` (leaves only - a block
+//! has no `duration`). Dedicated handles leave the body free for
 //! `reorder`'s merge gesture.
 //!
 //! Nothing writes [`EditorScene`] until [`DragEnd`]: the box list
@@ -12,7 +12,6 @@
 
 use core::time::Duration;
 
-use bevy::feathers::cursor::EntityCursor;
 use bevy::input::ButtonInput;
 use bevy::picking::events::{
     Click, Drag, DragEnd, DragStart, Pointer, Press, Release,
@@ -21,12 +20,10 @@ use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::UiScale;
 use bevy::window::SystemCursorIcon;
-use bevy_fynix::WorldEntityMut;
+use bevy_fynix::{AnyView, Bevy, EntityCursor, Theme, View};
 use bevy_motiongfx::scene::backend::Backend;
-use fynix::prelude::*;
 use motiongfx_scene::block::Node as SceneNode;
-use moxie_ui::reactive::{BevyFynix, FynixHost};
-use moxie_ui::theme::Spacing;
+use moxie_ui::theme::{EditorTheme, Spacing};
 
 use super::super::action::{node_at, node_at_mut};
 use super::block_layout::{self, Placed};
@@ -64,31 +61,42 @@ struct Gesture {
     value_secs: f32,
 }
 
-/// The path a box entity
-/// ([`TimelineAction`](moxie_ui::elements::TimelineAction) or
-/// [`TimelineBlock`](moxie_ui::elements::TimelineBlock)) was built for.
+/// The path a box entity (a `timeline_action` or `timeline_block`)
+/// was built for.
 #[derive(Component, Clone)]
 pub(crate) struct BoxPath(pub(crate) Vec<usize>);
 
-/// The same, for a path's
-/// [`TimelineGap`](moxie_ui::elements::TimelineGap).
+/// The same, for a path's `timeline_gap`.
 #[derive(Component, Clone)]
 pub(crate) struct GapPath(pub(crate) Vec<usize>);
 
-/// The path a [`TimelineLink`](moxie_ui::elements::TimelineLink) was
-/// built for.
+/// The path a `timeline_link` was built for.
 #[derive(Component, Clone)]
 pub(crate) struct LinkPath(pub(crate) Vec<usize>);
 
-/// Makes `handle` an edge: dragging it edits `path`'s `delay`
-/// (`Kind::Move`) or `duration` (`Kind::Resize`).
-pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
-    handle: &'r mut ElementMut<'u, 'a, FynixHost, E>,
+/// `handle` as an edge: dragging it edits `path`'s `delay`
+/// ([`Kind::Delay`]) or `duration` ([`Kind::Resize`]).
+pub(crate) fn edge(
+    handle: impl View<Bevy, EditorTheme> + 'static,
     path: Vec<usize>,
     kind: Kind,
-) -> &'r mut ElementMut<'u, 'a, FynixHost, E> {
-    handle
-        .insert(EntityCursor::System(SystemCursorIcon::EwResize))
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::new(move |cx| {
+        let node = cx.build(handle);
+        wire_edge(cx.world, node, path, kind);
+        node
+    })
+}
+
+fn wire_edge(
+    world: &mut World,
+    node: Entity,
+    path: Vec<usize>,
+    kind: Kind,
+) {
+    world
+        .entity_mut(node)
+        .insert(EntityCursor(SystemCursorIcon::EwResize))
         .observe(|mut press: On<Pointer<Press>>| {
             press.propagate(false);
         })
@@ -123,7 +131,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
         .observe(
             move |mut drag: On<Pointer<Drag>>,
                   scale: Res<UiScale>,
-                  kernel: Res<BevyFynix>,
+                  theme: Res<Theme<EditorTheme>>,
                   mut dragging: ResMut<Dragging>,
                   editor_scene: Res<EditorScene>,
                   folded: Res<BlockFoldState>,
@@ -162,7 +170,7 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                     &editor_scene,
                     &folded,
                     *view,
-                    kernel.theme().space,
+                    theme.0.space,
                     &gesture.path,
                     gesture.kind,
                     gesture.value_secs,
@@ -195,14 +203,14 @@ pub(crate) fn edge<'r, 'u, 'a, E: Element<FynixHost>>(
                     });
                 }
             },
-        )
+        );
 }
 
 /// Drops the drag without committing, re-laying the untouched tree to
 /// undo the preview.
 fn cancel_on_escape(
     keys: Res<ButtonInput<KeyCode>>,
-    kernel: Res<BevyFynix>,
+    theme: Res<Theme<EditorTheme>>,
     mut dragging: ResMut<Dragging>,
     editor_scene: Res<EditorScene>,
     folded: Res<BlockFoldState>,
@@ -224,7 +232,7 @@ fn cancel_on_escape(
         &editor_scene,
         &folded,
         *view,
-        kernel.theme().space,
+        theme.0.space,
         &gesture.path,
         gesture.kind,
         gesture.base_secs,
@@ -234,8 +242,9 @@ fn cancel_on_escape(
     );
 }
 
-/// Lays out a scratch copy of the tree with `secs` applied to `kind`'s
-/// edit and pushes the result onto the spawned entities by path.
+/// Lays out a scratch copy of the tree with `secs` applied to
+/// `kind`'s edit and pushes the result onto the spawned entities by
+/// path.
 fn relayout(
     editor_scene: &EditorScene,
     folded: &BlockFoldState,
@@ -391,5 +400,54 @@ fn apply_edit(node: &mut SceneNode<Backend>, kind: Kind, secs: f32) {
             }
             SceneNode::Block { .. } => {}
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use motiongfx_scene::block::{Block, Combinator};
+
+    use super::*;
+
+    fn draft(delay: Option<u64>) -> SceneNode<Backend> {
+        SceneNode::Draft {
+            delay: delay.map(Duration::from_secs),
+            duration: Duration::from_secs(2),
+            name: None,
+        }
+    }
+
+    #[test]
+    fn a_delay_edit_sets_or_clears_the_delay() {
+        let mut node = draft(None);
+        apply_edit(&mut node, Kind::Delay, 1.5);
+        assert_eq!(delay_secs(&node), 1.5);
+        apply_edit(&mut node, Kind::Delay, 0.0);
+        assert_eq!(delay_secs(&node), 0.0);
+        let SceneNode::Draft { delay, .. } = node else {
+            panic!("still a draft");
+        };
+        assert_eq!(delay, None);
+    }
+
+    #[test]
+    fn a_resize_edit_sets_the_duration() {
+        let mut node = draft(None);
+        apply_edit(&mut node, Kind::Resize, 3.0);
+        assert_eq!(duration_secs(&node), Some(3.0));
+    }
+
+    #[test]
+    fn a_block_has_no_duration_to_resize() {
+        let mut node = SceneNode::Block {
+            delay: None,
+            block: Block {
+                combinator: Combinator::Chain,
+                children: Vec::new(),
+                name: None,
+            },
+        };
+        apply_edit(&mut node, Kind::Resize, 3.0);
+        assert_eq!(duration_secs(&node), None);
     }
 }

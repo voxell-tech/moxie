@@ -1,8 +1,8 @@
-//! The whole editor, headless, for tests: no window, no GPU, and frames
-//! stepped by hand.
+//! The whole editor, headless, for tests: no window, no GPU, and
+//! frames stepped by hand.
 //!
-//! With no window nothing is laid out, so nothing is found by where it
-//! is drawn. A test finds a control by the text it shows, or a
+//! With no window nothing is laid out, so nothing is found by where
+//! it is drawn. A test finds a control by the text it shows, or a
 //! tooltip's name, and acts on it the way a click or a key would.
 
 use core::time::Duration;
@@ -19,7 +19,8 @@ use bevy::render::RenderPlugin;
 use bevy::render::settings::{RenderCreation, WgpuSettings};
 use bevy::render::sync_world::SyncWorldPlugin;
 use bevy::ui_widgets::{
-    Activate, Button as ButtonBehavior, MenuItem,
+    Activate, Button as ButtonBehavior, MenuAction, MenuEvent,
+    MenuItem,
 };
 use bevy::window::{ExitCondition, PrimaryWindow};
 use bevy::winit::WinitPlugin;
@@ -54,11 +55,12 @@ impl Editor {
                     ..default()
                 })
                 .disable::<WinitPlugin>()
-                // Tests run side by side, and only one of them could own
-                // the global logger.
+                // Tests run side by side, and only one of them could
+                // own the global logger.
                 .disable::<LogPlugin>(),
-            // Rendering with no GPU never adds this, but the hooks on
-            // anything drawable still reach for what it keeps.
+            // Rendering with no GPU never adds this, but the hooks
+            // on anything drawable still reach for what
+            // it keeps.
             SyncWorldPlugin,
             MoxiePlugin,
         ));
@@ -84,8 +86,8 @@ impl Editor {
         self.app.world_mut()
     }
 
-    /// Every visible entity showing exactly `text`. A shut menu's rows
-    /// are there but hidden, and don't count.
+    /// Every visible entity showing exactly `text`. A shut menu's
+    /// rows are there but hidden, and don't count.
     pub(crate) fn texts(&mut self, text: &str) -> Vec<Entity> {
         let world = self.world();
         world
@@ -148,6 +150,13 @@ impl Editor {
                 .parent();
         }
         world.trigger(Activate { entity: at });
+        // A click on a menu row also sends this after activating it.
+        if world.get::<MenuItem>(at).is_some() {
+            world.trigger(MenuEvent {
+                source: at,
+                action: MenuAction::CloseAll,
+            });
+        }
         self.step(SETTLE);
     }
 

@@ -28,9 +28,9 @@ pub const MESHES: &[(&str, &str)] = &[
     ("Monkey", "meshes/monkey.glb#Mesh0/Primitive0"),
 ];
 
-/// A plain material, kept under a fixed id so a saved project names it
-/// the same in every editor. Read-only: it is not an internal asset,
-/// so nothing offers to edit it.
+/// A plain material, kept under a fixed id so a saved project names
+/// it the same in every editor. Read-only: it is not an internal
+/// asset, so nothing offers to edit it.
 pub const DEFAULT_MATERIAL: Handle<StandardMaterial> =
     uuid_handle!("6f0c2e84-3b1d-4a5e-9c67-2d8f1a4b7e10");
 
@@ -44,8 +44,8 @@ pub(crate) fn plugin(app: &mut App) {
         unreachable!("uuid_handle! makes a Handle::Uuid");
     };
 
-    // A mesh with nothing to draw, or drawn with nothing, is no use in
-    // the scene.
+    // A mesh with nothing to draw, or drawn with nothing, is no use
+    // in the scene.
     let mut mesh = app.asset_type::<Mesh>();
     mesh.required = true;
     mesh.choices.extend(MESHES.iter().map(|(name, path)| {

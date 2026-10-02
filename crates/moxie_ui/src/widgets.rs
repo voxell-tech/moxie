@@ -1,5 +1,9 @@
-//! Widgets: trees built with [`bevy_fynix`], a `watch`/`bind`
-//! composition of [`crate::elements`] elements.
+//! Widgets that `bevy_fynix` provides, re-exported for one import
+//! path.
 
-pub mod dock;
-pub mod tooltip;
+pub use bevy_fynix::dock;
+
+/// The tooltip view and its timing.
+pub mod tooltip {
+    pub use bevy_fynix::views::{Tooltip, TooltipExt, TooltipTiming};
+}

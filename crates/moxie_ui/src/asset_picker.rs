@@ -1,6 +1,7 @@
-//! Picking the asset a [`Handle<T>`] field holds, from a window of its
-//! own: a searchable grid of every [`asset_choices`] entry for `T`,
-//! each with a thumbnail when the app registered a way to render one.
+//! Picking the asset a [`Handle<T>`] field holds, from a window of
+//! its own: a searchable grid of every [`asset_choices`] entry for
+//! `T`, each with a thumbnail when the app registered a way to render
+//! one.
 //!
 //! A click assigns at once, so the scene shows the pick while the
 //! window is still open. A double-click or Enter keeps it and closes,
@@ -10,35 +11,27 @@ use core::any::TypeId;
 use std::collections::HashMap;
 
 use bevy::asset::Asset;
-use bevy::input_focus::InputFocus;
-use bevy::picking::events::{Click, Pointer, Press};
+use bevy::input_focus::{FocusCause, InputFocus};
+use bevy::picking::events::{Click, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::text::{EditableText, TextEditChange};
-use bevy::ui_widgets::Activate;
-use bevy_fynix::WorldEntityMut;
-use bevy_fynix::tag::TagExt as _;
-use fynix::prelude::*;
-use moxie_asset::{
-    AssetRef, AssetType, AssetTypes, FoundAssets, asset_choices,
+use bevy_fynix::tokens::Tone;
+use bevy_fynix::views::{
+    BehaviorExt as _, FrameProps as _, TooltipExt as _, button,
+    column, frame, ghost, icon, label, overlay, popup, row, scroll,
+    text_field,
 };
-
-use crate::context_menu::at_point;
-use bevy::feathers::cursor::EntityCursor;
-use bevy::window::SystemCursorIcon;
-
-use crate::elements::{
-    Frame, FrameCursor, GhostButton, Icon, Label, LabelCursor,
-    MenuSurface, Overlay, ScrollArea, TextField, TintButton,
+use bevy_fynix::{
+    AnyView, Bevy, ScopedExt as _, View, ViewExt as _, component,
+    keyed, mount,
 };
+use moxie_asset::{AssetRef, AssetType, AssetTypes, asset_choices};
+
+use crate::gaps::{changing_under, tint_to, wrapping};
 use crate::icons;
-use crate::inspector::{ClonableSource, when_changed};
-use crate::reactive::{
-    BevyUi, component_changed_on, either, resource_changed,
-    watch_root,
-};
+use crate::inspector::Binding;
 use crate::theme::EditorTheme;
-use crate::widgets::tooltip::TooltipExt as _;
 
 const WIDTH: f32 = 372.0;
 const HEIGHT: f32 = 440.0;
@@ -90,7 +83,7 @@ fn forget_internal_thumbnails(world: &mut World) {
 
 /// The open picker's own root. There is at most one.
 #[derive(Component)]
-struct AssetPickerRoot;
+pub(crate) struct AssetPickerRoot;
 
 /// What the search box holds.
 #[derive(Component, Default)]
@@ -103,93 +96,81 @@ struct Cancel {
     entity: Entity,
 }
 
-/// Asks the app to bring [`FoundAssets`] up to date, before a picker
-/// lists them.
+/// Asks the app to bring [`moxie_asset::FoundAssets`] up to date,
+/// before a picker lists them.
 #[derive(Event)]
 pub struct RefreshAssetChoices;
 
-/// One entry of the grid. `None` clears the field.
-#[derive(Clone)]
+/// One choice of the grid. `None` clears the field.
+#[derive(Clone, PartialEq)]
 struct Cell {
     name: String,
     asset: Option<AssetRef>,
     group: String,
-    thumbnail: Option<Handle<Image>>,
 }
 
-/// "None", unless `T` is [required](AssetType::required), then every
-/// [`asset_choices`] entry for `T`.
-fn cells<T: Asset>(world: &mut World) -> Vec<Cell> {
-    let kind = TypeId::of::<T>();
-    let choices =
-        asset_choices::<T>(world).cloned().collect::<Vec<_>>();
-    let required =
-        asset_type(world, kind).is_some_and(|info| info.required);
-
-    let mut cells = Vec::new();
-    if !required {
-        cells.push(Cell {
-            name: "None".to_string(),
-            asset: None,
-            group: String::new(),
-            thumbnail: None,
-        });
-    }
-    for choice in choices {
-        let thumbnail = thumbnail(world, kind, &choice.asset);
-        cells.push(Cell {
-            name: choice.name,
-            asset: Some(choice.asset),
-            group: choice.group,
-            thumbnail,
-        });
-    }
-    cells
+/// One grid entry: a choice, or the name of the group the choices
+/// after it belong to.
+#[derive(Clone, PartialEq)]
+enum Entry {
+    Heading(String),
+    Cell(Cell),
 }
 
-/// Opens the picker for the `T` that `source` holds, anchored at `at`
-/// in logical screen space, closing any picker already open.
+/// The entries the search lets through: "None", unless `T` is
+/// [required](AssetType::required), then every [`asset_choices`]
+/// entry for `T`, each run of a group under its heading.
+fn entries<T: Asset>(world: &World, root: Entity) -> Vec<Entry> {
+    let query = world
+        .get::<Search>(root)
+        .map(|search| search.0.trim().to_lowercase())
+        .unwrap_or_default();
+    let required = asset_type(world, TypeId::of::<T>())
+        .is_some_and(|info| info.required);
+
+    let none = (!required).then(|| Cell {
+        name: "None".to_string(),
+        asset: None,
+        group: String::new(),
+    });
+    let choices = asset_choices::<T>(world).map(|choice| Cell {
+        name: choice.name.clone(),
+        asset: Some(choice.asset.clone()),
+        group: choice.group.clone(),
+    });
+
+    let mut entries = Vec::new();
+    let mut group = String::new();
+    for cell in none.into_iter().chain(choices) {
+        if !cell.name.to_lowercase().contains(&query) {
+            continue;
+        }
+        if cell.group != group {
+            group.clone_from(&cell.group);
+            entries.push(Entry::Heading(group.clone()));
+        }
+        entries.push(Entry::Cell(cell));
+    }
+    entries
+}
+
+/// Opens the picker for the `T` that `binding` holds, anchored at
+/// `at` in logical screen space, closing any picker already open.
 pub(crate) fn open_asset_picker<T: Asset + TypePath>(
     world: &mut World,
     at: Vec2,
-    source: ClonableSource,
+    binding: Binding,
 ) {
     close_asset_picker(world);
     forget_internal_thumbnails(world);
     world.trigger(RefreshAssetChoices);
 
-    let original = read::<T>(world, &source);
+    let original = binding.read::<Handle<T>>(world);
     let title = format!("Select {}", T::short_type_path());
-
-    let root = world
-        .spawn((
-            AssetPickerRoot,
-            Search::default(),
-            Node {
-                width: percent(100),
-                height: percent(100),
-                ..default()
-            },
-        ))
-        .id();
-
-    let revert = source.clone();
-    world.entity_mut(root).observe(
-        move |cancel: On<Cancel>, mut commands: Commands| {
-            let (source, original, root) =
-                (revert.clone(), original.clone(), cancel.entity);
-            commands.queue(move |world: &mut World| {
-                if let Some(original) = original {
-                    source.set(world, &original);
-                }
-                despawn(world, root);
-            });
-        },
+    mount::<EditorTheme>(
+        world,
+        window::<T>(at, title, binding, original),
     );
-
-    watch_root::<EditorTheme>(world, root, move |ui: &mut BevyUi| {
-        window::<T>(ui, root, at, &title, &source);
-    });
 }
 
 fn close_asset_picker(world: &mut World) {
@@ -209,11 +190,11 @@ fn despawn(world: &mut World, root: Entity) {
 }
 
 fn picker_keys(
-    keys: Res<ButtonInput<KeyCode>>,
+    keys: Option<Res<ButtonInput<KeyCode>>>,
     roots: Query<Entity, With<AssetPickerRoot>>,
     mut commands: Commands,
 ) {
-    let Ok(root) = roots.single() else {
+    let (Some(keys), Ok(root)) = (keys, roots.single()) else {
         return;
     };
     if keys.just_pressed(KeyCode::Escape) {
@@ -223,351 +204,343 @@ fn picker_keys(
     }
 }
 
-fn read<T: Asset>(
+/// The asset `binding` holds, if it can be named at all.
+fn current<T: Asset + TypePath>(
     world: &World,
-    source: &ClonableSource,
-) -> Option<Handle<T>> {
-    Handle::<T>::from_reflect(&*source.get(world)?)
-}
-
-/// What `source` holds, if it can be named at all.
-fn current<T: Asset>(
-    world: &World,
-    source: &ClonableSource,
+    binding: &Binding,
 ) -> Option<AssetRef> {
-    let handle = read::<T>(world, source)?;
+    let handle = binding.read::<Handle<T>>(world)?;
     AssetRef::of(&handle, world.get_resource::<AssetServer>()?)
 }
 
-fn window<T: Asset>(
-    ui: &mut BevyUi,
-    root: Entity,
+/// The picker's whole view: a backdrop that closes it, and under it
+/// the window, hung off the point it was opened at.
+fn window<T: Asset + TypePath>(
     at: Vec2,
-    title: &str,
-    source: &ClonableSource,
-) {
-    let layer = ui.theme.layer.context_menu;
-    let margin = ui.theme.space.menu_margin;
-    let gap = ui.theme.space.md;
+    title: String,
+    binding: Binding,
+    original: Option<Handle<T>>,
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let space = cx.theme().space;
+        let root = cx.build(overlay(()));
 
-    // Closing on a click elsewhere keeps the pick, like the close
-    // button does.
-    ui.elem(elem!(Overlay, catches = true, z = layer - 1))
-        .observe(
-            move |_: On<Pointer<Press>>, mut commands: Commands| {
-                commands.entity(root).despawn();
-            },
-        );
-
-    let (title, source) = (title.to_string(), source.clone());
-    ui.elem(elem!(
-        Frame,
-        position = PositionType::Absolute,
-        inset = UiRect::new(px(at.x), auto(), px(at.y), auto()),
-    ))
-    .with(move |ui| {
-        ui.elem(elem!(
-            !MenuSurface,
-            width = px(WIDTH),
-            height = px(HEIGHT),
-            row_gap = px(gap),
-            padding = UiRect::all(px(gap))
-        ))
-        .insert(at_point(margin))
-        .with(move |ui| {
-            header::<T>(ui, root, &title, &source);
-            search(ui, root);
-            grid::<T>(ui, root, &source);
-            footer::<T>(ui, &source);
-        });
-    });
-}
-
-fn header<T: Asset>(
-    ui: &mut BevyUi,
-    root: Entity,
-    title: &str,
-    source: &ClonableSource,
-) {
-    let text = ui.theme.color.text;
-    let text_dim = ui.theme.color.text_dim;
-    let critical = ui.theme.color.critical;
-    let title = title.to_string();
-    let create = asset_type(ui.world, TypeId::of::<T>())
-        .and_then(|info| info.create);
-    let source = source.clone();
-
-    ui.elem(elem!(
-        Frame,
-        width = percent(100),
-        align = AlignItems::Center,
-        column_gap = px(4)
-    ))
-    .with(move |ui| {
-        ui.elem(elem!(
-            Label,
-            text = title,
-            bold = true,
-            color = text
-        ));
-        ui.elem(elem!(Frame, flex_grow = 1.0f32));
-        if let Some(create) = create {
-            ui.elem(elem!(
-                !GhostButton,
-                icon = elem!(
-                    Icon,
-                    image = icons::PLUS,
-                    color = text_dim,
-                    size = px(10)
-                ),
-                label = elem!(Label, text = "New", color = text)
-            ))
-            .tooltip("New, starting from the current one")
+        let revert = binding.clone();
+        cx.world
+            .entity_mut(root)
+            .insert((AssetPickerRoot, Search::default()))
             .observe(
-                move |_: On<Activate>, mut commands: Commands| {
-                    let source = source.clone();
+                move |cancel: On<Cancel>, mut commands: Commands| {
+                    let (binding, original, root) = (
+                        revert.clone(),
+                        original.clone(),
+                        cancel.entity,
+                    );
                     commands.queue(move |world: &mut World| {
-                        let seed = read::<T>(world, &source)
-                            .map(|handle| handle.id().untyped());
-                        let Some(handle) = create(world, seed) else {
-                            return;
-                        };
-                        source.set(world, &handle.typed::<T>());
-                        world.trigger(RefreshAssetChoices);
+                        if let Some(original) = original {
+                            binding.set(world, &original);
+                        }
+                        despawn(world, root);
                     });
                 },
             );
-        }
-        ui.elem(elem!(
-            !TintButton {
-                tint: Some(critical)
-            },
-            width = px(14),
-            height = px(14),
-            padding = UiRect::ZERO,
-            radius = px(2),
-            icon = elem!(
-                Icon,
-                image = icons::CLOSE,
-                color = text_dim,
-                size = px(10)
+
+        cx.under(root, |cx| {
+            cx.build(
+                popup(
+                    Rect::from_corners(at, at),
+                    (
+                        header::<T>(root, title, binding.clone()),
+                        search(root),
+                        grid::<T>(root, binding.clone()),
+                        footer::<T>(binding),
+                    ),
+                )
+                // Closing on a press elsewhere keeps the pick, like
+                // the close button does.
+                .on_dismiss(|world, popup| {
+                    if let Some(root) = world
+                        .get::<ChildOf>(popup)
+                        .map(ChildOf::parent)
+                    {
+                        despawn(world, root);
+                    }
+                })
+                .width(px(WIDTH))
+                .height(px(HEIGHT))
+                .gap(space.md)
+                .padding(UiRect::all(px(space.md))),
             )
-        ))
-        .observe(
-            move |_: On<Activate>, mut commands: Commands| {
-                commands.entity(root).despawn();
-            },
-        );
-    });
+        });
+        root
+    })
 }
 
-fn search(ui: &mut BevyUi, root: Entity) {
-    let field = ui.elem(elem!(TextField, width = percent(100)));
-    let node = field.id();
-    let Some(input) = TextField::text_input(ui.world, node) else {
-        return;
-    };
-
-    ui.world.insert_resource(InputFocus::from_entity(input));
-    ui.world.entity_mut(input).observe(
-        move |change: On<TextEditChange>,
-              texts: Query<&EditableText>,
-              mut searches: Query<&mut Search>| {
-            let (Ok(text), Ok(mut search)) = (
-                texts.get(change.event_target()),
-                searches.get_mut(root),
-            ) else {
-                return;
-            };
-            // Also fires on a bare cursor move, which would otherwise
-            // rebuild the grid under the pointer.
-            let text = text.value().to_string();
-            if search.0 != text {
-                search.0 = text;
-            }
-        },
-    );
-}
-
-fn grid<T: Asset>(
-    ui: &mut BevyUi,
+/// The title, a "New" button when `T` can be made, and the close
+/// button.
+fn header<T: Asset + TypePath>(
     root: Entity,
-    source: &ClonableSource,
-) {
-    let gap = ui.theme.space.sm;
-    let text_dim = ui.theme.color.text_dim;
-    let source = source.clone();
+    title: String,
+    binding: Binding,
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let create = asset_type(cx.world, TypeId::of::<T>())
+            .and_then(|info| info.create);
+        let assets = cx.world.resource::<AssetServer>();
+        let plus = assets.load::<Image>(icons::PLUS);
+        let close = assets.load::<Image>(icons::CLOSE);
 
-    ui.elem(elem!(
-        ScrollArea,
-        width = percent(100),
-        flex_grow = 1.0f32,
-        scroll_x = false
-    ))
-    .with(move |ui| {
-        let mut grid = ui.elem(elem!(
-            Frame,
-            width = percent(100),
-            direction = FlexDirection::Row,
-            row_gap = px(gap),
-            column_gap = px(gap)
-        ));
-        if let Some(mut layout) = grid.entity_mut().get_mut::<Node>()
-        {
-            layout.flex_wrap = FlexWrap::Wrap;
-            layout.align_content = AlignContent::FlexStart;
-        }
-
-        let searched_or_listed = either(
-            component_changed_on::<Search>(root),
-            resource_changed::<FoundAssets>(),
-        );
-        grid.watch(searched_or_listed, move |ui| {
-            let query = ui
-                .world
-                .get::<Search>(root)
-                .map(|search| search.0.trim().to_lowercase())
-                .unwrap_or_default();
-            let mut group = "";
-            let cells = cells::<T>(ui.world);
-            for cell in &cells {
-                if !cell.name.to_lowercase().contains(&query) {
-                    continue;
-                }
-                if cell.group != group {
-                    group = &cell.group;
-                    // Full width, so it starts a row of its own.
-                    ui.elem(elem!(
-                        Frame,
-                        width = percent(100),
-                        padding = UiRect::top(px(gap))
+        let mut items = vec![
+            label(title).bold(true).boxed(),
+            frame().grow(1.0).boxed(),
+        ];
+        if let Some(create) = create {
+            items.push(
+                button(
+                    row((
+                        icon(plus).tone(Tone::Dim).size(10.0),
+                        label("New"),
                     ))
-                    .with(move |ui| {
-                        ui.elem(elem!(
-                            Label,
-                            text = cell.group.clone(),
-                            size = 11.0f32,
-                            color = text_dim
-                        ));
-                    });
-                }
-                grid_cell::<T>(ui, root, cell, &source);
+                    .align(AlignItems::Center)
+                    .gap(4.0),
+                )
+                .rules(ghost)
+                .tooltip(|| {
+                    label("New, starting from the current one")
+                })
+                .on_activate(move |world| {
+                    let seed = binding
+                        .read::<Handle<T>>(world)
+                        .map(|handle| handle.id().untyped());
+                    let Some(handle) = create(world, seed) else {
+                        return;
+                    };
+                    binding.set(world, &handle.typed::<T>());
+                    world.trigger(RefreshAssetChoices);
+                })
+                .boxed(),
+            );
+        }
+        items.push(
+            button(icon(close).size(10.0))
+                .width(px(14.0))
+                .height(px(14.0))
+                .padding(UiRect::ZERO)
+                .radius(2.0)
+                .rules(tint_to(Tone::Dim, Tone::Critical))
+                .on_activate(move |world| despawn(world, root))
+                .boxed(),
+        );
+        cx.build(
+            row(items)
+                .width(percent(100.0))
+                .align(AlignItems::Center)
+                .gap(4.0),
+        )
+    })
+}
+
+/// The search box, focused as the picker opens, whose text filters
+/// the grid as it is typed.
+fn search(root: Entity) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let held = component::<Search, _>(root, |search| {
+            search.map(|search| search.0.clone()).unwrap_or_default()
+        });
+        let field = cx.build(
+            text_field(held, move |world, text| {
+                set_search(world, root, text);
+            })
+            .width(percent(100.0)),
+        );
+        let input = cx
+            .world
+            .get::<Children>(field)
+            .and_then(|kids| kids.first().copied());
+        if let Some(input) = input {
+            // Also fires on a bare cursor move, which would
+            // otherwise rebuild the grid under the pointer.
+            cx.world.entity_mut(input).observe(
+                move |change: On<TextEditChange>,
+                      texts: Query<&EditableText>,
+                      mut searches: Query<&mut Search>| {
+                    let (Ok(text), Ok(mut search)) = (
+                        texts.get(change.event_target()),
+                        searches.get_mut(root),
+                    ) else {
+                        return;
+                    };
+                    let text = text.value().to_string();
+                    if search.0 != text {
+                        search.0 = text;
+                    }
+                },
+            );
+            cx.world
+                .resource_mut::<InputFocus>()
+                .set(input, FocusCause::Navigated);
+        }
+        field
+    })
+}
+
+fn set_search(world: &mut World, root: Entity, text: String) {
+    if let Some(mut search) = world.get_mut::<Search>(root)
+        && search.0 != text
+    {
+        search.0 = text;
+    }
+}
+
+/// The scrolling grid of what [`entries`] lists, built again
+/// whenever that changes.
+fn grid<T: Asset + TypePath>(
+    root: Entity,
+    binding: Binding,
+) -> impl View<Bevy, EditorTheme> {
+    let listed = changing_under(Some(root), move |world: &World| {
+        entries::<T>(world, root)
+    });
+    let cells =
+        keyed::<EditorTheme, Vec<Entry>>(listed, move |list| {
+            let (list, binding) = (list.clone(), binding.clone());
+            AnyView::<Bevy, EditorTheme>::new(move |cx| {
+                let gap = cx.theme().space.sm;
+                let views = list
+                    .iter()
+                    .map(|entry| match entry {
+                        Entry::Heading(group) => {
+                            heading(group.clone())
+                        }
+                        Entry::Cell(cell) => cell_view::<T>(
+                            cell.clone(),
+                            root,
+                            binding.clone(),
+                        ),
+                    })
+                    .collect::<Vec<_>>();
+                cx.build(wrapping(
+                    row(views).width(percent(100.0)).gap(gap),
+                ))
+            })
+        })
+        .within(column(()).width(percent(100.0)).gap(0.0));
+
+    scroll((cells,))
+        .overflow(Overflow::scroll_y())
+        .width(percent(100.0))
+        .grow(1.0)
+}
+
+/// A group's name, on a line of its own.
+fn heading(group: String) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let gap = cx.theme().space.sm;
+        cx.build(
+            column((label(group).size(11.0).tone(Tone::Dim),))
+                .width(percent(100.0))
+                .padding(UiRect::top(px(gap))),
+        )
+    })
+}
+
+/// One choice: its thumbnail over its name, tinted while it is what
+/// the field holds.
+fn cell_view<T: Asset + TypePath>(
+    cell: Cell,
+    root: Entity,
+    binding: Binding,
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let thumbnail = cell.asset.as_ref().and_then(|asset| {
+            thumbnail(cx.world, TypeId::of::<T>(), asset)
+        });
+        let theme = cx.theme();
+        let (pad, fill, selection) =
+            (theme.space.sm, theme.color.fill, theme.color.selection);
+        let placeholder = cx
+            .world
+            .resource::<AssetServer>()
+            .load::<Image>(icons::ASSET);
+
+        let highlighted = cell.asset.clone();
+        let selected = binding.derive(move |binding, world| {
+            if current::<T>(world, binding) == highlighted {
+                selection
+            } else {
+                Color::NONE
             }
         });
-    });
-}
 
-fn grid_cell<T: Asset>(
-    ui: &mut BevyUi,
-    root: Entity,
-    cell: &Cell,
-    source: &ClonableSource,
-) {
-    let text = ui.theme.color.text;
-    let text_dim = ui.theme.color.text_dim;
-    let fill = ui.theme.color.fill;
-    let hover = ui.theme.color.hover;
-    let selection = ui.theme.color.selection;
-    let pad = ui.theme.space.sm;
+        let tile = |inside: Vec<AnyView<Bevy, EditorTheme>>| {
+            column(inside)
+                .width(px(THUMBNAIL))
+                .height(px(THUMBNAIL))
+                .align(AlignItems::Center)
+                .justify(JustifyContent::Center)
+                .gap(0.0)
+                .radius(4.0)
+                .fill(fill)
+        };
+        let tile = match thumbnail {
+            Some(image) => {
+                tile(Vec::new()).with(ImageNode::new(image)).boxed()
+            }
+            None if cell.asset.is_some() => tile(vec![
+                icon(placeholder).size(20.0).tone(Tone::Dim).boxed(),
+            ])
+            .boxed(),
+            None => tile(Vec::new()).boxed(),
+        };
 
-    let shown = source.clone();
-    let assign = source.clone();
-    let highlighted = cell.asset.clone();
-    let assigned = cell.asset.clone();
-    let Cell {
-        name, thumbnail, ..
-    } = cell.clone();
-    let empty = cell.asset.is_none();
+        let node = cx.build(
+            button(
+                column((tile, label(cell.name.clone()).size(11.0)))
+                    .width(percent(100.0))
+                    .align(AlignItems::Center)
+                    .gap(pad),
+            )
+            .width(px(THUMBNAIL + 2.0 * pad))
+            .align(AlignItems::Start)
+            .padding(UiRect::all(px(pad)))
+            .radius(4.0)
+            .overflow(Overflow::clip())
+            .fill(selected),
+        );
 
-    let mut frame = ui.elem(elem!(
-        Frame,
-        width = px(THUMBNAIL + 2.0 * pad),
-        direction = FlexDirection::Column,
-        align = AlignItems::Center,
-        padding = UiRect::all(px(pad)),
-        row_gap = px(pad),
-        radius = px(4),
-        overflow = Overflow::clip(),
-        hover_background = Some(hover)
-    ));
-    frame
-        .insert(EntityCursor::System(SystemCursorIcon::Pointer))
-        .pointer_tags()
-        .bind(
-            |frame| frame.background(),
-            when_changed(&*source.0),
-            move |WorldNodeRef { world, .. }| {
-                if current::<T>(world, &shown) == highlighted {
-                    selection
-                } else {
-                    Color::NONE
-                }
-            },
-        )
-        .observe(
+        let assigned = cell.asset.clone();
+        cx.world.entity_mut(node).observe(
             move |click: On<Pointer<Click>>,
                   mut commands: Commands| {
                 if click.button != PointerButton::Primary {
                     return;
                 }
                 let double = click.count >= 2;
-
-                let (source, asset) =
-                    (assign.clone(), assigned.clone());
+                let (binding, asset) =
+                    (binding.clone(), assigned.clone());
                 commands.queue(move |world: &mut World| {
                     let handle = match asset {
                         Some(asset) => asset
                             .handle(world.resource::<AssetServer>()),
                         None => Handle::<T>::default(),
                     };
-                    source.set(world, &handle);
+                    binding.set(world, &handle);
                     if double {
                         despawn(world, root);
                     }
                 });
             },
-        )
-        .with(move |ui| {
-            let mut image = ui.elem(elem!(
-                Frame,
-                width = px(THUMBNAIL),
-                height = px(THUMBNAIL),
-                align = AlignItems::Center,
-                justify = JustifyContent::Center,
-                radius = px(4),
-                background = fill
-            ));
-            match thumbnail {
-                Some(thumbnail) => {
-                    image.insert(ImageNode::new(thumbnail));
-                }
-                None if !empty => {
-                    image.with(move |ui| {
-                        ui.elem(elem!(
-                            Icon,
-                            image = icons::ASSET,
-                            color = text_dim,
-                            size = px(20)
-                        ));
-                    });
-                }
-                None => {}
-            }
-            ui.elem(elem!(
-                Label,
-                text = name,
-                size = 11.0f32,
-                color = text
-            ));
-        });
+        );
+        node
+    })
 }
 
 /// The pick, by name and where it comes from.
-fn footer<T: Asset>(ui: &mut BevyUi, source: &ClonableSource) {
-    let text_dim = ui.theme.color.text_dim;
-    let shown = source.clone();
-    let describe = move |world: &World| {
-        let Some(asset) = current::<T>(world, &shown) else {
+fn footer<T: Asset + TypePath>(
+    binding: Binding,
+) -> impl View<Bevy, EditorTheme> {
+    let described = binding.derive(|binding, world| {
+        let Some(asset) = current::<T>(world, binding) else {
             return "None".to_string();
         };
         let name = asset_choices::<T>(world)
@@ -583,19 +556,401 @@ fn footer<T: Asset>(ui: &mut BevyUi, source: &ClonableSource) {
             (Some(name), AssetRef::Uuid(_)) => name,
             (None, AssetRef::Uuid(_)) => "(unnamed)".to_string(),
         }
-    };
-    let text = describe(ui.world);
+    });
+    label(described).size(11.0).wrap(false).tone(Tone::Dim)
+}
 
-    ui.elem(elem!(
-        Label,
-        text = text,
-        size = 11.0f32,
-        wrap = false,
-        color = text_dim
-    ))
-    .bind(
-        |label| label.text(),
-        when_changed(&*source.0),
-        move |WorldNodeRef { world, .. }| describe(world),
-    );
+#[cfg(test)]
+mod tests {
+    use bevy::asset::uuid::Uuid;
+    use bevy::input::keyboard::Key;
+    use bevy::ui::widget::Text;
+    use bevy::ui_widgets::{Activate, Button};
+    use bevy_fynix::ReducedMotion;
+    use moxie_asset::{
+        AssetChoice, AssetTypeAppExt as _, FoundAssets,
+    };
+
+    use super::*;
+    use crate::inspector::Field;
+    use crate::tests;
+
+    /// A field holding an image, for the picker to edit.
+    #[derive(Component, Reflect, Default)]
+    #[reflect(Component, Default)]
+    struct Holder {
+        image: Handle<Image>,
+    }
+
+    fn uuid(id: u128) -> Handle<Image> {
+        Handle::from(Uuid::from_u128(id))
+    }
+
+    fn choice(name: &str, group: &str, id: u128) -> AssetChoice {
+        AssetChoice {
+            name: name.to_string(),
+            asset: AssetRef::Uuid(Uuid::from_u128(id)),
+            group: group.to_string(),
+        }
+    }
+
+    /// An app listing Logo, then Sky and Sea under "Env", with a
+    /// holder of an image and its binding.
+    fn setup() -> (App, Entity, Binding) {
+        let mut app = tests::app();
+        app.register_type::<Holder>()
+            .insert_resource(ReducedMotion(true));
+        app.world_mut().resource_mut::<FoundAssets>().0.insert(
+            TypeId::of::<Image>(),
+            vec![
+                choice("Logo", "", 1),
+                choice("Sky", "Env", 2),
+                choice("Sea", "Env", 3),
+            ],
+        );
+        let holder = app.world_mut().spawn(Holder::default()).id();
+        let binding =
+            Binding::from(Field::of::<Holder>(holder).child("image"));
+        (app, holder, binding)
+    }
+
+    fn open(app: &mut App, binding: &Binding) -> Entity {
+        open_asset_picker::<Image>(
+            app.world_mut(),
+            Vec2::new(10.0, 20.0),
+            binding.clone(),
+        );
+        app.update();
+        picker(app).expect("an open picker")
+    }
+
+    fn picker(app: &mut App) -> Option<Entity> {
+        app.world_mut()
+            .query_filtered::<Entity, With<AssetPickerRoot>>()
+            .iter(app.world())
+            .next()
+    }
+
+    fn held(app: &App, holder: Entity) -> Handle<Image> {
+        app.world().get::<Holder>(holder).unwrap().image.clone()
+    }
+
+    fn texts(app: &App, node: Entity) -> Vec<String> {
+        tests::all::<Text>(app, node)
+            .into_iter()
+            .map(|node| {
+                app.world().get::<Text>(node).unwrap().0.clone()
+            })
+            .collect()
+    }
+
+    /// The button with `text` somewhere in it.
+    fn button_with(app: &App, root: Entity, text: &str) -> Entity {
+        tests::all::<Button>(app, root)
+            .into_iter()
+            .find(|node| texts(app, *node).iter().any(|t| t == text))
+            .unwrap_or_else(|| panic!("a button with {text}"))
+    }
+
+    fn fill(app: &App, node: Entity) -> Color {
+        app.world().get::<BackgroundColor>(node).unwrap().0
+    }
+
+    /// The thumbnail tiles under `root`, which show an image.
+    fn tiles(app: &App, root: Entity) -> Vec<Entity> {
+        tests::all::<ImageNode>(app, root)
+            .into_iter()
+            .filter(|node| {
+                app.world().get::<Node>(*node).unwrap().width
+                    == px(THUMBNAIL)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_footer_reads_none_while_the_field_cannot_be_read() {
+        let (mut app, _, _) = setup();
+        let nowhere = app.world_mut().spawn_empty().id();
+        let binding = Binding::from(
+            Field::of::<Holder>(nowhere).child("image"),
+        );
+        let root = open(&mut app, &binding);
+
+        assert_eq!(
+            texts(&app, root).last().map(String::as_str),
+            Some("None")
+        );
+    }
+
+    #[test]
+    fn the_grid_lists_none_then_the_choices_under_their_groups() {
+        let (mut app, _, binding) = setup();
+        let root = open(&mut app, &binding);
+
+        assert_eq!(
+            texts(&app, root),
+            [
+                "Select Image",
+                "None",
+                "Logo",
+                "Env",
+                "Sky",
+                "Sea",
+                "(unnamed)",
+            ],
+            "the last is the footer, for the default handle"
+        );
+    }
+
+    #[test]
+    fn a_required_type_offers_no_none() {
+        let (mut app, _, binding) = setup();
+        app.asset_type::<Image>().required = true;
+        let root = open(&mut app, &binding);
+
+        assert_eq!(
+            texts(&app, root)[1..4],
+            ["Logo", "Env", "Sky"],
+            "no None cell after the title"
+        );
+    }
+
+    #[test]
+    fn the_search_takes_focus_and_filters_by_name() {
+        let (mut app, _, binding) = setup();
+        let root = open(&mut app, &binding);
+
+        let input = tests::all::<EditableText>(&app, root)[0];
+        assert_eq!(
+            app.world().resource::<InputFocus>().get(),
+            Some(input)
+        );
+
+        app.world_mut().get_mut::<Search>(root).unwrap().0 =
+            " SE ".to_string();
+        app.update();
+        assert_eq!(
+            texts(&app, root),
+            ["Select Image", "Env", "Sea", "(unnamed)"]
+        );
+    }
+
+    #[test]
+    fn a_click_assigns_at_once_and_marks_the_cell() {
+        let (mut app, holder, binding) = setup();
+        let root = open(&mut app, &binding);
+        let sky = button_with(&app, root, "Sky");
+        let logo = button_with(&app, root, "Logo");
+        let selection = EditorTheme::default().color.selection;
+
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
+        app.update();
+
+        assert_eq!(held(&app, holder), uuid(2));
+        assert!(picker(&mut app).is_some(), "still open");
+        assert_eq!(fill(&app, sky), selection);
+        assert_eq!(fill(&app, logo), Color::NONE);
+        assert_eq!(
+            texts(&app, root).last().map(String::as_str),
+            Some("Sky"),
+            "the footer names the pick"
+        );
+    }
+
+    #[test]
+    fn another_button_does_not_assign() {
+        let (mut app, holder, binding) = setup();
+        let root = open(&mut app, &binding);
+        let sky = button_with(&app, root, "Sky");
+
+        tests::click(&mut app, sky, PointerButton::Secondary, 1);
+
+        assert_eq!(held(&app, holder), Handle::default());
+    }
+
+    #[test]
+    fn a_double_click_keeps_the_pick_and_closes() {
+        let (mut app, holder, binding) = setup();
+        let root = open(&mut app, &binding);
+        let sea = button_with(&app, root, "Sea");
+
+        tests::click(&mut app, sea, PointerButton::Primary, 2);
+
+        assert_eq!(held(&app, holder), uuid(3));
+        assert!(picker(&mut app).is_none());
+    }
+
+    #[test]
+    fn none_clears_the_field() {
+        let (mut app, holder, binding) = setup();
+        app.world_mut().get_mut::<Holder>(holder).unwrap().image =
+            uuid(1);
+        let root = open(&mut app, &binding);
+        let none = button_with(&app, root, "None");
+
+        tests::click(&mut app, none, PointerButton::Primary, 1);
+
+        assert_eq!(held(&app, holder), Handle::default());
+    }
+
+    #[test]
+    fn enter_keeps_the_pick_and_closes() {
+        let (mut app, holder, binding) = setup();
+        let root = open(&mut app, &binding);
+        let sky = button_with(&app, root, "Sky");
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
+
+        tests::key(&mut app, KeyCode::Enter, Key::Enter);
+
+        assert_eq!(held(&app, holder), uuid(2));
+        assert!(picker(&mut app).is_none());
+    }
+
+    #[test]
+    fn escape_puts_back_what_the_field_held_and_closes() {
+        let (mut app, holder, binding) = setup();
+        app.world_mut().get_mut::<Holder>(holder).unwrap().image =
+            uuid(1);
+        let root = open(&mut app, &binding);
+        let sky = button_with(&app, root, "Sky");
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
+        assert_eq!(held(&app, holder), uuid(2));
+
+        tests::key(&mut app, KeyCode::Escape, Key::Escape);
+
+        assert_eq!(held(&app, holder), uuid(1));
+        assert!(picker(&mut app).is_none());
+    }
+
+    #[test]
+    fn a_press_on_the_backdrop_keeps_the_pick_and_closes() {
+        let (mut app, holder, binding) = setup();
+        let root = open(&mut app, &binding);
+        let sky = button_with(&app, root, "Sky");
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
+        let backdrop = tests::below(&app, root)[0];
+
+        tests::press(&mut app, backdrop);
+
+        assert_eq!(held(&app, holder), uuid(2));
+        assert!(picker(&mut app).is_none());
+    }
+
+    #[test]
+    fn the_close_button_keeps_the_pick_and_closes() {
+        let (mut app, holder, binding) = setup();
+        let root = open(&mut app, &binding);
+        let sky = button_with(&app, root, "Sky");
+        tests::click(&mut app, sky, PointerButton::Primary, 1);
+        let close = tests::all::<Button>(&app, root)
+            .into_iter()
+            .find(|node| texts(&app, *node).is_empty())
+            .expect("a close button");
+
+        app.world_mut().trigger(Activate { entity: close });
+        app.update();
+
+        assert_eq!(held(&app, holder), uuid(2));
+        assert!(picker(&mut app).is_none());
+    }
+
+    #[test]
+    fn only_one_picker_is_open_at_a_time() {
+        let (mut app, _, binding) = setup();
+        open(&mut app, &binding);
+        open(&mut app, &binding);
+
+        let roots = app
+            .world_mut()
+            .query_filtered::<Entity, With<AssetPickerRoot>>()
+            .iter(app.world())
+            .count();
+        assert_eq!(roots, 1);
+    }
+
+    #[test]
+    fn new_is_offered_only_for_a_type_that_can_be_made() {
+        let (mut app, _, binding) = setup();
+        let root = open(&mut app, &binding);
+        assert!(!texts(&app, root).contains(&"New".to_string()));
+
+        app.asset_type::<Image>().create =
+            Some(|_, _| Some(uuid(9).untyped()));
+        let root = open(&mut app, &binding);
+        assert!(texts(&app, root).contains(&"New".to_string()));
+    }
+
+    #[test]
+    fn new_assigns_what_the_type_makes() {
+        let (mut app, holder, binding) = setup();
+        app.asset_type::<Image>().create =
+            Some(|_, _| Some(uuid(9).untyped()));
+        let root = open(&mut app, &binding);
+        let new = button_with(&app, root, "New");
+
+        app.world_mut().trigger(Activate { entity: new });
+        app.update();
+
+        assert_eq!(held(&app, holder), uuid(9));
+    }
+
+    #[derive(Resource, Default)]
+    struct Renders(u32);
+
+    fn render(
+        world: &mut World,
+        _: &AssetRef,
+    ) -> Option<Handle<Image>> {
+        world.resource_mut::<Renders>().0 += 1;
+        Some(
+            world
+                .resource_mut::<Assets<Image>>()
+                .add(Image::default()),
+        )
+    }
+
+    #[test]
+    fn a_thumbnail_is_rendered_once_and_shown() {
+        let (mut app, _, binding) = setup();
+        app.init_resource::<Renders>();
+        app.asset_type::<Image>().thumbnail = Some(render);
+        let file = AssetRef::Path("a.png".to_string());
+        app.world_mut().resource_mut::<FoundAssets>().0.insert(
+            TypeId::of::<Image>(),
+            vec![AssetChoice {
+                name: "File".to_string(),
+                asset: file,
+                group: String::new(),
+            }],
+        );
+        let root = open(&mut app, &binding);
+
+        assert_eq!(app.world().resource::<Renders>().0, 1);
+        let shown = tiles(&app, root);
+        assert_eq!(shown.len(), 1);
+        let image = app.world().get::<ImageNode>(shown[0]).unwrap();
+        assert_ne!(image.image, Handle::default());
+
+        // Filtering out and back builds the cell again.
+        app.world_mut().get_mut::<Search>(root).unwrap().0 =
+            "zzz".to_string();
+        app.update();
+        app.world_mut().get_mut::<Search>(root).unwrap().0.clear();
+        app.update();
+        assert_eq!(tiles(&app, root).len(), 1);
+        assert_eq!(app.world().resource::<Renders>().0, 1);
+    }
+
+    #[test]
+    fn an_internal_assets_thumbnail_is_rendered_again_on_open() {
+        let (mut app, _, binding) = setup();
+        app.init_resource::<Renders>();
+        app.asset_type::<Image>().thumbnail = Some(render);
+        open(&mut app, &binding);
+        let first = app.world().resource::<Renders>().0;
+        assert_eq!(first, 3);
+
+        open(&mut app, &binding);
+        assert_eq!(app.world().resource::<Renders>().0, first * 2);
+    }
 }
