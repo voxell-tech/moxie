@@ -3,7 +3,7 @@
 //!
 //! The reflect inspector cannot reach these: it addresses one
 //! component of one entity, and an action is scene data. This edits
-//! the [`EditorScene`](crate::EditorScene) directly, by the path the
+//! the [`EditorScene`] directly, by the path the
 //! timeline selected the node with.
 
 use core::time::Duration;
