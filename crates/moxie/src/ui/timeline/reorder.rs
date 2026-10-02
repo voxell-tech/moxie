@@ -48,8 +48,7 @@ impl Dragging {
 struct Gesture {
     path: Vec<usize>,
     cursor_start: Vec2,
-    /// Where the cursor sits inside the box, set on the first
-    /// preview.
+    /// The cursor's offset inside the box, set on the first preview.
     hold: Option<Vec2>,
     target: Option<Target>,
 }

@@ -7,7 +7,7 @@ use bevy_fynix::{mount, resource};
 use moxie_ui::MoxieUiPlugin;
 use moxie_ui::theme::EditorTheme;
 
-/// What the label reads, so a bound prop has something to fire on.
+/// The label's text, for a bound prop to fire on.
 #[derive(Resource, Default)]
 struct Caption(String);
 

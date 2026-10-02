@@ -224,7 +224,7 @@ where
     }
 }
 
-/// Upstream: what a click has to land on to fold a [`Fold`].
+/// Upstream: the target a click folds a [`Fold`] on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FoldOn {
     /// The header, which has to be activatable, such as a button.
@@ -364,7 +364,7 @@ pub fn fold<H, B>(
 }
 
 impl<H, B, F> Fold<H, B, F> {
-    /// What folds it.
+    /// The target a click folds it on.
     pub fn on(mut self, on: FoldOn) -> Self {
         self.on = on;
         self

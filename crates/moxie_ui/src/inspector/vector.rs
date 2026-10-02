@@ -1,11 +1,7 @@
 //! [`Inspect`] impls for glam's float, signed, and unsigned vector
 //! types.
 //!
-//! Left to the generic struct walk, a `Vec3` would fold its
-//! `x`/`y`/`z` away behind a header of its own - technically correct,
-//! and not how any engine's inspector shows a vector. This puts the
-//! axes on one row instead, each behind a small tinted letter the way
-//! Unity, Unreal, and Godot all label them.
+//! A vector's axes sit on one row, each behind a small tinted letter.
 //!
 //! Each input edits the whole vector: it reads one out, replaces a
 //! component, and writes it back. So the editor needs no way to
@@ -20,7 +16,7 @@ use bevy_fynix::{AnyView, Bevy, ViewExt as _};
 use super::{Binding, Inspect, field_name};
 use crate::theme::{EditorTheme, Palette};
 
-/// How wide each axis's input is, narrower than a lone number's.
+/// The width of each axis's input.
 const AXIS_WIDTH: f32 = 40.0;
 
 /// A vector, by the axes an inspector edits it through.
@@ -196,17 +192,16 @@ mod tests {
         let root = offset_editor(&mut app, probe);
         let theme = EditorTheme::default();
 
-        let letters: Vec<(String, Color)> =
-            tests::all::<Text>(&app, root)
-                .into_iter()
-                .map(|node| {
-                    let world = app.world();
-                    (
-                        world.get::<Text>(node).unwrap().0.clone(),
-                        world.get::<TextColor>(node).unwrap().0,
-                    )
-                })
-                .collect();
+        let letters = tests::all::<Text>(&app, root)
+            .into_iter()
+            .map(|node| {
+                let world = app.world();
+                (
+                    world.get::<Text>(node).unwrap().0.clone(),
+                    world.get::<TextColor>(node).unwrap().0,
+                )
+            })
+            .collect::<Vec<(String, Color)>>();
 
         assert_eq!(
             letters,

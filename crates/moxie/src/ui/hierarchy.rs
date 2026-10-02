@@ -177,7 +177,7 @@ fn open_menu_at_pointer(world: &mut World, node: Entity) {
     ));
 }
 
-/// What the add button offers: an empty subject, or one that already
+/// The add button's entries: an empty subject, or one that already
 /// shows something.
 fn add_menu() -> Vec<AnyView<Bevy, EditorTheme>> {
     let entry = |name: &'static str,
@@ -564,8 +564,8 @@ fn is_subject(world: &World, entity: Entity) -> bool {
     world.get::<EntityUid>(entity).is_some()
 }
 
-/// What a row shows for a subject called `name`, with the id `uid`.
-/// A subject with no id is no subject, and shows a question mark.
+/// The row caption for a subject called `name`, with the id `uid`.
+/// A subject with no id shows a question mark.
 fn caption(name: Option<&Name>, uid: Option<EntityUid>) -> Caption {
     match uid {
         Some(uid) => Caption::entity(name, uid),

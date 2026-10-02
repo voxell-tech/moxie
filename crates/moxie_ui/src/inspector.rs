@@ -267,7 +267,7 @@ impl InspectAppExt for App {
     }
 }
 
-/// Which group of the add-component menu a component belongs to; see
+/// A component's group in the add-component menu; see
 /// [`InspectAppExt::with_inspect_group`].
 #[derive(Clone)]
 pub struct ReflectInspectGroup(pub &'static str);
@@ -348,7 +348,7 @@ impl InspectGroup<'_> {
     }
 }
 
-/// Where an editor reads and writes the value it edits.
+/// The place an editor reads and writes the value it edits.
 ///
 /// Reflected rather than typed, so it can be handed to whichever
 /// editor the registry picked for an unknown type.
@@ -523,22 +523,18 @@ pub fn inspect_value(binding: Binding) -> AnyView<Bevy, EditorTheme> {
     })
 }
 
-/// How wide the label column is, as a share of the row.
+/// The label column's share of the row.
 const LABEL_SHARE: f32 = 0.4;
 
 /// The gap between a row's label and its value.
 const LABEL_GAP: f32 = 8.0;
 
-/// One field's row: a label column, then `value` beside it. The
-/// split is proportional (40/60), so it scales with however wide the
-/// panel is docked - the same convention Unity, Godot, and Unreal's
-/// own inspectors use.
+/// One field's row: a label column, then `value` beside it, split
+/// 40/60 so it scales with the panel's width.
 ///
 /// `depth` is how many [`Foldable`](crate::fold::Foldable) bodies
-/// this row sits under. Each one narrows the row by its own indent,
-/// which would otherwise pull the 40% mark inward with it; the label
-/// sheds that same width back so `value` starts at the same place
-/// no matter how deep its row is nested.
+/// this row sits under. The label sheds their indent, so `value`
+/// starts at the same place however deep the row is nested.
 ///
 /// A row with no `label` has no label column, and `value` takes the
 /// whole row.

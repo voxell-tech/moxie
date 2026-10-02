@@ -67,9 +67,8 @@ impl<T: Asset + TypePath> Inspect for Handle<T> {
     }
 }
 
-/// Where the pointer is, in logical screen space. The corner when
-/// there is none, as when the row is pressed from the keyboard, where
-/// placement pushes the picker on screen.
+/// The pointer's position in logical screen space, or the corner
+/// when there is none, where placement pushes the picker on screen.
 fn cursor_position(world: &mut World) -> Vec2 {
     world
         .run_system_cached(|cursor: Cursor| cursor.position())
@@ -125,9 +124,9 @@ fn accept_drop<T: Asset>(
     );
 }
 
-/// What `binding` currently holds: the name of the [`asset_choices`]
-/// entry it matches, else the asset's own path, or a placeholder for
-/// a handle that names nothing.
+/// The label for `binding`'s handle: the name of the
+/// [`asset_choices`] entry it matches, else the asset's own path, or
+/// a placeholder for a handle that names nothing.
 fn label_of<T: Asset + TypePath>(
     world: &World,
     binding: &Binding,

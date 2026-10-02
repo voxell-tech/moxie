@@ -69,9 +69,9 @@ impl<H, B> Foldable<H, B> {
 }
 
 impl<H, B, F> Foldable<H, B, F> {
-    /// What a click has to land on to fold: the header itself, or a
-    /// chevron beside it that leaves the header free to mean
-    /// something else, like selecting the row.
+    /// The target a click folds on: the header itself, or a chevron
+    /// beside it that leaves the header free for something else, like
+    /// selecting the row.
     pub fn folds_on(self, on: FoldsOn) -> Self {
         Self(self.0.on(on))
     }

@@ -173,13 +173,9 @@ pub(crate) fn recompile_dirty_scene(world: &mut World) {
                         .stage(&editor_scene.registry, world)
                         .expect("editor scene should stage");
 
-                    // Bakes the new timeline's `prev` off the world
-                    // we just staged, and replays
-                    // up to the restored time -
-                    // otherwise the spawn pose `stage` wrote sits
-                    // unreplayed until the next scheduled sample, and
-                    // anything reading the world before then sees it
-                    // raw.
+                    // Bakes the new timeline's `prev` off the staged
+                    // world and replays up to the restored time, so
+                    // nothing reads the raw spawn pose `stage` wrote.
                     manager.load_pending_timelines(world);
 
                     if let Some(time) = playhead

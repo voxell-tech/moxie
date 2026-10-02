@@ -405,7 +405,7 @@ fn block_boxes(key: &BlockKey) -> AnyView<Bevy, EditorTheme> {
     })
 }
 
-/// What building the boxes of one layout reads.
+/// The inputs for building one layout's boxes.
 struct Tree<'a> {
     placements: &'a [Placed],
     selected: Option<&'a Vec<usize>>,

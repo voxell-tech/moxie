@@ -23,12 +23,11 @@ use super::Collapsed;
 use crate::SceneRoot;
 use crate::subject::Caption;
 
-/// How much of a row's height, at each end, aims beside it rather
-/// than into it. The middle half is the drop-inside band.
+/// The share of a row's height, at each end, that aims beside it. The
+/// middle half is the drop-inside band.
 const EDGE: f32 = 0.25;
 
-/// What [`logical_rect`] reads off a node to place it in pointer
-/// space.
+/// The parts of a node [`logical_rect`] places in pointer space.
 type NodeRect = (&'static ComputedNode, &'static UiGlobalTransform);
 
 /// The subject being dragged, where a drop would land it, and what is

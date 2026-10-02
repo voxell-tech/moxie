@@ -8,7 +8,6 @@ use moxie_ui::theme::EditorTheme;
 
 use crate::project;
 
-/// How tall the bar is.
 const BAR_HEIGHT: f32 = 26.0;
 
 /// The bar: one menu per heading.

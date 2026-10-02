@@ -3,8 +3,8 @@ use bevy::ui::{PositionType, UiRect, Val};
 use bevy_fynix::Prop;
 use bevy_fynix::views::Frame;
 
-/// Where a timeline box sits and how big it is, in pixels from its
-/// parent's top left corner.
+/// A timeline box's position and size, in pixels from its parent's
+/// top left corner.
 pub struct Placement {
     left: Prop<Val>,
     top: Val,

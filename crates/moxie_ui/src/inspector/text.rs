@@ -7,8 +7,8 @@ use bevy_fynix::{AnyView, Bevy, ViewExt as _};
 use super::{Binding, Inspect};
 use crate::theme::EditorTheme;
 
-/// How wide the text input is, which is a little narrower than the
-/// room a row leaves it.
+/// The text input's width, a little narrower than a row's value
+/// column.
 const WIDTH: f32 = 110.0;
 
 /// A single-line text input, committed on Enter or when focus leaves.

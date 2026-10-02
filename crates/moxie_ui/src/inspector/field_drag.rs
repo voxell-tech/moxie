@@ -288,7 +288,7 @@ mod tests {
     use crate::inspector::Field;
     use crate::tests::{self, Probe};
 
-    /// What the host's checks answer, in the world.
+    /// The answer the host's checks give, in the world.
     #[derive(Resource, Default)]
     struct Host {
         has_action: bool,

@@ -38,14 +38,14 @@ use crate::theme::EditorTheme;
 
 type Item = AnyView<Bevy, EditorTheme>;
 
-/// What separates the rows of one component's fields, and the rows
-/// of a card's body.
+/// The gap between the rows of one component's fields, and between
+/// the rows of a card's body.
 const FIELD_GAP: f32 = 4.0;
 
-/// What separates whole components from each other.
+/// The gap between whole components.
 const CARD_GAP: f32 = 8.0;
 
-/// A column of `FIELD_GAP`-spaced rows, filling its parent.
+/// A column of `gap`-spaced rows, filling its parent.
 fn rows(gap: f32) -> impl View<Bevy, EditorTheme> {
     frame()
         .direction(FlexDirection::Column)
@@ -126,7 +126,7 @@ pub fn resource_inspector_of<T: Resource + Reflect>()
     resource_inspector(TypeId::of::<T>())
 }
 
-/// What a component's section lists, in order.
+/// A component's type, its section name and its group.
 type Inspectable = (TypeId, Cow<'static, str>, Option<&'static str>);
 
 /// One row of an entity's inspector.
@@ -216,9 +216,8 @@ fn group_heading(name: &'static str) -> Item {
     })
 }
 
-/// The menu that adds a component to `entity`: a dropdown whose
-/// first row only says what it is for, and whose list is rebuilt as
-/// components come and go.
+/// The menu that adds a component to `entity`, rebuilt as components
+/// come and go.
 fn add_component_menu(
     entity: Entity,
 ) -> impl View<Bevy, EditorTheme> {
@@ -228,7 +227,7 @@ fn add_component_menu(
                 addable(world, entity)
             }),
             move |options| {
-                add_component_dropdown(entity, options.clone())
+                add_component_button(entity, options.clone())
             },
         )
     })
@@ -236,13 +235,13 @@ fn add_component_menu(
 
 /// A plus button opening a menu of `options`, each a component to
 /// add, under a heading per group.
-fn add_component_dropdown(
+fn add_component_button(
     entity: Entity,
     options: Vec<Inspectable>,
 ) -> Item {
     // A menu popup only opens with a focusable child, so an empty
     // list says why it's empty instead of showing nothing.
-    let mut entries: Vec<MenuEntry> = Vec::new();
+    let mut entries = Vec::<MenuEntry>::new();
     let mut group = None;
     for (_, name, next) in &options {
         if *next != group {
@@ -256,8 +255,10 @@ fn add_component_dropdown(
     if options.is_empty() {
         entries.push("Nothing left to add".into());
     }
-    let components: Vec<TypeId> =
-        options.iter().map(|(component, ..)| *component).collect();
+    let components = options
+        .iter()
+        .map(|(component, ..)| *component)
+        .collect::<Vec<_>>();
 
     AnyView::new(move |cx: &mut Cx<'_, Bevy, EditorTheme>| {
         let plus =
@@ -289,7 +290,7 @@ fn addable(world: &World, entity: Entity) -> Vec<Inspectable> {
     };
 
     let registry = world.resource::<AppTypeRegistry>().read();
-    let mut out: Vec<Inspectable> = registry
+    let mut out = registry
         .iter()
         .filter(|registration| {
             registration.data::<ReflectInspectable>().is_some()
@@ -310,7 +311,7 @@ fn addable(world: &World, entity: Entity) -> Vec<Inspectable> {
                 group,
             ))
         })
-        .collect();
+        .collect::<Vec<Inspectable>>();
 
     out.sort_by(|(_, a_name, a_group), (_, b_name, b_group)| {
         a_group.cmp(b_group).then_with(|| a_name.cmp(b_name))
@@ -409,13 +410,11 @@ fn component_card(
     root_card(Field::new(entity, component), name, None).boxed()
 }
 
-/// One root's own card: a title that's always there, above a body
-/// that folds flush under it - no rail, no indent, each field reading
-/// like its own root - like Unity's per-component panel.
+/// One root's own card: a title above a body that folds flush under
+/// it, with no rail or indent.
 ///
-/// Whether it is open is an [`Open`] on the card's own node, and is
-/// kept besides in the same store the nested sections use, so it
-/// survives the card being built again.
+/// Its open state is an [`Open`] on the card's own node, mirrored
+/// into the nested sections' store so it survives a rebuild.
 fn root_card(
     root: Field,
     name: String,
@@ -438,7 +437,7 @@ fn root_card(
         });
         let assets = cx.world.resource::<AssetServer>();
         let chevron = assets.load(icons::CHEVRON);
-        let trash: Handle<Image> = assets.load(icons::TRASH);
+        let trash = assets.load::<Image>(icons::TRASH);
         let theme = cx.theme();
         let space = theme.space;
         let panel = theme.color.panel;
@@ -545,10 +544,10 @@ fn root_card(
     })
 }
 
-/// What a card holds while open: the optional Name row, then the
-/// root's fields.
+/// An open card's body: the optional Name row, then the root's
+/// fields.
 fn card_body(root: Field, rename: Option<Binding>) -> Item {
-    let mut rows: Vec<Item> = Vec::new();
+    let mut rows = Vec::<Item>::new();
     if let Some(rename) = rename {
         rows.push(
             field_row(
@@ -588,11 +587,12 @@ fn inspectable(world: &World, entity: Entity) -> Vec<Inspectable> {
         return Vec::new();
     };
     // Collected before the registry is read: both borrow the world.
-    let ids: Vec<TypeId> =
-        components.filter_map(|info| info.type_id()).collect();
+    let ids = components
+        .filter_map(|info| info.type_id())
+        .collect::<Vec<_>>();
 
     let registry = world.resource::<AppTypeRegistry>().read();
-    let mut out: Vec<Inspectable> = ids
+    let mut out = ids
         .into_iter()
         .filter_map(|id| {
             let registration = registry.get(id)?;
@@ -606,7 +606,7 @@ fn inspectable(world: &World, entity: Entity) -> Vec<Inspectable> {
                 .map(|group| group.0);
             Some((id, display_name(registration), group))
         })
-        .collect();
+        .collect::<Vec<Inspectable>>();
 
     out.sort_by(|(_, a_name, a_group), (_, b_name, b_group)| {
         a_group.cmp(b_group).then_with(|| a_name.cmp(b_name))

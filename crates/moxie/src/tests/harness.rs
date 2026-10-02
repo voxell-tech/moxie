@@ -150,7 +150,7 @@ impl Editor {
                 .parent();
         }
         world.trigger(Activate { entity: at });
-        // What a click on a menu row sends after activating it.
+        // A click on a menu row also sends this after activating it.
         if world.get::<MenuItem>(at).is_some() {
             world.trigger(MenuEvent {
                 source: at,

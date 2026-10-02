@@ -28,7 +28,7 @@ pub struct Palette {
     pub green: Color,
     pub blue: Color,
     pub purple: Color,
-    /// Darkest → lightest neutrals.
+    /// Neutrals, darkest to lightest.
     pub base: [Color; 9],
 }
 
@@ -134,16 +134,15 @@ pub struct Spacing {
     pub fold_toggle: f32,
     /// How far a fold's rail sets its body in from the header.
     pub fold_indent: f32,
-    /// A menu row's own corner, fixed rather than set per call site
-    /// so every menu rounds the same.
+    /// A menu row's own corner.
     pub menu_item_radius: f32,
     /// A menu's own padding around its rows.
     pub menu_padding: f32,
     /// A menu's own corner - concentric with `menu_item_radius`
     /// across `menu_padding`; see `toolbars.md` in the Apple HIG.
     pub menu_radius: f32,
-    /// How close a menu is allowed to sit to the window's edge
-    /// before it flips to the other side.
+    /// The closest a menu sits to the window's edge before it flips
+    /// to the other side.
     pub menu_margin: f32,
     /// A component card's own corner, in the entity inspector.
     pub card_radius: f32,
@@ -173,14 +172,14 @@ pub struct TextScale {
     pub label: f32,
 }
 
-/// How the UI moves.
+/// Durations and curves of the UI's motion.
 #[derive(Clone, Copy, Debug)]
 pub struct Motion {
-    /// How long a hover or press fade takes.
+    /// A hover or press fade's duration.
     pub interact: Duration,
     /// The curve an interaction fade follows.
     pub ease: EaseFn,
-    /// How long something opening or growing takes.
+    /// The duration of something opening or growing.
     pub expand: Duration,
     /// The curve an expansion follows.
     pub expand_ease: EaseFn,

@@ -17,9 +17,9 @@ pub enum Owner {
     Asset(UntypedAssetId),
 }
 
-/// Where an inspector reads and writes: one root value, a component
-/// of an entity or an asset, and the reflect path reaching a leaf
-/// inside it. The empty path is the root itself.
+/// The place an inspector reads and writes: one root value, a
+/// component of an entity or an asset, and the reflect path reaching
+/// a leaf inside it. The empty path is the root itself.
 ///
 /// A resource is a component too. Bevy parks each one on an entity
 /// of its own, so which it was handed never comes up. That entity is

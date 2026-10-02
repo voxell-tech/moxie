@@ -136,7 +136,7 @@ struct Property {
     edit: Edit,
 }
 
-/// What the selection is now, as what to show.
+/// The current selection's shape.
 fn shape(world: &World) -> Shape {
     let path = world
         .get_resource::<SelectedAction>()
@@ -155,7 +155,7 @@ fn shape(world: &World) -> Shape {
         })
 }
 
-/// What the panel says when there is nothing to show.
+/// A dimmed note, for a panel with nothing to show.
 fn note(text: &str) -> AnyView<Bevy, EditorTheme> {
     label(text.to_string()).tone(Tone::Dim).boxed()
 }
@@ -247,11 +247,7 @@ fn type_picker(
     .boxed()
 }
 
-/// The panel's heading: the node's own name, editable directly rather
-/// than a read-only title plus a separate Name row beneath it -
-/// clicking it is what a text field already does. Reuses the same
-/// `Property`/`Edit::Name` source and the registered `String` widget
-/// every other text edit in this panel goes through.
+/// The panel's heading: the node's name, as an editable text field.
 fn heading(path: Vec<usize>) -> AnyView<Bevy, EditorTheme> {
     inspect_value(Binding::new(Property {
         path,
@@ -871,8 +867,11 @@ mod tests {
                 ("Operation".to_string(), "To".to_string()),
             ]
         );
-        let edits: Vec<_> =
-            shape.edits.iter().map(|(_, edit)| *edit).collect();
+        let edits = shape
+            .edits
+            .iter()
+            .map(|(_, edit)| *edit)
+            .collect::<Vec<_>>();
         assert_eq!(
             edits,
             [Edit::Duration, Edit::Delay, Edit::Ease, Edit::Interp]
@@ -1275,7 +1274,8 @@ mod tests {
             .id();
         editor.step(SETTLE);
         let uid = *editor.world().get::<EntityUid>(cube).unwrap();
-        let head: String = uid.to_string().chars().take(8).collect();
+        let head =
+            uid.to_string().chars().take(8).collect::<String>();
 
         editor.world().insert_resource(EditorScene::new(scene(
             vec![Node::Action {

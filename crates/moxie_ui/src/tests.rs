@@ -1,6 +1,5 @@
-//! What the tests share: a headless app with the plugin in it, the
-//! reflected types the inspector tests edit, and the lookups they
-//! reach for.
+//! Shared test helpers: a headless app with the plugin in it, the
+//! reflected types the inspector tests edit, and node lookups.
 
 use core::time::Duration;
 
@@ -91,7 +90,7 @@ pub fn all<C: Component>(app: &App, node: Entity) -> Vec<Entity> {
         .collect()
 }
 
-/// What every editable field under `node` shows, in order.
+/// The text of every editable field under `node`, in order.
 pub fn inputs(app: &App, node: Entity) -> Vec<String> {
     all::<EditableText>(app, node)
         .into_iter()

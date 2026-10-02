@@ -110,8 +110,8 @@ struct Cell {
     group: String,
 }
 
-/// What the grid lists: a choice, or the name of the group the
-/// choices after it belong to.
+/// One grid entry: a choice, or the name of the group the choices
+/// after it belong to.
 #[derive(Clone, PartialEq)]
 enum Entry {
     Heading(String),
@@ -205,7 +205,7 @@ fn picker_keys(
     }
 }
 
-/// What `binding` holds, if it can be named at all.
+/// The asset `binding` holds, if it can be named at all.
 fn current<T: Asset + TypePath>(
     world: &World,
     binding: &Binding,

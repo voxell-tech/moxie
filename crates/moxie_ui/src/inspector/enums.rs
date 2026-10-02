@@ -1,10 +1,7 @@
 //! Picking an enum's variant.
 //!
-//! Not a registered [`Inspect`](super::Inspect) editor: which
-//! variants a type has is something reflection already knows, so this
-//! is dispatched on the shape of the value rather than on its type.
-//! That is also what lets it serve enums from crates the inspector
-//! cannot name.
+//! Dispatched on the shape of the value, so it serves enums from
+//! crates the inspector cannot name.
 //!
 //! Switching into a variant that carries data means inventing that
 //! data: a unit variant needs none, and a variant with fields is
@@ -174,9 +171,9 @@ fn switch(world: &mut World, binding: &Binding, variant: &str) {
     }
 }
 
-/// How wide a dropdown over `variants` is, so picking another does
-/// not resize the row: the longest one's glyphs, the padding around
-/// them and the chevron beside them.
+/// The width of a dropdown over `variants`, fitting the longest one,
+/// its padding and the chevron, so picking another keeps the row's
+/// size.
 fn width_for(variants: &[String], theme: &EditorTheme) -> f32 {
     const GLYPH: f32 = 0.6;
     const CHEVRON: f32 = 16.0;
@@ -293,13 +290,13 @@ mod tests {
         let root = kind_picker(&mut app, probe);
         assert_eq!(shown(&app, root), "Dot");
 
-        let texts: Vec<_> = tests::all::<Text>(&app, root)
+        let texts = tests::all::<Text>(&app, root)
             .into_iter()
             .map(|node| {
                 app.world().get::<Text>(node).unwrap().0.clone()
             })
             .filter(|text| text != "v")
-            .collect();
+            .collect::<Vec<_>>();
         assert_eq!(texts, ["Dot", "Dot", "Circle", "Rect"]);
     }
 
