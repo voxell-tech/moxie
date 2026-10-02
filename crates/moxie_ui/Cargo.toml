@@ -6,7 +6,6 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "./README.md"
-autoexamples = false
 
 [dependencies]
 bevy_fynix = { workspace = true }
@@ -21,7 +20,3 @@ bevy = { workspace = true, default-features = true, features = [
 
 [lints]
 workspace = true
-
-[[example]]
-name = "inspector_demo"
-path = "examples/inspector_demo.rs"
