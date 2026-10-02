@@ -331,6 +331,18 @@ impl SpacingTokens for EditorTheme {
     fn menu_margin(&self) -> f32 {
         self.space.menu_margin
     }
+
+    fn divider(&self) -> f32 {
+        self.space.edge
+    }
+
+    fn tab_padding(&self) -> f32 {
+        self.space.lg
+    }
+
+    fn tab_gap(&self) -> f32 {
+        self.space.xs
+    }
 }
 
 impl MotionTokens for EditorTheme {
