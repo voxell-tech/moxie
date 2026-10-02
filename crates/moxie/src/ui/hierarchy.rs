@@ -26,7 +26,7 @@ use bevy_fynix::tokens::Tone;
 use bevy_fynix::views::{
     BehaviorExt as _, ContextMenuExt as _, FrameProps as _,
     TooltipExt as _, button, column, ghost, icon, label, menu_item,
-    row, scroll, tint,
+    row, scroll, tinted_icon,
 };
 use bevy_fynix::{
     AnyView, Bevy, ScopedExt as _, Signal, View, ViewExt as _,
@@ -139,11 +139,9 @@ fn add_button(
     plus: Handle<Image>,
     pad: f32,
 ) -> impl View<Bevy, EditorTheme> {
-    button(icon(plus))
+    tinted_icon(plus)
         .position(PositionType::Absolute)
         .inset(UiRect::new(Val::Auto, px(pad), Val::Auto, px(pad)))
-        .padding(UiRect::all(px(4.0)))
-        .rules(tint)
         .on_activate_with(open_menu_at_pointer)
         .context_menu(add_menu)
         .tooltip(|| label("Add"))

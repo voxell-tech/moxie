@@ -14,7 +14,7 @@ use bevy::window::SystemCursorIcon;
 use bevy_fynix::tokens::Tone;
 use bevy_fynix::views::{
     BehaviorExt as _, FrameProps as _, button, column, frame, icon,
-    icon_button, label, row, scroll, tint,
+    label, row, scroll, tint, tinted_icon,
 };
 use bevy_fynix::{
     AnyView, Bevy, Cx, EntityCursor, ScopedExt as _, View,
@@ -126,10 +126,9 @@ fn add_button() -> impl View<Bevy, EditorTheme> {
             .resource::<AssetServer>()
             .load(crate::icons::PLUS);
         cx.build(
-            button(icon(plus))
+            tinted_icon(plus)
                 .position(PositionType::Absolute)
                 .inset(UiRect::new(auto(), px(pad), auto(), px(pad)))
-                .rules(icon_button)
                 .on_activate(add_bookmark),
         )
     })
