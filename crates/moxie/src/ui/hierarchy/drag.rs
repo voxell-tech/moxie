@@ -1,10 +1,10 @@
 //! Moving a subject by dragging its row.
 //!
-//! Reordering and reparenting are the same edit: every subject sits in
-//! some parent's [`Children`], so both are a matter of which list a row
-//! lands in and where. One row is the whole drop target: its middle
-//! means inside it, its top and bottom edges beside it. What commits to
-//! a hair-thin line is a band a quarter of the row tall.
+//! Reordering and reparenting are the same edit: every subject sits
+//! in some parent's [`Children`], so both are a matter of which list
+//! a row lands in and where. One row is the whole drop target: its
+//! middle means inside it, its top and bottom edges beside it. What
+//! commits to a hair-thin line is a band a quarter of the row tall.
 
 use bevy::picking::events::{
     Drag, DragDrop, DragEnd, DragLeave, DragOver, DragStart, Pointer,
@@ -23,11 +23,12 @@ use super::Collapsed;
 use crate::SceneRoot;
 use crate::subject::Caption;
 
-/// How much of a row's height, at each end, aims beside it rather than
-/// into it. The middle half is the drop-inside band.
+/// How much of a row's height, at each end, aims beside it rather
+/// than into it. The middle half is the drop-inside band.
 const EDGE: f32 = 0.25;
 
-/// What [`logical_rect`] reads off a node to place it in pointer space.
+/// What [`logical_rect`] reads off a node to place it in pointer
+/// space.
 type NodeRect = (&'static ComputedNode, &'static UiGlobalTransform);
 
 /// The subject being dragged, where a drop would land it, and what is
@@ -292,9 +293,10 @@ fn commit_drop(
 
 /// Moves `dragged` to where `at` puts it relative to `row`.
 ///
-/// One [`insert_child`](EntityWorldMut::insert_child) does either job:
-/// handed a child the parent already holds it moves it within the
-/// list, and handed one it does not it takes it from wherever it was.
+/// One [`insert_child`](EntityWorldMut::insert_child) does either
+/// job: handed a child the parent already holds it moves it within
+/// the list, and handed one it does not it takes it from wherever it
+/// was.
 fn apply(world: &mut World, dragged: Entity, row: Entity, at: At) {
     let Some((parent, index)) = destination(world, dragged, row, at)
     else {
@@ -315,8 +317,8 @@ fn apply(world: &mut World, dragged: Entity, row: Entity, at: At) {
 }
 
 /// The parent to put `dragged` under and where in its children, or
-/// `None` for a drop that would not hold: onto itself, or into its own
-/// subtree, which is a parent of its own parent.
+/// `None` for a drop that would not hold: onto itself, or into its
+/// own subtree, which is a parent of its own parent.
 fn destination(
     world: &World,
     dragged: Entity,

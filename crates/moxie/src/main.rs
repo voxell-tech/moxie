@@ -1,10 +1,11 @@
 //! The editor binary: [`MoxiePlugin`] over an empty scene.
 //!
-//! Nothing is spawned here beyond a camera and a light - `File > Open`
-//! is how a project actually gets its content, or a path given as the
-//! first argument, which is opened at startup.
+//! Nothing is spawned here beyond a camera and a light - `File >
+//! Open` is how a project actually gets its content, or a path given
+//! as the first argument, which is opened at startup.
 
-use bevy::{prelude::*, window::WindowResolution};
+use bevy::prelude::*;
+use bevy::window::WindowResolution;
 use moxie::MoxiePlugin;
 
 fn main() {

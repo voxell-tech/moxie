@@ -34,8 +34,8 @@ pub(crate) fn plugin(app: &mut App) {
             Update,
             (
                 on_gltf_loaded,
-                // A new or renamed internal asset shows at once, with no
-                // rescan of the disk.
+                // A new or renamed internal asset shows at once,
+                // with no rescan of the disk.
                 publish.run_if(resource_changed::<InternalAssets>),
             ),
         );

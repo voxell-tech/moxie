@@ -312,9 +312,9 @@ fn current_time(world: &World) -> Duration {
         .unwrap_or(Duration::ZERO)
 }
 
-/// The editor scene's animation tree, laid out as nested boxes. Nested
-/// boxes are a percent of their parent, so the layout ignores the view
-/// and only the root box follows it.
+/// The editor scene's animation tree, laid out as nested boxes.
+/// Nested boxes are a percent of their parent, so the layout ignores
+/// the view and only the root box follows it.
 fn block_placements(world: &World, space: Spacing) -> Vec<Placed> {
     let empty = BTreeSet::new();
     let folded = world

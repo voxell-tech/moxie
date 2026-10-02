@@ -8,7 +8,6 @@ mod relative;
 
 use bevy::asset::io::AssetSourceBuilder;
 use bevy::prelude::*;
-
 pub use internal::{
     InternalAsset, InternalAssets, replace_internal_assets,
 };

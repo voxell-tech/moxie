@@ -2,8 +2,9 @@
 
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
-use bevy::render::render_resource::TextureFormat;
-use bevy::render::render_resource::{Extent3d, TextureDimension};
+use bevy::render::render_resource::{
+    Extent3d, TextureDimension, TextureFormat,
+};
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<DelayPattern>();

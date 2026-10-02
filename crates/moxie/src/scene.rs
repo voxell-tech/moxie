@@ -112,88 +112,101 @@ impl Default for EditorScene {
     }
 }
 
-/// Recompiles [`EditorScene`] into a fresh [`BevyTimeline`], replacing
-/// whichever timeline the single player entity was showing while
-/// preserving its playhead, or spawning that entity on the first
-/// compile.
+/// Recompiles [`EditorScene`] into a fresh [`BevyTimeline`],
+/// replacing whichever timeline the single player entity was showing
+/// while preserving its playhead, or spawning that entity on the
+/// first compile.
 ///
 /// Scheduled with `run_if(scene_dirty)`, so this only runs when
 /// [`EditorScene::edit`] landed a write.
 pub(crate) fn recompile_dirty_scene(world: &mut World) {
-    world.resource_scope::<EditorScene, _>(|world, mut editor_scene| {
-        world.resource_scope::<MotionGfxManager, _>(
-            |world, mut manager| {
-                let mut q_players =
-                    world.query::<(Entity, &TimelineId)>();
-                let existing = q_players
-                    .iter(world)
-                    .next()
-                    .map(|(entity, &id)| (entity, id));
-                let playhead = existing.and_then(|(_, id)| {
-                    manager
-                        .get_timeline(&id)
-                        .map(|timeline| timeline.target_time())
-                });
-                if let Some((_, old_id)) = existing {
-                    manager.remove_timeline(&old_id);
-                }
+    world.resource_scope::<EditorScene, _>(
+        |world, mut editor_scene| {
+            world.resource_scope::<MotionGfxManager, _>(
+                |world, mut manager| {
+                    let mut q_players =
+                        world.query::<(Entity, &TimelineId)>();
+                    let existing = q_players
+                        .iter(world)
+                        .next()
+                        .map(|(entity, &id)| (entity, id));
+                    let playhead = existing.and_then(|(_, id)| {
+                        manager
+                            .get_timeline(&id)
+                            .map(|timeline| timeline.target_time())
+                    });
+                    if let Some((_, old_id)) = existing {
+                        manager.remove_timeline(&old_id);
+                    }
 
-                let new_id = loop {
-                    match editor_scene
-                        .scene
-                        .compile(&editor_scene.registry, &mut manager)
-                    {
-                        Ok(id) => break id,
-                        Err(err) => {
-                            if !demote_offending_action(
-                                &mut editor_scene.scene.0.animation,
-                                &err,
-                            ) {
-                                error!(
-                                    "scene can't compile and no action could be demoted: {err}"
+                    let new_id = loop {
+                        match editor_scene.scene.compile(
+                            &editor_scene.registry,
+                            &mut manager,
+                        ) {
+                            Ok(id) => break id,
+                            Err(err) => {
+                                if !demote_offending_action(
+                                    &mut editor_scene
+                                        .scene
+                                        .0
+                                        .animation,
+                                    &err,
+                                ) {
+                                    error!(
+                                        "scene can't compile and no \
+                                         action could be demoted: \
+                                         {err}"
+                                    );
+                                    return;
+                                }
+                                warn!(
+                                    "demoted an action the scene \
+                                     can't compile: {err}"
                                 );
-                                return;
                             }
-                            warn!(
-                                "demoted an action the scene can't compile: {err}"
-                            );
+                        }
+                    };
+
+                    editor_scene
+                        .scene
+                        .stage(&editor_scene.registry, world)
+                        .expect("editor scene should stage");
+
+                    // Bakes the new timeline's `prev` off the world
+                    // we just staged, and replays
+                    // up to the restored time -
+                    // otherwise the spawn pose `stage` wrote sits
+                    // unreplayed until the next scheduled sample, and
+                    // anything reading the world before then sees it
+                    // raw.
+                    manager.load_pending_timelines(world);
+
+                    if let Some(time) = playhead
+                        && let Some(timeline) =
+                            manager.get_timeline_mut(&new_id)
+                    {
+                        timeline.set_target_track(0);
+                        timeline.set_target_time(time);
+                    }
+
+                    manager.sample_timelines(world);
+
+                    match existing {
+                        Some((entity, _)) => {
+                            world.entity_mut(entity).insert(new_id);
+                        }
+                        None => {
+                            world.spawn((
+                                new_id,
+                                RealtimePlayer::new(),
+                            ));
                         }
                     }
-                };
-
-                editor_scene
-                    .scene
-                    .stage(&editor_scene.registry, world)
-                    .expect("editor scene should stage");
-
-                // Bakes the new timeline's `prev` off the world we
-                // just staged, and replays up to the restored time -
-                // otherwise the spawn pose `stage` wrote sits
-                // unreplayed until the next scheduled sample, and
-                // anything reading the world before then sees it raw.
-                manager.load_pending_timelines(world);
-
-                if let Some(time) = playhead
-                    && let Some(timeline) =
-                        manager.get_timeline_mut(&new_id)
-                {
-                    timeline.set_target_track(0);
-                    timeline.set_target_time(time);
-                }
-
-                manager.sample_timelines(world);
-
-                match existing {
-                    Some((entity, _)) => {
-                        world.entity_mut(entity).insert(new_id);
-                    }
-                    None => {
-                        world.spawn((new_id, RealtimePlayer::new()));
-                    }
-                }
-            },
-        );
-    });
+                },
+            );
+        },
+    );
 }
 
 /// Finds the first `Node::Action` under `block` that `error` names as

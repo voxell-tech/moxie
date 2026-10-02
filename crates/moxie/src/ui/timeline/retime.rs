@@ -1,6 +1,6 @@
 //! Retiming a node by dragging one of its box's edges: the left edge
-//! edits `delay`, the right edge `duration` (leaves only - a block has
-//! no `duration`). Dedicated handles leave the body free for
+//! edits `delay`, the right edge `duration` (leaves only - a block
+//! has no `duration`). Dedicated handles leave the body free for
 //! `reorder`'s merge gesture.
 //!
 //! Nothing writes [`EditorScene`] until [`DragEnd`]: the box list
@@ -242,8 +242,9 @@ fn cancel_on_escape(
     );
 }
 
-/// Lays out a scratch copy of the tree with `secs` applied to `kind`'s
-/// edit and pushes the result onto the spawned entities by path.
+/// Lays out a scratch copy of the tree with `secs` applied to
+/// `kind`'s edit and pushes the result onto the spawned entities by
+/// path.
 fn relayout(
     editor_scene: &EditorScene,
     folded: &BlockFoldState,
@@ -404,8 +405,7 @@ fn apply_edit(node: &mut SceneNode<Backend>, kind: Kind, secs: f32) {
 
 #[cfg(test)]
 mod tests {
-    use motiongfx_scene::block::Block;
-    use motiongfx_scene::block::Combinator;
+    use motiongfx_scene::block::{Block, Combinator};
 
     use super::*;
 

@@ -49,8 +49,8 @@ impl AssetTypes {
             .map(|(_, info)| info)
     }
 
-    /// The type `path`'s extension loads as, if any. When two claim it,
-    /// the one registered last.
+    /// The type `path`'s extension loads as, if any. When two claim
+    /// it, the one registered last.
     pub fn kind_of(&self, path: &Path) -> Option<TypeId> {
         let extension = path.extension()?.to_str()?;
         self.0
@@ -115,8 +115,8 @@ impl AssetRef {
         }
     }
 
-    /// A handle to the asset, loading it when it is a file. A file may
-    /// lie outside the default asset source.
+    /// A handle to the asset, loading it when it is a file. A file
+    /// may lie outside the default asset source.
     pub fn handle<T: Asset>(
         &self,
         assets: &AssetServer,

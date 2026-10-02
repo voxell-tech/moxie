@@ -72,7 +72,8 @@ pub(super) fn on_track_scroll(
         return;
     }
 
-    // Normalize Shift+wheel into horizontal scrolling across platforms.
+    // Normalize Shift+wheel into horizontal scrolling across
+    // platforms.
     let sideways =
         keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let (pan_x, scroll_y) = if sideways {
@@ -81,8 +82,8 @@ pub(super) fn on_track_scroll(
         (delta.x, delta.y)
     };
 
-    // Panning goes through the view so the time axis and playhead move
-    // with the blocks; `ScrollPosition` only carries y.
+    // Panning goes through the view so the time axis and playhead
+    // move with the blocks; `ScrollPosition` only carries y.
     if pan_x != 0.0 {
         view.pan_by(pan_x);
     }

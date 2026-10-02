@@ -119,7 +119,8 @@ fn on_show(
         }
     };
 
-    // The area is the hint's parent, and the viewport scrolls under it.
+    // The area is the hint's parent, and the viewport scrolls under
+    // it.
     let to_area = logical_rect(viewport_node, viewport_transform).min
         - Vec2::new(0.0, scroll.y)
         - logical_rect(area_node, area_transform).min;

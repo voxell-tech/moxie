@@ -128,8 +128,8 @@ fn drop_on(editor: &mut Editor, from: &str, over: &str) {
     let from = row_of(editor, from);
     let over = row_of(editor, over);
     aim(editor, from, over);
-    // Back to back, as the pointer sends them: the row is rebuilt only
-    // on the next frame.
+    // Back to back, as the pointer sends them: the row is rebuilt
+    // only on the next frame.
     send(
         editor,
         over,

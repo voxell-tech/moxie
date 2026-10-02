@@ -1,11 +1,11 @@
 //! Dragging a node's body elsewhere in the tree. Action leaves and
-//! block headers share this, each just a node at a path. Where it lands
-//! is [`landing`]'s.
+//! block headers share this, each just a node at a path. Where it
+//! lands is [`landing`]'s.
 //!
-//! The tree is written only when the drag ends. Until then the dragged
-//! box and its subtree are the preview, offset by how far the cursor
-//! has moved, while the rest of the layout stays put. A slim line or
-//! an outline marks where a release would land.
+//! The tree is written only when the drag ends. Until then the
+//! dragged box and its subtree are the preview, offset by how far the
+//! cursor has moved, while the rest of the layout stays put. A slim
+//! line or an outline marks where a release would land.
 
 use bevy::picking::events::{DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::PointerButton;
@@ -19,12 +19,12 @@ use moxie_ui::drag::{Dragged, grab, ungrab};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::theme::EditorTheme;
 
-use super::block_layout;
 use super::hint::HintNode;
 use super::landing::{self, Target, block_at_mut, under};
-use super::prune;
 use super::retime::{BoxPath, GapPath};
-use super::{BlockFoldState, RebuildTick, TrackViewport};
+use super::{
+    BlockFoldState, RebuildTick, TrackViewport, block_layout, prune,
+};
 use crate::{EditorScene, SelectedAction, TimelineView};
 
 pub(super) fn plugin(app: &mut App) {
@@ -48,7 +48,8 @@ impl Dragging {
 struct Gesture {
     path: Vec<usize>,
     cursor_start: Vec2,
-    /// Where the cursor sits inside the box, set on the first preview.
+    /// Where the cursor sits inside the box, set on the first
+    /// preview.
     hold: Option<Vec2>,
     target: Option<Target>,
 }
@@ -239,8 +240,8 @@ pub(super) fn to_content(
 }
 
 /// Common tail of a committed drop and a cancel: drop the drag-wide
-/// cursor and bump [`RebuildTick`], so the box list respawns and every
-/// dragged box loses both its preview offset and its raised z.
+/// cursor and bump [`RebuildTick`], so the box list respawns and
+/// every dragged box loses both its preview offset and its raised z.
 fn end_drag(
     override_cursor: &mut OverrideCursor,
     commands: &mut Commands,

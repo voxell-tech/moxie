@@ -65,7 +65,8 @@ impl InternalAssets {
         self.entries.iter()
     }
 
-    /// `base`, numbered past every `kind` asset already named after it.
+    /// `base`, numbered past every `kind` asset already named after
+    /// it.
     pub fn unused_name(&self, kind: TypeId, base: &str) -> String {
         let taken = |name: &str| {
             self.entries

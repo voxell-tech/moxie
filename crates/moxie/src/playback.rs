@@ -8,11 +8,10 @@ use bevy::picking::events::{
 };
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
-use bevy_motiongfx::prelude::*;
+use bevy_motiongfx::prelude::{TimelineId, *};
 use moxie_ui::cursor::PointerEventExt as _;
 
 use crate::{EditorState, TimelineView};
-use bevy_motiongfx::prelude::TimelineId;
 
 /// Command to flip playback, dispatched from the play/pause button
 /// and the spacebar hotkey and handled in one place
