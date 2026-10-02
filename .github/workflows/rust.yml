@@ -53,7 +53,7 @@ jobs:
           workspaces: moxie
           shared-key: ci
           save-if: false
-      - run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+      - run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libwayland-dev
       - run: cargo check --workspace --no-default-features
         working-directory: moxie
 
@@ -90,7 +90,7 @@ jobs:
           workspaces: moxie
           shared-key: ci
           save-if: false
-      - run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+      - run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libwayland-dev
       - run: cargo doc --workspace --all-features --no-deps --document-private-items
         working-directory: moxie
         env:
