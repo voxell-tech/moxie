@@ -269,8 +269,7 @@ fn add_component_button(
                     add_component(world, entity, *component);
                 }
             })
-            .icon(plus)
-            .icon_tone(Tone::Accent),
+            .icon(plus),
         )
     })
 }

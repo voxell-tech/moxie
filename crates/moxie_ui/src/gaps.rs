@@ -3,9 +3,6 @@
 use bevy::ecs::resource::Resource;
 use bevy::ecs::world::World;
 use bevy::prelude::*;
-use bevy::ui_widgets::popover::{
-    Popover, PopoverAlign, PopoverPlacement, PopoverSide,
-};
 use bevy_fynix::patch::Paint;
 use bevy_fynix::tokens::{
     Motion, MotionTokens, SpacingTokens, SurfaceTokens, TextTokens,
@@ -584,26 +581,6 @@ where
             cx.set::<Icon>(move |icon, _| icon.tone(hover));
         });
         cx.transition(Motion::Interact);
-    }
-}
-
-/// Upstream: the placement of a surface hung off a zero-size anchor
-/// at a point, below it or above it, flipping toward whichever corner
-/// has room and keeping `window_margin` from the window's edge.
-pub fn at_point(window_margin: f32) -> Popover {
-    let placement = |side, align| PopoverPlacement {
-        side,
-        align,
-        gap: 0.0,
-    };
-    Popover {
-        positions: vec![
-            placement(PopoverSide::Bottom, PopoverAlign::Start),
-            placement(PopoverSide::Bottom, PopoverAlign::End),
-            placement(PopoverSide::Top, PopoverAlign::Start),
-            placement(PopoverSide::Top, PopoverAlign::End),
-        ],
-        window_margin,
     }
 }
 

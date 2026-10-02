@@ -12,24 +12,23 @@ use std::collections::HashMap;
 
 use bevy::asset::Asset;
 use bevy::input_focus::{FocusCause, InputFocus};
-use bevy::picking::events::{Click, Pointer, Press};
+use bevy::picking::events::{Click, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::text::{EditableText, TextEditChange};
-use bevy::ui::OverrideClip;
 use bevy_fynix::tokens::Tone;
 use bevy_fynix::views::{
-    BehaviorExt as _, FrameProps as _, MENU_Z, TooltipExt as _,
-    button, column, frame, ghost, icon, label, menu_surface, overlay,
-    row, scroll, text_field,
+    BehaviorExt as _, FrameProps as _, TooltipExt as _, button,
+    column, frame, ghost, icon, label, overlay, popup, row, scroll,
+    text_field,
 };
 use bevy_fynix::{
-    AnyView, Bevy, Cx, ScopedExt as _, View, ViewExt as _, component,
+    AnyView, Bevy, ScopedExt as _, View, ViewExt as _, component,
     keyed, mount,
 };
 use moxie_asset::{AssetRef, AssetType, AssetTypes, asset_choices};
 
-use crate::gaps::{at_point, changing_under, tint_to, wrapping};
+use crate::gaps::{changing_under, tint_to, wrapping};
 use crate::icons;
 use crate::inspector::Binding;
 use crate::theme::EditorTheme;
@@ -247,55 +246,31 @@ fn window<T: Asset + TypePath>(
             );
 
         cx.under(root, |cx| {
-            // Closing on a click elsewhere keeps the pick, like the
-            // close button does.
-            let backdrop = cx.build(
-                frame()
-                    .position(PositionType::Absolute)
-                    .inset(UiRect::all(px(0.0)))
-                    .width(percent(100.0))
-                    .height(percent(100.0))
-                    .z(Some(MENU_Z - 1)),
-            );
-            cx.world.entity_mut(backdrop).observe(
-                move |_: On<Pointer<Press>>,
-                      mut commands: Commands| {
-                    commands.queue(move |world: &mut World| {
-                        despawn(world, root);
-                    });
-                },
-            );
-
-            let anchor = cx.build(
-                row(()).position(PositionType::Absolute).inset(
-                    UiRect::new(
-                        px(at.x),
-                        Val::Auto,
-                        px(at.y),
-                        Val::Auto,
-                    ),
-                ),
-            );
-            cx.under(anchor, |cx| {
-                cx.build(
-                    column((
+            cx.build(
+                popup(
+                    at,
+                    (
                         header::<T>(root, title, binding.clone()),
                         search(root),
                         grid::<T>(root, binding.clone()),
                         footer::<T>(binding),
-                    ))
-                    .width(px(WIDTH))
-                    .height(px(HEIGHT))
-                    .gap(space.md)
-                    .padding(UiRect::all(px(space.md)))
-                    .with((at_point(space.menu_margin), OverrideClip))
-                    .rules(
-                        |cx: &mut Cx<'_, Bevy, EditorTheme>| {
-                            cx.defaults(menu_surface);
-                        },
                     ),
                 )
-            });
+                // Closing on a press elsewhere keeps the pick, like
+                // the close button does.
+                .on_dismiss(|world, popup| {
+                    if let Some(root) = world
+                        .get::<ChildOf>(popup)
+                        .map(ChildOf::parent)
+                    {
+                        despawn(world, root);
+                    }
+                })
+                .width(px(WIDTH))
+                .height(px(HEIGHT))
+                .gap(space.md)
+                .padding(UiRect::all(px(space.md))),
+            )
         });
         root
     })
