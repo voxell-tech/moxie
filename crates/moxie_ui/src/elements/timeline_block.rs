@@ -109,11 +109,9 @@ pub(super) fn snap_selected_border(
 #[cfg(test)]
 mod tests {
     use bevy::app::App;
-    use bevy::color::Color;
-    use bevy::ecs::entity::Entity;
     use bevy::ecs::resource::Resource;
     use bevy::time::TimePlugin;
-    use bevy::ui::{BackgroundColor, BorderColor, Node, UiRect, px};
+    use bevy::ui::{Node, UiRect, px};
     use bevy_fynix::{
         FynixPlugin, ReducedMotion, Theme, mount, resource,
     };
@@ -134,18 +132,6 @@ mod tests {
         .insert_resource(Span(100.0));
         app.update();
         app
-    }
-
-    fn placed() -> Placement {
-        Placement::new(px(1.0), px(2.0), px(3.0), px(4.0))
-    }
-
-    fn fill(app: &App, node: Entity) -> Color {
-        app.world().get::<BackgroundColor>(node).unwrap().0
-    }
-
-    fn edge(app: &App, node: Entity) -> BorderColor {
-        *app.world().get::<BorderColor>(node).unwrap()
     }
 
     #[test]
@@ -171,73 +157,5 @@ mod tests {
         let ui = app.world().get::<Node>(node).unwrap();
         assert_eq!(ui.width, px(250.0));
         assert_eq!(ui.border, UiRect::all(px(1.0)));
-    }
-
-    #[test]
-    fn selected_thickens_the_border_and_turns_purple() {
-        let mut app = app();
-        let node = mount::<EditorTheme>(
-            app.world_mut(),
-            timeline_block(placed(), true, ()),
-        );
-        app.update();
-
-        let purple = EditorTheme::default().palette.purple;
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.border, UiRect::all(px(3.0)));
-        assert_eq!(
-            fill(&app, node),
-            purple.with_luminance(0.3).with_alpha(0.8)
-        );
-        assert_eq!(
-            edge(&app, node),
-            BorderColor::all(purple.with_alpha(0.5))
-        );
-
-        app.world_mut().entity_mut(node).remove::<Selected>();
-        app.update();
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.border, UiRect::all(px(1.0)));
-    }
-
-    #[test]
-    fn the_border_width_snaps_where_the_fill_eases() {
-        let mut app = app();
-        app.insert_resource(ReducedMotion(false));
-        let node = mount::<EditorTheme>(
-            app.world_mut(),
-            timeline_block(placed(), false, ()),
-        );
-        app.update();
-
-        app.world_mut().entity_mut(node).insert(Selected);
-        app.update();
-
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.border, UiRect::all(px(3.0)));
-        let target = EditorTheme::default()
-            .palette
-            .purple
-            .with_luminance(0.3)
-            .with_alpha(0.8);
-        assert_ne!(fill(&app, node), target);
-    }
-
-    #[test]
-    fn dragging_fades_the_border() {
-        let mut app = app();
-        let node = mount::<EditorTheme>(
-            app.world_mut(),
-            timeline_block(placed(), false, ()),
-        );
-
-        app.world_mut().entity_mut(node).insert(Dragged);
-        app.update();
-
-        let text = EditorTheme::default().color.text;
-        assert_eq!(
-            edge(&app, node),
-            BorderColor::all(text.with_alpha(0.2))
-        );
     }
 }

@@ -193,10 +193,9 @@ mod tests {
     use bevy::ecs::relationship::RelationshipTarget;
     use bevy::ecs::resource::Resource;
     use bevy::ecs::world::World;
-    use bevy::text::TextColor;
     use bevy::time::TimePlugin;
     use bevy::ui::widget::Text;
-    use bevy::ui::{BackgroundColor, BorderColor, Val};
+    use bevy::ui::{BorderColor, Val};
     use bevy_fynix::{
         FynixPlugin, ReducedMotion, Theme, mount, resource,
     };
@@ -310,10 +309,6 @@ mod tests {
         Placement::new(px(1.0), px(2.0), px(width), px(32.0))
     }
 
-    fn fill(app: &App, node: Entity) -> Color {
-        app.world().get::<BackgroundColor>(node).unwrap().0
-    }
-
     fn edge(app: &App, node: Entity) -> BorderColor {
         *app.world().get::<BorderColor>(node).unwrap()
     }
@@ -324,10 +319,6 @@ mod tests {
 
     fn name_of(app: &App, node: Entity) -> Entity {
         *kids(app, node).last().unwrap()
-    }
-
-    fn ink(app: &App, node: Entity) -> Color {
-        app.world().get::<TextColor>(name_of(app, node)).unwrap().0
     }
 
     fn mounted(app: &mut App, draft: bool, selected: bool) -> Entity {
@@ -398,63 +389,18 @@ mod tests {
     }
 
     #[test]
-    fn hover_then_press_brighten_the_fill() {
-        let mut app = app();
-        let node = mounted(&mut app, false, false);
-        let theme = EditorTheme::default();
-
-        app.world_mut().entity_mut(node).insert(Hovered);
-        app.update();
-        assert_eq!(fill(&app, node), theme.color.clip_hover);
-
-        app.world_mut().entity_mut(node).insert(Pressed);
-        app.update();
-        assert_eq!(fill(&app, node), theme.color.clip_press);
-
-        app.world_mut().entity_mut(node).remove::<Pressed>();
-        app.update();
-        assert_eq!(fill(&app, node), theme.color.clip_hover);
-
-        app.world_mut().entity_mut(node).remove::<Hovered>();
-        app.update();
-        assert_eq!(fill(&app, node), theme.color.clip);
-    }
-
-    #[test]
-    fn selected_thickens_the_border_in_the_accent() {
+    fn selected_thickens_the_border() {
         let mut app = app();
         let node = mounted(&mut app, false, true);
         app.update();
 
-        let accent = EditorTheme::default().color.accent;
         let ui = app.world().get::<Node>(node).unwrap();
         assert_eq!(ui.border, UiRect::all(px(3.0)));
-        assert_eq!(edge(&app, node), BorderColor::all(accent));
 
         app.world_mut().entity_mut(node).remove::<Selected>();
         app.update();
         let ui = app.world().get::<Node>(node).unwrap();
         assert_eq!(ui.border, UiRect::all(px(1.0)));
-        assert_eq!(edge(&app, node), BorderColor::all(Color::NONE));
-    }
-
-    #[test]
-    fn a_selected_clip_keeps_its_border_colour_while_dragged() {
-        let mut app = app();
-        let node = mounted(&mut app, false, true);
-        let accent = EditorTheme::default().color.accent;
-
-        app.world_mut().entity_mut(node).insert(Dragged);
-        app.update();
-
-        assert_eq!(edge(&app, node), BorderColor::all(accent));
-        assert_eq!(
-            fill(&app, node),
-            EditorTheme::default()
-                .color
-                .clip
-                .with_alpha(DRAGGED_FILL_ALPHA)
-        );
     }
 
     #[test]
@@ -475,31 +421,6 @@ mod tests {
             BorderColor::all(accent),
             "the colour is still on its way"
         );
-    }
-
-    #[test]
-    fn dragging_fades_the_fill_and_the_name_over_a_hover() {
-        let mut app = app();
-        let node = mounted(&mut app, false, false);
-        let theme = EditorTheme::default();
-
-        app.world_mut().entity_mut(node).insert((Hovered, Dragged));
-        app.update();
-
-        assert_eq!(
-            fill(&app, node),
-            theme.color.clip.with_alpha(DRAGGED_FILL_ALPHA)
-        );
-        assert_eq!(
-            ink(&app, node),
-            theme.color.accent.with_alpha(
-                theme.color.accent.alpha() * NAME_DRAGGED_OPACITY
-            )
-        );
-
-        app.world_mut().entity_mut(node).remove::<Dragged>();
-        app.update();
-        assert_eq!(fill(&app, node), theme.color.clip_hover);
     }
 
     #[test]

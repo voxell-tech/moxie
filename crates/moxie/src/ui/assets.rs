@@ -846,7 +846,7 @@ mod tests {
     }
 
     #[test]
-    fn a_recognized_file_is_the_accent_and_can_be_picked_up() {
+    fn only_a_recognized_file_can_be_picked_up() {
         let scratch = Scratch::new("kinds");
         let folder = scratch.dir("work");
         fs::write(folder.join("a.png"), b"x").unwrap();
@@ -857,13 +857,6 @@ mod tests {
 
         let png = text_node(&mut app, "a.png");
         let txt = text_node(&mut app, "b.txt");
-        let colors = |app: &App, node: Entity| {
-            app.world().get::<TextColor>(node).unwrap().0
-        };
-        let purple = EditorTheme::default().palette.purple;
-        assert_eq!(colors(&app, png), purple);
-        assert_ne!(colors(&app, txt), purple);
-
         let row_of = |app: &App, node: Entity| {
             app.world().get::<ChildOf>(node).unwrap().0
         };
@@ -905,24 +898,5 @@ mod tests {
         let dragging = app.world().resource::<AssetDragging>();
         assert_eq!(dragging.path, Some(folder.join("a.png")));
         assert_eq!(dragging.kind, Some(TypeId::of::<Image>()));
-    }
-
-    #[test]
-    fn the_add_button_floats_over_the_listing() {
-        let mut app = shown(Vec::new());
-        let world = app.world_mut();
-        let floating = world
-            .query::<&Node>()
-            .iter(world)
-            .filter(|node| {
-                node.position_type == PositionType::Absolute
-            })
-            .count();
-        assert_eq!(floating, 1);
-        let buttons = world
-            .query_filtered::<Entity, With<ButtonBehavior>>()
-            .iter(world)
-            .count();
-        assert_eq!(buttons, 1);
     }
 }

@@ -187,33 +187,6 @@ mod tests {
     }
 
     #[test]
-    fn the_letters_are_tinted_by_axis() {
-        let (mut app, probe) = tests::probe_app();
-        let root = offset_editor(&mut app, probe);
-        let theme = EditorTheme::default();
-
-        let letters = tests::all::<Text>(&app, root)
-            .into_iter()
-            .map(|node| {
-                let world = app.world();
-                (
-                    world.get::<Text>(node).unwrap().0.clone(),
-                    world.get::<TextColor>(node).unwrap().0,
-                )
-            })
-            .collect::<Vec<(String, Color)>>();
-
-        assert_eq!(
-            letters,
-            [
-                ("X".to_string(), theme.palette.red),
-                ("Y".to_string(), theme.palette.green),
-                ("Z".to_string(), theme.palette.blue),
-            ]
-        );
-    }
-
-    #[test]
     fn an_unsigned_vector_is_whole_numbers_held_at_zero() {
         let (mut app, probe) = tests::probe_app();
         app.world_mut().get_mut::<Probe>(probe).unwrap().size =

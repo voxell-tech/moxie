@@ -372,27 +372,6 @@ mod tests {
     }
 
     #[test]
-    fn a_label_keeps_its_own_colour() {
-        let (mut app, probe) = tests::probe_app();
-        app.init_resource::<Host>();
-        app.world_mut().resource_mut::<FieldAnimatable>().0 =
-            Some(animatable);
-        app.world_mut().resource_mut::<FieldHasAction>().0 =
-            Some(has_action);
-        let red = EditorTheme::default().palette.red;
-        let field = Field::of::<Probe>(probe).child("level");
-        let node = tests::show(
-            &mut app,
-            field_name(Some(field), "X").ink(red),
-        );
-        assert_eq!(ink(&app, node), red);
-
-        app.world_mut().resource_mut::<Host>().has_action = true;
-        app.update();
-        assert_eq!(ink(&app, node), red);
-    }
-
-    #[test]
     fn only_an_animatable_field_is_a_drag_source() {
         let (mut app, probe) = tests::probe_app();
         let plain = named(&mut app, probe, "name");

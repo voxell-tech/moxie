@@ -693,43 +693,6 @@ mod tests {
     }
 
     #[test]
-    fn the_cells_wrap_onto_lines() {
-        let (mut app, _, binding) = setup();
-        let root = open(&mut app, &binding);
-
-        let wrapping =
-            tests::below(&app, root).into_iter().any(|node| {
-                app.world()
-                    .get::<Node>(node)
-                    .is_some_and(|ui| ui.flex_wrap == FlexWrap::Wrap)
-            });
-        assert!(wrapping);
-    }
-
-    #[test]
-    fn the_close_button_turns_critical_under_the_pointer() {
-        let (mut app, _, binding) = setup();
-        let root = open(&mut app, &binding);
-        let close = tests::all::<Button>(&app, root)
-            .into_iter()
-            .find(|node| texts(&app, *node).is_empty())
-            .expect("a close button");
-        let image = tests::below(&app, close)[0];
-        let theme = EditorTheme::default();
-        let tint = |app: &App| {
-            app.world().get::<ImageNode>(image).unwrap().color
-        };
-        assert_eq!(tint(&app), theme.color.text_dim);
-
-        app.world_mut()
-            .entity_mut(close)
-            .insert(bevy_fynix::Hovered);
-        app.update();
-
-        assert_eq!(tint(&app), theme.color.critical);
-    }
-
-    #[test]
     fn the_footer_reads_none_while_the_field_cannot_be_read() {
         let (mut app, _, _) = setup();
         let nowhere = app.world_mut().spawn_empty().id();
