@@ -430,12 +430,6 @@ mod tests {
             fs::create_dir_all(&path).unwrap();
             path
         }
-
-        fn file(&self, name: &str) -> PathBuf {
-            let path = self.0.join(name);
-            fs::write(&path, b"x").unwrap();
-            path
-        }
     }
 
     impl Drop for Scratch {

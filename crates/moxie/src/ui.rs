@@ -19,7 +19,7 @@ use bevy_fynix::dock::{
     DockAreaStyle, DockLeaf, DockNode, DockRegistry, DockTree,
     DockWindowKind, Edge, dock,
 };
-use bevy_fynix::views::{FrameProps as _, column, label};
+use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, View, mount};
 use bevy_motiongfx::motiongfx::field_path::field;
 use moxie_ui::MoxieUiPlugin;
@@ -219,20 +219,6 @@ fn mount_editor_ui(world: &mut World) {
         .height(percent(100.0)),
     );
     world.entity_mut(root).insert(UiTargetCamera(camera));
-}
-
-/// A titled placeholder in the place of a panel not yet ported to
-/// the new fynix.
-fn stub_panel(title: &'static str) -> AnyView<Bevy, EditorTheme> {
-    AnyView::<Bevy, EditorTheme>::new(move |cx| {
-        let pad = cx.theme().space.xl;
-        cx.build(
-            column((label(title),))
-                .width(percent(100.0))
-                .height(percent(100.0))
-                .padding(UiRect::all(px(pad))),
-        )
-    })
 }
 
 /// Register the editor's dockable windows.
