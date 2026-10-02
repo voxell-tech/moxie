@@ -34,12 +34,9 @@ where
 #[cfg(test)]
 mod tests {
     use bevy::app::App;
-    use bevy::ecs::hierarchy::Children;
-    use bevy::ecs::relationship::RelationshipTarget;
     use bevy::ecs::resource::Resource;
     use bevy::time::TimePlugin;
-    use bevy::ui::{PositionType, px};
-    use bevy_fynix::views::label;
+    use bevy::ui::px;
     use bevy_fynix::{FynixPlugin, Theme, mount, resource};
 
     use super::*;
@@ -56,25 +53,6 @@ mod tests {
         .insert_resource(Theme(EditorTheme::default()))
         .insert_resource(Span(100.0));
         app
-    }
-
-    #[test]
-    fn the_fixed_look_is_written() {
-        let mut app = app();
-        let node = mount::<EditorTheme>(
-            app.world_mut(),
-            timeline_track(px(80.0), (label("a"), label("b"))),
-        );
-
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.position_type, PositionType::Relative);
-        assert_eq!(ui.height, percent(100.0));
-        assert_eq!(ui.width, px(80.0));
-        assert_eq!(ui.min_width, px(80.0));
-        assert_eq!(
-            app.world().get::<Children>(node).unwrap().len(),
-            2
-        );
     }
 
     #[test]

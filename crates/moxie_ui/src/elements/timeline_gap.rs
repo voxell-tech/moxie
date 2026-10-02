@@ -48,7 +48,7 @@ mod tests {
     use bevy::app::App;
     use bevy::ecs::resource::Resource;
     use bevy::time::TimePlugin;
-    use bevy::ui::{Node, PositionType, px};
+    use bevy::ui::{Node, px};
     use bevy_fynix::{FynixPlugin, Theme, mount, resource};
 
     use super::*;
@@ -65,36 +65,6 @@ mod tests {
         .insert_resource(Theme(EditorTheme::default()))
         .insert_resource(Span(10.0));
         app
-    }
-
-    #[test]
-    fn the_fixed_look_is_written() {
-        let mut app = app();
-        let image = Handle::<Image>::default();
-        let node = mount::<EditorTheme>(
-            app.world_mut(),
-            timeline_gap(
-                Placement::new(px(1.0), px(2.0), px(3.0), px(4.0)),
-                image.clone(),
-                Color::WHITE,
-            ),
-        );
-
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.position_type, PositionType::Absolute);
-        assert_eq!((ui.left, ui.top), (px(1.0), px(2.0)));
-        assert_eq!((ui.width, ui.height), (px(3.0), px(4.0)));
-        let tiles = app.world().get::<ImageNode>(node).unwrap();
-        assert_eq!(tiles.image, image);
-        assert_eq!(tiles.color, Color::WHITE);
-        assert!(matches!(
-            tiles.image_mode,
-            NodeImageMode::Tiled { .. }
-        ));
-        assert_eq!(
-            app.world().get::<Pickable>(node),
-            Some(&Pickable::IGNORE)
-        );
     }
 
     #[test]

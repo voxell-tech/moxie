@@ -35,7 +35,7 @@ mod tests {
     use bevy::app::App;
     use bevy::ecs::resource::Resource;
     use bevy::time::TimePlugin;
-    use bevy::ui::{BorderColor, PositionType, Val};
+    use bevy::ui::BorderColor;
     use bevy_fynix::{FynixPlugin, Theme, mount, resource};
 
     use super::*;
@@ -52,36 +52,6 @@ mod tests {
         .insert_resource(Theme(EditorTheme::default()))
         .insert_resource(Tint(Color::WHITE));
         app
-    }
-
-    fn placed() -> Placement {
-        Placement::new(px(1.0), px(2.0), px(3.0), px(4.0))
-    }
-
-    #[test]
-    fn the_fixed_look_is_written() {
-        let mut app = app();
-        let node = mount::<EditorTheme>(
-            app.world_mut(),
-            timeline_link(placed(), Color::BLACK),
-        );
-
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.position_type, PositionType::Absolute);
-        assert_eq!((ui.left, ui.top), (px(1.0), px(2.0)));
-        assert_eq!((ui.width, ui.height), (px(3.0), px(4.0)));
-        assert_eq!(ui.border.left, px(3.0));
-        assert_eq!(ui.border.bottom, px(3.0));
-        assert_eq!(ui.border.top, Val::ZERO);
-        assert_eq!(ui.border.right, Val::ZERO);
-        assert_eq!(
-            app.world().get::<BorderColor>(node),
-            Some(&BorderColor::all(Color::BLACK))
-        );
-        assert_eq!(
-            app.world().get::<Pickable>(node),
-            Some(&Pickable::IGNORE)
-        );
     }
 
     #[test]

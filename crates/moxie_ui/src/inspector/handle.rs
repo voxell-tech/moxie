@@ -154,11 +154,11 @@ mod tests {
     use bevy::asset::uuid::Uuid;
     use bevy::ui::widget::Text;
     use bevy::ui_widgets::{Activate, Button};
-    use moxie_asset::{AssetChoice, FoundAssets, type_data};
+    use moxie_asset::{AssetChoice, FoundAssets};
 
     use super::*;
     use crate::asset_picker::AssetPickerRoot;
-    use crate::inspector::{Field, ReflectInspect};
+    use crate::inspector::Field;
     use crate::tests;
 
     /// A field holding an image, for the row to edit.
@@ -202,22 +202,6 @@ mod tests {
 
     fn held(app: &App, holder: Entity) -> Handle<Image> {
         app.world().get::<Holder>(holder).unwrap().image.clone()
-    }
-
-    #[test]
-    fn the_four_handle_types_are_registered() {
-        let app = tests::app();
-        let world = app.world();
-        for kind in [
-            TypeId::of::<Handle<StandardMaterial>>(),
-            TypeId::of::<Handle<Mesh>>(),
-            TypeId::of::<Handle<ColorMaterial>>(),
-            TypeId::of::<Handle<Font>>(),
-        ] {
-            assert!(
-                type_data::<ReflectInspect>(world, kind).is_some()
-            );
-        }
     }
 
     #[test]

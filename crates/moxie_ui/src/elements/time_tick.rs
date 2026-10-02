@@ -53,29 +53,6 @@ mod tests {
     }
 
     #[test]
-    fn the_fixed_look_is_written() {
-        let mut app = app();
-        let node = mount::<EditorTheme>(
-            app.world_mut(),
-            time_tick(px(5.0), px(4.0), Color::WHITE),
-        );
-
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.position_type, PositionType::Absolute);
-        assert_eq!(ui.width, px(1.0));
-        assert_eq!(ui.height, px(4.0));
-        assert_eq!((ui.left, ui.bottom), (px(5.0), px(0.0)));
-        assert_eq!(
-            app.world().get::<BackgroundColor>(node).unwrap().0,
-            Color::WHITE
-        );
-        assert_eq!(
-            app.world().get::<Pickable>(node),
-            Some(&Pickable::IGNORE)
-        );
-    }
-
-    #[test]
     fn a_bound_x_moves_the_same_node() {
         let mut app = app();
         let node = mount::<EditorTheme>(

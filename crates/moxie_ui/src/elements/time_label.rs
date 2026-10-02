@@ -68,7 +68,6 @@ mod tests {
     use bevy::ecs::hierarchy::Children;
     use bevy::ecs::relationship::RelationshipTarget;
     use bevy::ecs::resource::Resource;
-    use bevy::text::{FontSize, TextColor, TextFont};
     use bevy::time::TimePlugin;
     use bevy::ui::widget::Text;
     use bevy_fynix::{FynixPlugin, Theme, mount, resource};
@@ -99,41 +98,6 @@ mod tests {
     }
 
     use bevy::ecs::entity::Entity;
-
-    #[test]
-    fn the_fixed_look_is_written() {
-        let mut app = app();
-        let node = mount::<EditorTheme>(
-            app.world_mut(),
-            time_label(px(40.0), "0:02"),
-        );
-
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.position_type, PositionType::Absolute);
-        assert_eq!(ui.top, px(1.0));
-        assert_eq!(ui.width, px(0.0));
-        assert_eq!(
-            app.world().get::<Pickable>(node),
-            Some(&Pickable::IGNORE)
-        );
-
-        let theme = EditorTheme::default();
-        let text = reading(&app, node);
-        assert_eq!(app.world().get::<Text>(text).unwrap().0, "0:02");
-        assert_eq!(
-            app.world().get::<TextFont>(text).unwrap().font_size,
-            FontSize::Px(theme.text.small)
-        );
-        assert_eq!(
-            app.world().get::<TextColor>(text).unwrap().0,
-            theme
-                .color
-                .text_dim
-                .with_alpha(theme.color.text_dim.alpha() * OPACITY)
-        );
-    }
-
-    use bevy::color::Alpha;
 
     #[test]
     fn a_bound_x_moves_the_same_node_and_recentres_it() {

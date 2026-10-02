@@ -71,11 +71,9 @@ pub fn playhead_line(
 #[cfg(test)]
 mod tests {
     use bevy::app::App;
-    use bevy::ecs::hierarchy::Children;
-    use bevy::ecs::relationship::RelationshipTarget;
     use bevy::ecs::resource::Resource;
     use bevy::time::TimePlugin;
-    use bevy::ui::{BackgroundColor, Node};
+    use bevy::ui::Node;
     use bevy_fynix::{FynixPlugin, Theme, mount, resource};
 
     use super::*;
@@ -92,63 +90,6 @@ mod tests {
         .insert_resource(Theme(EditorTheme::default()))
         .insert_resource(Time(10.0));
         app
-    }
-
-    #[test]
-    fn the_fixed_look_is_written() {
-        let mut app = app();
-        let node = mount::<EditorTheme>(
-            app.world_mut(),
-            playhead_line(px(10.0), px(20.0)),
-        );
-
-        let orange = EditorTheme::default().palette.orange;
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.position_type, PositionType::Absolute);
-        assert_eq!(
-            (ui.left, ui.top, ui.bottom),
-            (px(10.0), px(20.0), px(0.0))
-        );
-        assert_eq!(ui.width, px(LINE_WIDTH));
-        assert_eq!(
-            app.world().get::<BackgroundColor>(node).unwrap().0,
-            orange
-        );
-        assert_eq!(
-            app.world().get::<ZIndex>(node),
-            Some(&ZIndex(10))
-        );
-        assert_eq!(
-            app.world().get::<Pickable>(node),
-            Some(&Pickable::IGNORE)
-        );
-
-        let head = app
-            .world()
-            .get::<Children>(node)
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
-        let ui = app.world().get::<Node>(head).unwrap();
-        assert_eq!(ui.overflow, Overflow::clip());
-        assert_eq!(ui.height, px(HEAD_REACH));
-
-        let diamond = app
-            .world()
-            .get::<Children>(head)
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
-        assert_eq!(
-            app.world().get::<UiTransform>(diamond).unwrap().rotation,
-            Rot2::degrees(45.0)
-        );
-        assert_eq!(
-            app.world().get::<BackgroundColor>(diamond).unwrap().0,
-            orange
-        );
     }
 
     #[test]

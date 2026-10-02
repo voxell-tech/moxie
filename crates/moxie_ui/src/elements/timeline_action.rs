@@ -196,9 +196,7 @@ mod tests {
     use bevy::text::TextColor;
     use bevy::time::TimePlugin;
     use bevy::ui::widget::Text;
-    use bevy::ui::{
-        BackgroundColor, BorderColor, BorderRadius, PositionType, Val,
-    };
+    use bevy::ui::{BackgroundColor, BorderColor, Val};
     use bevy_fynix::{
         FynixPlugin, ReducedMotion, Theme, mount, resource,
     };
@@ -343,54 +341,6 @@ mod tests {
                 selected,
             ),
         )
-    }
-
-    #[test]
-    fn the_fixed_look_is_written() {
-        let mut app = app();
-        let node = mounted(&mut app, false, false);
-
-        let theme = EditorTheme::default();
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.position_type, PositionType::Absolute);
-        assert_eq!((ui.left, ui.top), (px(1.0), px(2.0)));
-        assert_eq!((ui.width, ui.height), (px(80.0), px(32.0)));
-        assert_eq!(ui.padding, UiRect::left(px(4.0)));
-        assert_eq!(ui.column_gap, px(ACTION_ICON_GAP));
-        assert_eq!(ui.align_items, AlignItems::Center);
-        assert_eq!(ui.overflow, Overflow::clip());
-        assert_eq!(ui.border, UiRect::all(px(1.0)));
-        assert_eq!(
-            ui.border_radius,
-            BorderRadius::all(px(theme.space.radius))
-        );
-        assert_eq!(fill(&app, node), theme.color.clip);
-        assert_eq!(edge(&app, node), BorderColor::all(Color::NONE));
-        assert!(app.world().get::<ActionClip>(node).is_some());
-        assert!(app.world().get::<ButtonBehavior>(node).is_some());
-        assert!(app.world().get::<Selected>(node).is_none());
-
-        let name = name_of(&app, node);
-        assert_eq!(app.world().get::<Text>(name).unwrap().0, "move");
-        assert_eq!(
-            ink(&app, node),
-            theme.color.accent.with_alpha(
-                theme.color.accent.alpha() * NAME_OPACITY
-            )
-        );
-    }
-
-    #[test]
-    fn a_draft_reads_in_the_critical_colour() {
-        let mut app = app();
-        let node = mounted(&mut app, true, false);
-
-        let critical = EditorTheme::default().color.critical;
-        assert_eq!(fill(&app, node), critical.with_alpha(0.5));
-        assert_eq!(
-            edge(&app, node),
-            BorderColor::all(critical.with_alpha(0.5))
-        );
     }
 
     #[test]

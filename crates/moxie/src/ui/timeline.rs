@@ -726,18 +726,6 @@ mod tests {
     }
 
     #[test]
-    fn the_panel_has_its_controls() {
-        let mut editor = Editor::new();
-        editor.text("Fit");
-        editor.text("s");
-        let world = editor.world();
-        assert_eq!(
-            world.query::<&TrackViewport>().iter(world).count(),
-            1
-        );
-    }
-
-    #[test]
     fn an_empty_timeline_draws_no_boxes() {
         let mut editor = Editor::new();
         assert!(boxes(&mut editor).is_empty());

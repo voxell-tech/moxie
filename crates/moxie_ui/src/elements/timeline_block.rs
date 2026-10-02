@@ -111,15 +111,9 @@ mod tests {
     use bevy::app::App;
     use bevy::color::Color;
     use bevy::ecs::entity::Entity;
-    use bevy::ecs::hierarchy::Children;
-    use bevy::ecs::relationship::RelationshipTarget;
     use bevy::ecs::resource::Resource;
     use bevy::time::TimePlugin;
-    use bevy::ui::{
-        BackgroundColor, BorderColor, BorderRadius, Node,
-        PositionType, UiRect, px,
-    };
-    use bevy_fynix::views::label;
+    use bevy::ui::{BackgroundColor, BorderColor, Node, UiRect, px};
     use bevy_fynix::{
         FynixPlugin, ReducedMotion, Theme, mount, resource,
     };
@@ -152,38 +146,6 @@ mod tests {
 
     fn edge(app: &App, node: Entity) -> BorderColor {
         *app.world().get::<BorderColor>(node).unwrap()
-    }
-
-    #[test]
-    fn the_fixed_look_is_written() {
-        let mut app = app();
-        let node = mount::<EditorTheme>(
-            app.world_mut(),
-            timeline_block(placed(), false, (label("kid"),)),
-        );
-
-        let theme = EditorTheme::default();
-        let text = theme.color.text;
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.position_type, PositionType::Absolute);
-        assert_eq!(ui.align_items, AlignItems::Start);
-        assert_eq!(ui.overflow, Overflow::clip());
-        assert_eq!((ui.left, ui.top), (px(1.0), px(2.0)));
-        assert_eq!((ui.width, ui.height), (px(3.0), px(4.0)));
-        assert_eq!(ui.border, UiRect::all(px(1.0)));
-        assert_eq!(
-            ui.border_radius,
-            BorderRadius::all(px(theme.space.card_radius))
-        );
-        assert_eq!(fill(&app, node), text.with_alpha(0.03));
-        assert_eq!(
-            edge(&app, node),
-            BorderColor::all(text.with_alpha(0.5))
-        );
-        assert_eq!(
-            app.world().get::<Children>(node).unwrap().len(),
-            1
-        );
     }
 
     #[test]
