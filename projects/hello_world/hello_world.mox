@@ -154,21 +154,21 @@
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::translation",
+                path: ".translation",
               ),
               value: "b76b47e5-b453-415a-b625-7e716351014a",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::rotation",
+                path: ".rotation",
               ),
               value: "ab67a8d5-11eb-4217-9d54-d23af77a7851",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::scale",
+                path: ".scale",
               ),
               value: "96185f6f-8fde-4e7d-9bee-b5f318e5dcc3",
             ),
@@ -180,21 +180,21 @@
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::translation",
+                path: ".translation",
               ),
               value: "449c5bc3-4b7f-46bd-bcdb-cbe8d65370e1",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::rotation",
+                path: ".rotation",
               ),
               value: "91b1896a-6219-4f49-ab1b-019e1a77843c",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::scale",
+                path: ".scale",
               ),
               value: "cffb8728-ac3b-4bde-a8e9-b9de0a7a6f53",
             ),
@@ -206,21 +206,21 @@
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::translation",
+                path: ".translation",
               ),
               value: "80cfd503-84ba-4302-9b82-341544e50b73",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::rotation",
+                path: ".rotation",
               ),
               value: "d90dbed5-6511-43a5-a2ed-955e13eb7673",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::scale",
+                path: ".scale",
               ),
               value: "c2895299-2585-41a1-a1c6-318d5431f2d3",
             ),
@@ -232,21 +232,21 @@
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::translation",
+                path: ".translation",
               ),
               value: "be6be5cf-b99b-4652-9685-ee5e847fc167",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::rotation",
+                path: ".rotation",
               ),
               value: "5d8e39d0-6a4e-497d-b582-36ef5cbf7dfe",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::scale",
+                path: ".scale",
               ),
               value: "0e1e0091-3489-4689-95ce-af05f494da6a",
             ),
@@ -258,21 +258,21 @@
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::translation",
+                path: ".translation",
               ),
               value: "a9acb23b-ac77-44cc-b9b1-8a8e5aa84c24",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::rotation",
+                path: ".rotation",
               ),
               value: "ee4ed4a3-eaad-41fe-9919-8edd8ee77971",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::scale",
+                path: ".scale",
               ),
               value: "084e8e00-15e0-4e06-a4a7-95c9d5b26607",
             ),
@@ -284,21 +284,21 @@
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::translation",
+                path: ".translation",
               ),
               value: "26654bff-afb8-4a27-9570-0519faf2cc40",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::rotation",
+                path: ".rotation",
               ),
               value: "e6c3e776-6b05-4ea8-80e5-c0c454594b52",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::scale",
+                path: ".scale",
               ),
               value: "989fc380-eecc-4798-b2d0-9b449231275f",
             ),
@@ -310,21 +310,21 @@
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::translation",
+                path: ".translation",
               ),
               value: "504e8aa2-da84-4c76-8dc8-548f4256d5bc",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::rotation",
+                path: ".rotation",
               ),
               value: "f421033c-1fae-4b46-9e05-fab4aa3f446d",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::scale",
+                path: ".scale",
               ),
               value: "c9bc633c-e4b6-4d25-beae-4a66c83889be",
             ),
@@ -336,21 +336,21 @@
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::translation",
+                path: ".translation",
               ),
               value: "4a574fad-fcc7-44cc-be8e-7b3d03e00287",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::rotation",
+                path: ".rotation",
               ),
               value: "2f7010a1-38bc-4b70-bfa9-06dec56521a3",
             ),
             (
               field: (
                 type_name: "bevy_transform::components::transform::Transform",
-                path: "::scale",
+                path: ".scale",
               ),
               value: "2cb2aba2-6dff-422f-9161-cc3abcaa6dce",
             ),
@@ -370,7 +370,7 @@
                   subject: Entity("90d72875-f1d4-4af4-bf0e-d19913343106"),
                   field: (
                     type_name: "bevy_transform::components::transform::Transform",
-                    path: "::scale",
+                    path: ".scale",
                   ),
                   op: To,
                   value: "9f6b2211-8502-4a50-9df6-56d2246a5334",
@@ -387,7 +387,7 @@
                   subject: Entity("8f231763-6ed4-45ee-8a0f-78d80ee3f8b0"),
                   field: (
                     type_name: "bevy_transform::components::transform::Transform",
-                    path: "::scale",
+                    path: ".scale",
                   ),
                   op: To,
                   value: "dff0ba54-8c91-426a-8f3d-15ae47c51b67",
@@ -404,7 +404,7 @@
                   subject: Entity("15860121-b882-4dd0-94d5-6f8563c80178"),
                   field: (
                     type_name: "bevy_transform::components::transform::Transform",
-                    path: "::scale",
+                    path: ".scale",
                   ),
                   op: To,
                   value: "6588e39c-a2cd-4d8c-813a-2b3b826a84fd",
@@ -421,7 +421,7 @@
                   subject: Entity("a2ec0ac9-1cf4-4234-a11e-32bc673db0b4"),
                   field: (
                     type_name: "bevy_transform::components::transform::Transform",
-                    path: "::scale",
+                    path: ".scale",
                   ),
                   op: To,
                   value: "8ed88d10-048a-4a70-8a50-741ecde0cdde",
@@ -438,7 +438,7 @@
                   subject: Entity("f13cccc6-fe99-4b08-83ea-8e2047a3081e"),
                   field: (
                     type_name: "bevy_transform::components::transform::Transform",
-                    path: "::scale",
+                    path: ".scale",
                   ),
                   op: To,
                   value: "8360c445-7d14-4bbf-83a5-2608254a39b1",
@@ -455,7 +455,7 @@
                   subject: Entity("b8d1ffdc-abaa-4695-9f3a-e018e054bbb4"),
                   field: (
                     type_name: "bevy_transform::components::transform::Transform",
-                    path: "::scale",
+                    path: ".scale",
                   ),
                   op: To,
                   value: "e2736f6b-098c-4a4d-b2b0-0dfbbb39a5f0",
@@ -486,7 +486,7 @@
                         subject: Entity("90d72875-f1d4-4af4-bf0e-d19913343106"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "588914d6-c8ec-457b-8423-f3d8a081a87a",
@@ -503,7 +503,7 @@
                         subject: Entity("8f231763-6ed4-45ee-8a0f-78d80ee3f8b0"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "fd7708c0-9e00-41c0-8e85-cb65fde537cf",
@@ -527,7 +527,7 @@
                         subject: Entity("15860121-b882-4dd0-94d5-6f8563c80178"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "4a06ccdf-9783-45af-8b69-202e993f6ace",
@@ -544,7 +544,7 @@
                         subject: Entity("a2ec0ac9-1cf4-4234-a11e-32bc673db0b4"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "c86f2379-8bec-4b1c-8e1a-f984a2bd9c0c",
@@ -568,7 +568,7 @@
                         subject: Entity("f13cccc6-fe99-4b08-83ea-8e2047a3081e"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "51fec7c2-2372-417c-8b3a-846015883bad",
@@ -585,7 +585,7 @@
                         subject: Entity("b8d1ffdc-abaa-4695-9f3a-e018e054bbb4"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "4b5e0bee-146f-4718-98ce-502abdbca3a4",
@@ -612,7 +612,7 @@
                   subject: Entity("90d72875-f1d4-4af4-bf0e-d19913343106"),
                   field: (
                     type_name: "bevy_transform::components::transform::Transform",
-                    path: "::translation",
+                    path: ".translation",
                   ),
                   op: To,
                   value: "65353b85-fd37-4ccf-96b4-6b283da7fbe2",
@@ -633,7 +633,7 @@
                         subject: Entity("8f231763-6ed4-45ee-8a0f-78d80ee3f8b0"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::translation",
+                          path: ".translation",
                         ),
                         op: To,
                         value: "f5f957e1-26f0-4873-a2ec-36c263b13a95",
@@ -650,7 +650,7 @@
                         subject: Entity("8f231763-6ed4-45ee-8a0f-78d80ee3f8b0"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::translation",
+                          path: ".translation",
                         ),
                         op: To,
                         value: "35d37d5b-3df9-44ac-99b5-91cd573eb7e6",
@@ -677,7 +677,7 @@
                   subject: Entity("59af9736-3ea8-49ad-adb2-88703abbf39d"),
                   field: (
                     type_name: "bevy_transform::components::transform::Transform",
-                    path: "::translation",
+                    path: ".translation",
                   ),
                   op: To,
                   value: "a91fd327-cbea-4474-a88f-a40e8b18cf47",
@@ -694,7 +694,7 @@
                   subject: Entity("908e820e-55ce-42d0-9980-1251fe0de724"),
                   field: (
                     type_name: "bevy_transform::components::transform::Transform",
-                    path: "::translation",
+                    path: ".translation",
                   ),
                   op: To,
                   value: "2a87bcb2-e824-4026-adf3-addc64782c7f",
@@ -722,7 +722,7 @@
                         subject: Entity("90d72875-f1d4-4af4-bf0e-d19913343106"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::scale",
+                          path: ".scale",
                         ),
                         op: To,
                         value: "280ba916-898a-4092-bd33-46c456808239",
@@ -739,7 +739,7 @@
                         subject: Entity("8f231763-6ed4-45ee-8a0f-78d80ee3f8b0"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::scale",
+                          path: ".scale",
                         ),
                         op: To,
                         value: "8823bcd7-b47a-49e9-8997-8f741d8ff440",
@@ -756,7 +756,7 @@
                         subject: Entity("15860121-b882-4dd0-94d5-6f8563c80178"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::scale",
+                          path: ".scale",
                         ),
                         op: To,
                         value: "8c9e026c-6d67-4d35-91cc-2064b62792e2",
@@ -773,7 +773,7 @@
                         subject: Entity("a2ec0ac9-1cf4-4234-a11e-32bc673db0b4"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::scale",
+                          path: ".scale",
                         ),
                         op: To,
                         value: "94bc6795-f15b-429d-af18-c9048b3389ee",
@@ -790,7 +790,7 @@
                         subject: Entity("f13cccc6-fe99-4b08-83ea-8e2047a3081e"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::scale",
+                          path: ".scale",
                         ),
                         op: To,
                         value: "38dc037f-7f44-41d4-93be-ef245dd139cc",
@@ -807,7 +807,7 @@
                         subject: Entity("b8d1ffdc-abaa-4695-9f3a-e018e054bbb4"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::scale",
+                          path: ".scale",
                         ),
                         op: To,
                         value: "e7acb844-625a-4058-bd5a-0e667703ecbd",
@@ -834,7 +834,7 @@
                         subject: Entity("90d72875-f1d4-4af4-bf0e-d19913343106"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "b277d204-9814-43c4-a526-372c7e94b372",
@@ -851,7 +851,7 @@
                         subject: Entity("8f231763-6ed4-45ee-8a0f-78d80ee3f8b0"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "520542ba-7be7-4f33-9336-917f71b3cfc8",
@@ -868,7 +868,7 @@
                         subject: Entity("15860121-b882-4dd0-94d5-6f8563c80178"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "0094d10d-6449-4c54-b249-de9dc56bede9",
@@ -885,7 +885,7 @@
                         subject: Entity("a2ec0ac9-1cf4-4234-a11e-32bc673db0b4"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "01e563c6-edbf-4c61-84de-6b2239c55b1a",
@@ -902,7 +902,7 @@
                         subject: Entity("f13cccc6-fe99-4b08-83ea-8e2047a3081e"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "b93b691e-c727-4181-ae5d-bf0e29b6bae8",
@@ -919,7 +919,7 @@
                         subject: Entity("b8d1ffdc-abaa-4695-9f3a-e018e054bbb4"),
                         field: (
                           type_name: "bevy_transform::components::transform::Transform",
-                          path: "::rotation",
+                          path: ".rotation",
                         ),
                         op: To,
                         value: "3a7d4b1d-c452-4177-bb14-f8d72ea6598d",

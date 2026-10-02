@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn a_field_is_seeded_once() {
         let subject = SceneUid::Entity(EntityUid::new());
-        let field = FieldRef::new("T", "::x");
+        let field = FieldRef::new("T", ".x");
         let mut subjects = Vec::new();
 
         let first = Uuid::new_v4();
@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn a_failed_pool_stages_nothing() {
         let subject = SceneUid::Entity(EntityUid::new());
-        let field = FieldRef::new("T", "::x");
+        let field = FieldRef::new("T", ".x");
         let mut subjects = Vec::new();
 
         assert!(

@@ -53,12 +53,12 @@ impl EditorScene {
         // animated on its own. Rotation stays whole-`Quat`: animating
         // one quaternion component denormalises it.
         registry
-            .register_bundle(path!(<Transform>::translation::x))
-            .register_bundle(path!(<Transform>::translation::y))
-            .register_bundle(path!(<Transform>::translation::z))
-            .register_bundle(path!(<Transform>::scale::x))
-            .register_bundle(path!(<Transform>::scale::y))
-            .register_bundle(path!(<Transform>::scale::z));
+            .register_bundle(path!(Transform.translation.x))
+            .register_bundle(path!(Transform.translation.y))
+            .register_bundle(path!(Transform.translation.z))
+            .register_bundle(path!(Transform.scale.x))
+            .register_bundle(path!(Transform.scale.y))
+            .register_bundle(path!(Transform.scale.z));
 
         Self {
             scene,

@@ -35,7 +35,7 @@ impl Target {
             let registry = world.resource::<AppTypeRegistry>().read();
             registry.get(field.root_type())?.type_info().type_path()
         };
-        let path = format!("::{}", field.path().replace('.', "::"));
+        let path = format!(".{}", field.path());
         Some(Self {
             subject,
             field: FieldRef::new(TypeName::new(type_path), path),

@@ -31,8 +31,8 @@ struct FieldIcons(HashMap<String, &'static str>);
 
 /// Registering field icons on the app.
 pub trait FieldIconAppExt {
-    /// Binds `icon` to `field`: `field!(<Transform>::translation)`.
-    /// `field!(<Transform>)` is the type itself.
+    /// Binds `icon` to `field`: `field!(Transform.translation)`.
+    /// `field!(Transform)` is the type itself.
     ///
     /// Wins over a [`FieldIcon`] attribute on the same field.
     fn register_field_icon<S: Reflect + GetTypeRegistration, T>(
@@ -158,7 +158,7 @@ fn type_icon(info: &'static TypeInfo) -> Option<&'static str> {
 }
 
 fn segments(path: &str) -> Vec<&str> {
-    path.split("::")
+    path.split('.')
         .filter(|segment| !segment.is_empty())
         .collect()
 }
@@ -167,7 +167,7 @@ fn join(segments: &[&str]) -> String {
     if segments.is_empty() {
         String::new()
     } else {
-        format!("::{}", segments.join("::"))
+        format!(".{}", segments.join("."))
     }
 }
 
@@ -240,7 +240,7 @@ mod tests {
     fn field_attribute_wins_over_parent() {
         let registry = registry();
         assert_eq!(
-            icon(&registry, outer(), "::inner::x"),
+            icon(&registry, outer(), ".inner.x"),
             Some("inner.x")
         );
     }
@@ -249,7 +249,7 @@ mod tests {
     fn unbound_field_falls_back_to_parent() {
         let registry = registry();
         assert_eq!(
-            icon(&registry, outer(), "::inner::y"),
+            icon(&registry, outer(), ".inner.y"),
             Some("outer.inner")
         );
     }
@@ -258,7 +258,7 @@ mod tests {
     fn falls_back_to_the_type_itself() {
         let registry = registry();
         let path = <Rooted as bevy::reflect::TypePath>::type_path();
-        assert_eq!(icon(&registry, path, "::a::y"), Some("root"));
+        assert_eq!(icon(&registry, path, ".a.y"), Some("root"));
         assert_eq!(icon(&registry, path, ""), Some("root"));
     }
 
@@ -266,22 +266,22 @@ mod tests {
     fn nothing_bound_is_none() {
         let registry = registry();
         let path = <Bare as bevy::reflect::TypePath>::type_path();
-        assert_eq!(icon(&registry, path, "::a"), None);
-        assert_eq!(icon(&registry, outer(), "::plain::y"), None);
+        assert_eq!(icon(&registry, path, ".a"), None);
+        assert_eq!(icon(&registry, outer(), ".plain.y"), None);
     }
 
     #[test]
     fn unknown_path_or_type_is_none() {
         let registry = registry();
-        assert_eq!(icon(&registry, outer(), "::nope"), None);
-        assert_eq!(icon(&registry, "not::a::Type", "::a"), None);
+        assert_eq!(icon(&registry, outer(), ".nope"), None);
+        assert_eq!(icon(&registry, "not::a::Type", ".a"), None);
     }
 
     #[test]
     fn unknown_field_still_inherits_from_its_parent() {
         let registry = registry();
         assert_eq!(
-            icon(&registry, outer(), "::inner::nope"),
+            icon(&registry, outer(), ".inner.nope"),
             Some("outer.inner")
         );
     }
@@ -291,11 +291,11 @@ mod tests {
     {
         let registry = registry();
         assert_eq!(
-            icon(&registry, outer(), "::marked::value"),
+            icon(&registry, outer(), ".marked.value"),
             Some("marked")
         );
         assert_eq!(
-            icon(&registry, outer(), "::override_marked::value"),
+            icon(&registry, outer(), ".override_marked.value"),
             Some("field wins")
         );
     }
@@ -304,7 +304,7 @@ mod tests {
     fn walks_into_a_tuple() {
         let registry = registry();
         assert_eq!(
-            icon(&registry, outer(), "::tuple::1"),
+            icon(&registry, outer(), ".tuple.1"),
             Some("tuple")
         );
     }
@@ -315,19 +315,16 @@ mod tests {
         app.register_type::<Outer>()
             .register_type::<Inner>()
             .register_type::<f32>()
-            .register_field_icon(
-                field!(<Outer>::inner::x),
-                "registered",
-            )
-            .register_field_icon(field!(<Outer>::plain), "plain");
+            .register_field_icon(field!(Outer.inner.x), "registered")
+            .register_field_icon(field!(Outer.plain), "plain");
         let registry =
             app.world().resource::<AppTypeRegistry>().read();
         assert_eq!(
-            icon(&registry, outer(), "::inner::x"),
+            icon(&registry, outer(), ".inner.x"),
             Some("registered")
         );
         assert_eq!(
-            icon(&registry, outer(), "::plain::y"),
+            icon(&registry, outer(), ".plain.y"),
             Some("plain")
         );
     }

@@ -56,15 +56,15 @@ impl Plugin for UiPlugin {
                 }),
             ))
             .register_field_icon(
-                field!(<Transform>::translation),
+                field!(Transform.translation),
                 crate::icons::TRANSLATE,
             )
             .register_field_icon(
-                field!(<Transform>::rotation),
+                field!(Transform.rotation),
                 crate::icons::ROTATE,
             )
             .register_field_icon(
-                field!(<Transform>::scale),
+                field!(Transform.scale),
                 crate::icons::SCALE,
             )
             .init_resource::<EditorState>()

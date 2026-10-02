@@ -741,7 +741,7 @@ mod tests {
     fn action(subject: SceneUid, value: Uuid) -> ActionCmd<Backend> {
         ActionCmd {
             subject,
-            field: FieldRef::new(TRANSFORM, "::translation::x"),
+            field: FieldRef::new(TRANSFORM, ".translation.x"),
             op: AnimOp::To,
             value,
             duration: Duration::from_secs(2),
@@ -862,7 +862,7 @@ mod tests {
             [
                 (
                     "Field".to_string(),
-                    "Transform::translation::x".to_string()
+                    "Transform.translation.x".to_string()
                 ),
                 ("Operation".to_string(), "To".to_string()),
             ]
@@ -1172,8 +1172,8 @@ mod tests {
     #[test]
     fn a_field_name_falls_back_to_the_last_type_segment() {
         let world = world_of(scene(Vec::new(), ValuePool::default()));
-        let field = FieldRef::new("some::crate::Thing", "::a::b");
-        assert_eq!(field_name(&world, &field), "Thing::a::b");
+        let field = FieldRef::new("some::crate::Thing", ".a.b");
+        assert_eq!(field_name(&world, &field), "Thing.a.b");
     }
 
     /// Opens the editor on `scene`, with `path` selected.
@@ -1291,7 +1291,7 @@ mod tests {
 
         editor.text("Subject");
         editor.text(&format!("#{head}"));
-        editor.text("Transform::translation::x");
+        editor.text("Transform.translation.x");
         editor.text("To");
         for row in
             ["Duration", "Delay", "Ease", "Interpolation", "Value"]

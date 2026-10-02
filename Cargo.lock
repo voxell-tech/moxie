@@ -1310,7 +1310,7 @@ checksum = "bff34eb29ff4b8a8688bc7299f14fb6b597461ca80fec03ed7d22939ab33e48f"
 
 [[package]]
 name = "bevy_motiongfx"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -2698,9 +2698,9 @@ dependencies = [
 
 [[package]]
 name = "field_path"
-version = "0.4.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36ccac07e4c62197b44fd7161abc6bf6b006c8dc725aeca40fd438e62d0f2ada"
+checksum = "8340120eb9b5bcf1f0ee2075acb5178697398e5a71ff2d7eb3a76aefc9ebf950"
 
 [[package]]
 name = "find-msvc-tools"
@@ -3741,7 +3741,7 @@ dependencies = [
 
 [[package]]
 name = "motiongfx"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "field_path",
  "hashbrown 0.17.1",
@@ -3754,14 +3754,14 @@ dependencies = [
 
 [[package]]
 name = "motiongfx_interp"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "motiongfx_scene"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "educe",
  "hashbrown 0.17.1",

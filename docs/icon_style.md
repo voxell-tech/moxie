@@ -75,9 +75,9 @@ struct Velocity { ... }
 ```
 
 For a type that can't carry it, `app.register_field_icon(
-field!(<Transform>::translation), icons::TRANSLATE)` does the same
+field!(Transform.translation), icons::TRANSLATE)` does the same
 (`field!` is `motiongfx`'s `field_path::field!`), and wins over an
-attribute on the same field. `field!(<Transform>)` binds the type itself.
+attribute on the same field. `field!(Transform)` binds the type itself.
 
 `field_icon` looks up the field's own icon first, then each parent's up
 to the type itself; none found means no icon. Timeline actions show
