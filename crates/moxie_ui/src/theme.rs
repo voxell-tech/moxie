@@ -92,6 +92,8 @@ pub struct Colors {
     pub fill_faint: Color,
     /// Dividers and borders.
     pub hairline: Color,
+    /// The border around a dock area.
+    pub panel_edge: Color,
     /// The overlay a plain surface fades to under the cursor.
     pub hover: Color,
     /// A selected row's surface tint.
@@ -201,6 +203,7 @@ impl Default for EditorTheme {
                 fill: base[8].with_alpha(0.06),
                 fill_faint: base[8].with_alpha(0.03),
                 hairline: base[8].with_alpha(0.08),
+                panel_edge: base[8].with_alpha(0.05),
                 hover: base[8].with_alpha(0.14),
                 selection: palette.blue.with_alpha(0.18),
                 clip: palette.blue.with_alpha(0.5),
@@ -294,6 +297,10 @@ impl SurfaceTokens for EditorTheme {
         self.color.hairline
     }
 
+    fn dock_edge(&self) -> Color {
+        self.color.panel_edge
+    }
+
     fn selection(&self) -> Color {
         self.color.selection
     }
@@ -342,6 +349,10 @@ impl SpacingTokens for EditorTheme {
 
     fn tab_gap(&self) -> f32 {
         self.space.xs
+    }
+
+    fn dock_gap(&self) -> f32 {
+        self.space.sm
     }
 }
 
