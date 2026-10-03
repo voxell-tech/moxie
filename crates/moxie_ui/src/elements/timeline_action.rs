@@ -2,8 +2,10 @@ use bevy::asset::Handle;
 use bevy::color::{Alpha as _, Color};
 use bevy::ecs::component::Component;
 use bevy::ecs::entity::Entity;
+use bevy::ecs::lifecycle::{Add, Remove};
+use bevy::ecs::observer::On;
 use bevy::ecs::query::With;
-use bevy::ecs::system::Query;
+use bevy::ecs::system::{Commands, Query};
 use bevy::ecs::world::World;
 use bevy::image::Image;
 use bevy::math::Vec2;
@@ -95,38 +97,25 @@ pub fn timeline_action(
         let tone = if draft { Tone::Critical } else { Tone::Body };
         let small = theme.text.small;
 
+        let radius = theme.space.radius;
         let action = cx.build(
             placement
                 .apply(frame())
                 .gap(0.0)
                 .align(AlignItems::Center)
                 .overflow(Overflow::clip())
-                .radius(theme.space.radius)
-                .fill(fill)
-                .border_color(border)
-                .when::<Hovered, _>(|frame, theme: &EditorTheme| {
-                    frame.fill(theme.hover())
-                })
-                .when::<Pressed, _>(|frame, theme: &EditorTheme| {
-                    frame.fill(theme.pressed())
-                })
-                .when::<Dragged, _>(move |frame, _: &EditorTheme| {
-                    frame.fill(dragged_fill).border_color(
-                        border.with_alpha(DRAGGED_FILL_ALPHA),
-                    )
-                })
-                // After the dragged rule, so a selected clip keeps
-                // its look while it is dragged.
-                .when::<Selected, _>(selected_look),
+                // A rule that waits on the hover has the bar report
+                // it, for what shows only over the bar.
+                .when::<Hovered, _>(|frame, _: &EditorTheme| frame),
         );
         cx.world.entity_mut(action).insert((
             ButtonBehavior,
             EntityCursor(SystemCursorIcon::Pointer),
             ActionClip,
         ));
-        outline(cx.world, action, selected);
-        // Takes what the bar has left, so a view built beside it
-        // under the bar keeps its own width.
+        // The surface. It takes what the bar has left, so a view
+        // built beside it under the bar keeps its own width and is
+        // not drawn over.
         let body = cx.under(action, |cx| {
             cx.build(
                 frame()
@@ -136,10 +125,52 @@ pub fn timeline_action(
                     .padding(UiRect::left(px(4.0)))
                     .gap(0.0)
                     .align(AlignItems::Center)
-                    .overflow(Overflow::clip()),
+                    .overflow(Overflow::clip())
+                    .radius(radius)
+                    .fill(fill)
+                    .border_color(border)
+                    .when::<Hovered, _>(
+                        |frame, theme: &EditorTheme| {
+                            frame.fill(theme.hover())
+                        },
+                    )
+                    .when::<Pressed, _>(
+                        |frame, theme: &EditorTheme| {
+                            frame.fill(theme.pressed())
+                        },
+                    )
+                    .when::<Dragged, _>(
+                        move |frame, _: &EditorTheme| {
+                            frame.fill(dragged_fill).border_color(
+                                border.with_alpha(DRAGGED_FILL_ALPHA),
+                            )
+                        },
+                    )
+                    // After the dragged rule, so a selected clip
+                    // keeps its look while it is dragged.
+                    .when::<Selected, _>(selected_look),
             )
         });
         cx.world.entity_mut(body).insert(ActionBody);
+        outline(cx.world, body, false);
+        // The bar is what is selected, and the body what shows it.
+        cx.world
+            .entity_mut(action)
+            .observe(
+                move |_: On<Add, Selected>,
+                      mut commands: Commands| {
+                    commands.entity(body).try_insert(Selected);
+                },
+            )
+            .observe(
+                move |_: On<Remove, Selected>,
+                      mut commands: Commands| {
+                    commands.entity(body).try_remove::<Selected>();
+                },
+            );
+        if selected {
+            cx.world.entity_mut(action).insert(Selected);
+        }
         cx.under(body, |cx| {
             if let Some(glyph) = glyph {
                 let hugged = !glyph.subscript.is_empty();
@@ -502,25 +533,26 @@ mod tests {
 
         let ui = app.world().get::<Node>(node).unwrap();
         assert_eq!(ui.width, px(60.0));
-        assert_eq!(ui.border, UiRect::all(px(1.0)));
         assert_eq!(name_of(&app, node), name);
         assert_eq!(app.world().get::<Text>(name).unwrap().0, "60");
     }
 
     #[test]
-    fn selecting_recolours_the_border_and_keeps_its_width() {
+    fn selecting_recolours_the_bodys_border_and_keeps_its_width() {
         let mut app = app();
         let node = mounted(&mut app, false, false);
         app.update();
-        let rest = edge(&app, node);
-        let width = app.world().get::<Node>(node).unwrap().border;
+        let body = app.world().get::<Children>(node).unwrap()[0];
+        let rest = edge(&app, body);
+        let width = app.world().get::<Node>(body).unwrap().border;
 
         app.world_mut().entity_mut(node).insert(Selected);
         app.update();
+        app.update();
 
-        assert_ne!(edge(&app, node), rest);
+        assert_ne!(edge(&app, body), rest);
         assert_eq!(
-            app.world().get::<Node>(node).unwrap().border,
+            app.world().get::<Node>(body).unwrap().border,
             width
         );
     }
