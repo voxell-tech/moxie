@@ -169,7 +169,7 @@ fn setup_editor_ui(
     //
     let viewport = tree.set_root_leaf(
         DockLeaf::new("viewport", DockAreaStyle::TabBar)
-            .with_windows(vec!["viewport".into(), "preview".into()]),
+            .with_windows(vec!["viewport".into()]),
     );
 
     tree.split(viewport, Edge::Bottom, "timeline".into());
@@ -203,6 +203,8 @@ fn setup_editor_ui(
     if let Some(hsplit) = tree.parent_of(viewport) {
         tree.set_fraction(hsplit, 0.2);
     }
+
+    tree.split(viewport, Edge::Right, "preview".into());
 }
 
 /// Mounts the top bar over the dock, on the UI camera. Runs after
