@@ -13,7 +13,7 @@ use bevy_motiongfx::scene::backend::{
     default_scene_registry,
 };
 use bevy_motiongfx::scene::value_pool::ValuePool;
-use motiongfx_scene::block::{ActionCmd, Block, Node};
+use motiongfx_scene::block::{ActionCmd, Block, Combinator, Node};
 use motiongfx_scene::error::CompileError;
 use motiongfx_scene::scene::{Scene, Stage};
 
@@ -43,7 +43,8 @@ pub(crate) struct SceneVersion {
 }
 
 impl EditorScene {
-    pub fn new(scene: MotionGfxScene) -> Self {
+    pub fn new(mut scene: MotionGfxScene) -> Self {
+        normalize(&mut scene.0.animation);
         static NEXT_GENERATION: AtomicU32 = AtomicU32::new(0);
         let generation =
             NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
@@ -96,6 +97,48 @@ pub(crate) fn scene_dirty(
     let dirty = *seen != Some(scene.version);
     *seen = Some(scene.version);
     dirty
+}
+
+/// Brings `animation` into the editor's shape: an `All` root holding
+/// only `Chain` tracks, at least one. A root already of that shape
+/// is left alone; any other becomes the first track, as itself if
+/// it is a `Chain` and inside a new one otherwise.
+pub(crate) fn normalize(animation: &mut Block<Backend>) {
+    let is_track = |node: &Node<Backend>| {
+        matches!(
+            node,
+            Node::Block { block, .. }
+                if block.combinator == Combinator::Chain
+        )
+    };
+    if animation.combinator != Combinator::All
+        || !animation.children.iter().all(is_track)
+    {
+        let old = core::mem::replace(
+            animation,
+            Block {
+                combinator: Combinator::All,
+                children: Vec::new(),
+                name: None,
+            },
+        );
+        let track = if old.combinator == Combinator::Chain {
+            old
+        } else {
+            Block::chain(vec![Node::block(old)])
+        };
+        animation.children.push(Node::block(track));
+    }
+    if animation.children.is_empty() {
+        animation
+            .children
+            .push(Node::block(Block::chain(Vec::new())));
+    }
+}
+
+/// Whether `path` names a track: a direct child of the root.
+pub(crate) fn is_track(path: &[usize]) -> bool {
+    path.len() == 1
 }
 
 impl Default for EditorScene {
@@ -257,5 +300,116 @@ fn matches_error(
         CompileError::UnknownInterp(interp) => {
             action.interp == Some(*interp)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::time::Duration;
+
+    use super::*;
+
+    fn draft() -> Node<Backend> {
+        Node::draft(Duration::from_secs(1))
+    }
+
+    fn track(children: Vec<Node<Backend>>) -> Node<Backend> {
+        Node::block(Block::chain(children))
+    }
+
+    fn root(
+        combinator: Combinator,
+        children: Vec<Node<Backend>>,
+    ) -> Block<Backend> {
+        Block {
+            combinator,
+            children,
+            name: None,
+        }
+    }
+
+    #[test]
+    fn a_new_scene_starts_with_one_empty_track() {
+        let editor = EditorScene::default();
+        let animation = &editor.scene().0.animation;
+
+        assert_eq!(animation.combinator, Combinator::All);
+        assert_eq!(animation.children, vec![track(Vec::new())]);
+    }
+
+    #[test]
+    fn a_root_in_shape_is_left_alone() {
+        let mut animation = root(
+            Combinator::All,
+            vec![track(vec![draft()]), track(Vec::new())],
+        );
+        let before = animation.clone();
+        normalize(&mut animation);
+
+        assert_eq!(animation, before);
+    }
+
+    #[test]
+    fn an_old_chain_root_becomes_the_first_track() {
+        let mut old = Block::chain(vec![draft(), draft()]);
+        old.name = Some("Main".into());
+        let mut animation = old.clone();
+        normalize(&mut animation);
+
+        assert_eq!(animation.combinator, Combinator::All);
+        assert_eq!(animation.name, None);
+        assert_eq!(animation.children, vec![Node::block(old)]);
+    }
+
+    #[test]
+    fn an_old_root_of_another_kind_is_wrapped_in_a_track() {
+        for combinator in [
+            Combinator::All,
+            Combinator::Flow(Duration::from_secs(1)),
+        ] {
+            // An `All` holding a non-track is not in shape either.
+            let old = root(combinator, vec![draft()]);
+            let mut animation = old.clone();
+            normalize(&mut animation);
+
+            assert_eq!(animation.combinator, Combinator::All);
+            assert_eq!(
+                animation.children,
+                vec![track(vec![Node::block(old)])]
+            );
+        }
+    }
+
+    #[test]
+    fn an_all_root_with_a_stray_child_is_wrapped_whole() {
+        let old = root(
+            Combinator::All,
+            vec![track(vec![draft()]), draft()],
+        );
+        let mut animation = old.clone();
+        normalize(&mut animation);
+
+        assert_eq!(
+            animation.children,
+            vec![track(vec![Node::block(old)])]
+        );
+    }
+
+    #[test]
+    fn an_all_root_without_tracks_gets_an_empty_one() {
+        let mut animation = root(Combinator::All, Vec::new());
+        normalize(&mut animation);
+
+        assert_eq!(animation.children, vec![track(Vec::new())]);
+    }
+
+    #[test]
+    fn normalizing_twice_changes_nothing_more() {
+        let mut animation = Block::chain(vec![draft()]);
+        normalize(&mut animation);
+        let once = animation.clone();
+        normalize(&mut animation);
+
+        assert_eq!(animation, once);
     }
 }

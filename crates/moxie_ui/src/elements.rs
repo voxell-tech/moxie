@@ -20,6 +20,7 @@ mod time_tick;
 mod timeline_action;
 mod timeline_block;
 mod timeline_gap;
+mod timeline_lane;
 mod timeline_link;
 mod timeline_track;
 
@@ -38,5 +39,6 @@ pub use timeline_action::{
 };
 pub use timeline_block::{Selected, timeline_block};
 pub use timeline_gap::timeline_gap;
+pub use timeline_lane::{timeline_lane, timeline_span};
 pub use timeline_link::timeline_link;
 pub use timeline_track::timeline_track;

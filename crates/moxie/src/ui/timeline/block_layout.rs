@@ -1,6 +1,7 @@
 //! Lays a scene's [`Block`] tree out as nested boxes. A block is a
 //! bordered container spanning its time range, holding its children
-//! as filled bars (actions) or nested containers (blocks).
+//! as filled bars (actions) or nested containers (blocks). The root
+//! has no box of its own to draw, and each track under it is a lane.
 //!
 //! Horizontal position always comes straight from a node's resolved
 //! start time ([`TimelineView`]). Nesting only affects the vertical
@@ -18,7 +19,13 @@ use crate::TimelineView;
 use crate::subject::Target;
 
 /// Height of a block's header strip.
-pub(crate) const HEADER_HEIGHT: f32 = 24.0;
+const HEADER_HEIGHT: f32 = 24.0;
+
+/// Height of the header strip over the block at `path`; the root has
+/// none.
+pub(crate) fn header_height(path: &[usize]) -> f32 {
+    if path.is_empty() { 0.0 } else { HEADER_HEIGHT }
+}
 
 /// The right-angle line from the middle of the flow gap between two
 /// siblings' slot starts, down to this one's row and along to its own
@@ -69,7 +76,8 @@ pub(crate) struct Placed {
     pub(crate) gap_x: Option<f32>,
     /// `Some` for a flow block's child after the first.
     pub(crate) link: Option<Link>,
-    /// The enclosing block's box, `None` for the root.
+    /// The enclosing block's box, `None` for the root and its
+    /// tracks.
     pub(crate) parent: Option<Bounds>,
     /// This node's position in `animation`'s tree: child index at
     /// each depth, root first. What [`crate::SelectedAction`]
@@ -138,9 +146,8 @@ impl Placed {
 }
 
 /// Every box in `animation`'s tree, depth-first. `animation` itself
-/// gets a box too, at depth `0`, as the timeline's outer frame - an
-/// empty root skips even that, since a combinator with nothing under
-/// it yet has nothing worth a box of its own.
+/// is the first, at depth `0`: the frame the tracks stack in, with no
+/// header strip.
 ///
 /// `folded` names every block whose children are collapsed away - its
 /// duration is unaffected, only its height and its children's boxes.
@@ -197,13 +204,13 @@ enum MeasuredKind {
     },
 }
 
-/// A block's own header text: its name if set, its combinator
-/// otherwise.
-fn block_label(block: &Block<Backend>) -> String {
-    block
-        .name
-        .clone()
-        .unwrap_or_else(|| combinator_label(&block.combinator))
+/// A block's own header text: its name if set, otherwise "Track N"
+/// for a track and its combinator for any other block.
+fn block_label(block: &Block<Backend>, path: &[usize]) -> String {
+    block.name.clone().unwrap_or_else(|| match path {
+        [track] => format!("Track {}", track + 1),
+        _ => combinator_label(&block.combinator),
+    })
 }
 
 fn combinator_label(combinator: &Combinator) -> String {
@@ -323,6 +330,12 @@ fn measure_block(
             path,
         )
     };
+    // A track keeps a row of room even when empty, to drop onto.
+    let content_height = if path.len() == 1 && !is_folded {
+        content_height.max(space.action_row)
+    } else {
+        content_height
+    };
     Measured {
         start,
         end: start.saturating_add(block_duration(block)),
@@ -330,9 +343,9 @@ fn measure_block(
         // root, which calls this directly with no `Node::Block`
         // delay to carry.
         gap: Duration::ZERO,
-        height: HEADER_HEIGHT + content_height,
+        height: header_height(path) + content_height,
         kind: MeasuredKind::Block {
-            label: block_label(block),
+            label: block_label(block, path),
             folded: is_folded,
             flow: matches!(block.combinator, Combinator::Flow(_)),
             children,
@@ -405,12 +418,16 @@ fn measure_children(
         // `All`/`Flow` children can genuinely overlap in time, so
         // each always gets its own dedicated row.
         Combinator::All | Combinator::Flow(_) => {
+            // Tracks butt up against one another; their lanes carry
+            // the hairline between them.
+            let gap =
+                if path.is_empty() { 0.0 } else { space.lane_gap };
             let mut y = 0.0;
             measured
                 .iter()
                 .map(|m| {
                     let this = y;
-                    y += m.height + space.lane_gap;
+                    y += m.height + gap;
                     this
                 })
                 .collect()
@@ -502,7 +519,7 @@ fn flatten(
                 parent,
                 path: path.clone(),
             });
-            let content_top = y + HEADER_HEIGHT;
+            let content_top = y + header_height(path);
             for (i, (lane_y, child)) in children.iter().enumerate() {
                 let link = children
                     .get(i.wrapping_sub(1))
@@ -530,7 +547,9 @@ fn flatten(
                     child,
                     content_top + lane_y,
                     depth + 1,
-                    Some(Bounds { x, y, w }),
+                    // The root has no box, so a track is placed in
+                    // plain pixels.
+                    (depth > 0).then_some(Bounds { x, y, w }),
                     view,
                     path,
                     out,

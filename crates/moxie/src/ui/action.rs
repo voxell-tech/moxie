@@ -318,11 +318,13 @@ fn block_shape(
         edits.push(("Delay".to_string(), Edit::Delay));
     }
 
+    let fixed = path.len() <= 1;
     Shape {
         path: Some(path),
         kind: "Block",
         subject: None,
-        combinator: Some(combinator_name(&block.combinator)),
+        combinator: (!fixed)
+            .then(|| combinator_name(&block.combinator)),
         value: None,
         rows: Vec::new(),
         edits,
@@ -447,8 +449,7 @@ impl Source for Property {
         let scene = world.get_resource::<EditorScene>()?.scene();
 
         // The root has no `Node` of its own, so no `Ease`, `Interp`,
-        // `Duration` or `Delay` - only ever reached for its own
-        // `Stagger` and `Name`.
+        // `Duration` or `Delay` - only ever reached for its `Name`.
         if self.path.is_empty() {
             return match self.edit {
                 Edit::Name => Some(Box::new(
@@ -459,9 +460,7 @@ impl Source for Property {
                         .clone()
                         .unwrap_or_default(),
                 )),
-                _ => Some(Box::new(stagger_seconds(
-                    &scene.0.animation,
-                )?)),
+                _ => None,
             };
         }
         let node = node_at(&scene.0.animation, &self.path)?;
@@ -503,18 +502,10 @@ impl Source for Property {
         let scene = editor.edit();
 
         if self.path.is_empty() {
-            match self.edit {
-                Edit::Name => {
-                    if let Some(value) = String::from_reflect(value) {
-                        scene.0.animation.name = named(value);
-                    }
-                }
-                _ => {
-                    if let Some(value) = f32::from_reflect(value) {
-                        scene.0.animation.combinator =
-                            Combinator::Flow(clamp_seconds(value));
-                    }
-                }
+            if self.edit == Edit::Name
+                && let Some(value) = String::from_reflect(value)
+            {
+                scene.0.animation.name = named(value);
             }
             return;
         }
@@ -626,7 +617,11 @@ fn set_seconds(
         | (Edit::Delay, Node::Draft { delay, .. }) => {
             *delay = Some(seconds);
         }
-        (Edit::Stagger, Node::Block { block, .. }) => {
+        // Only a flow has a stagger to set; any other combinator
+        // is the Type picker's to change.
+        (Edit::Stagger, Node::Block { block, .. })
+            if matches!(block.combinator, Combinator::Flow(_)) =>
+        {
             block.combinator = Combinator::Flow(seconds);
         }
         (Edit::Duration, Node::Action { action, .. }) => {
@@ -665,8 +660,9 @@ fn field_name(world: &World, field: &FieldRef) -> String {
     format!("{name}{}", field.path())
 }
 
-/// Writes the block at `path` (the tree's own root, if empty) onto
-/// whichever of Chain/All/Flow the Type picker's `index` names.
+/// Writes the block at `path` onto whichever of Chain/All/Flow the
+/// Type picker's `index` names. The root and the tracks are left as
+/// they are.
 /// Switching into Flow seeds a default stagger; switching out of it
 /// drops whatever stagger it had.
 fn set_combinator(world: &mut World, path: &[usize], index: usize) {
@@ -674,6 +670,9 @@ fn set_combinator(world: &mut World, path: &[usize], index: usize) {
     else {
         return;
     };
+    if path.len() <= 1 {
+        return;
+    }
     let scene = editor.edit();
 
     let combinator = match index {
@@ -682,10 +681,6 @@ fn set_combinator(world: &mut World, path: &[usize], index: usize) {
         _ => Combinator::Flow(DEFAULT_STAGGER),
     };
 
-    if path.is_empty() {
-        scene.0.animation.combinator = combinator;
-        return;
-    }
     if let Some(Node::Block { block, .. }) =
         node_at_mut(&mut scene.0.animation, path)
     {
@@ -725,9 +720,18 @@ mod tests {
             stage: Stage {
                 subjects: Vec::new(),
             },
-            animation: Block::chain(children),
+            animation: Block {
+                combinator: Combinator::All,
+                children: vec![Node::block(Block::chain(children))],
+                name: None,
+            },
             values,
         })
+    }
+
+    /// `path` inside the one track `scene` puts its nodes in.
+    fn in_track(path: &[usize]) -> Vec<usize> {
+        [&[0][..], path].concat()
     }
 
     fn draft(delay: Option<Duration>) -> Node<Backend> {
@@ -769,7 +773,7 @@ mod tests {
 
     fn property(path: &[usize], edit: Edit) -> Property {
         Property {
-            path: path.to_vec(),
+            path: in_track(path),
             edit,
         }
     }
@@ -784,7 +788,9 @@ mod tests {
 
     fn node(world: &World, path: &[usize]) -> Node<Backend> {
         let scene = world.resource::<EditorScene>().scene();
-        node_at(&scene.0.animation, path).expect("there").clone()
+        node_at(&scene.0.animation, &in_track(path))
+            .expect("there")
+            .clone()
     }
 
     fn action_world() -> (World, Uuid) {
@@ -851,7 +857,8 @@ mod tests {
     #[test]
     fn an_action_summarizes_with_its_own_rows_and_edits() {
         let (world, id) = action_world();
-        let shape = summarize(&world, &[0]).expect("an action");
+        let shape =
+            summarize(&world, &in_track(&[0])).expect("an action");
 
         assert_eq!(shape.kind, "Action");
         assert_eq!(shape.value, Some(Pooled(id)));
@@ -886,7 +893,8 @@ mod tests {
             vec![Node::action(action(subject, id))],
             values,
         ));
-        let shape = summarize(&world, &[0]).expect("an action");
+        let shape =
+            summarize(&world, &in_track(&[0])).expect("an action");
         assert!(
             shape.edits.iter().all(|(_, edit)| *edit != Edit::Delay)
         );
@@ -895,14 +903,21 @@ mod tests {
     #[test]
     fn a_block_summarizes_by_its_combinator() {
         let (world, _) = action_world();
-        let flow = summarize(&world, &[1]).expect("a block");
+        let flow =
+            summarize(&world, &in_track(&[1])).expect("a block");
         assert_eq!(flow.kind, "Block");
         assert_eq!(flow.combinator, Some("Flow"));
         assert_eq!(flow.edits[0].1, Edit::Stagger);
+    }
 
-        let root = summarize(&world, &[]).expect("the root");
-        assert_eq!(root.combinator, Some("Chain"));
-        assert!(root.edits.is_empty(), "no stagger, no delay");
+    #[test]
+    fn the_root_and_a_track_show_no_type_picker() {
+        let (world, _) = action_world();
+        for path in [&[][..], &[0][..]] {
+            let shape = summarize(&world, path).expect("a block");
+            assert_eq!(shape.combinator, None);
+            assert!(shape.edits.is_empty(), "no stagger, no delay");
+        }
     }
 
     #[test]
@@ -911,7 +926,8 @@ mod tests {
             vec![draft(Some(Duration::ZERO))],
             ValuePool::default(),
         ));
-        let shape = summarize(&world, &[0]).expect("a draft");
+        let shape =
+            summarize(&world, &in_track(&[0])).expect("a draft");
         assert_eq!(shape.kind, "Draft");
         assert_eq!(shape.value, None);
         assert_eq!(shape.rows[0].1, "Unassigned");
@@ -922,8 +938,8 @@ mod tests {
     #[test]
     fn a_path_off_the_tree_summarizes_to_nothing() {
         let (world, _) = action_world();
-        assert!(summarize(&world, &[7]).is_none());
-        assert!(summarize(&world, &[1, 1]).is_none());
+        assert!(summarize(&world, &in_track(&[7])).is_none());
+        assert!(summarize(&world, &in_track(&[1, 1])).is_none());
         let shape = shape(&world);
         assert_eq!(shape.path, None, "nothing is selected");
     }
@@ -931,19 +947,19 @@ mod tests {
     #[test]
     fn the_shape_follows_the_selection_not_the_numbers() {
         let (mut world, _) = action_world();
-        world.insert_resource(SelectedAction(Some(vec![0])));
+        world.insert_resource(SelectedAction(Some(in_track(&[0]))));
         let before = shape(&world);
 
         let duration = property(&[0], Edit::Duration);
         duration.set(&mut world, &9.0f32);
         assert!(shape(&world) == before, "a number is no rebuild");
 
-        world.insert_resource(SelectedAction(Some(vec![1])));
+        world.insert_resource(SelectedAction(Some(in_track(&[1]))));
         assert!(shape(&world) != before);
 
-        world.insert_resource(SelectedAction(Some(vec![7])));
+        world.insert_resource(SelectedAction(Some(in_track(&[7]))));
         assert_eq!(shape(&world).kind, "");
-        assert_eq!(shape(&world).path, Some(vec![7]));
+        assert_eq!(shape(&world).path, Some(in_track(&[7])));
     }
 
     #[test]
@@ -994,19 +1010,41 @@ mod tests {
     }
 
     #[test]
-    fn the_root_edits_its_own_name_and_stagger() {
+    fn the_root_edits_its_own_name_only() {
         let (mut world, _) = action_world();
-        let name = property(&[], Edit::Name);
+        let root = |edit| Property {
+            path: Vec::new(),
+            edit,
+        };
+        let name = root(Edit::Name);
         assert_eq!(read::<String>(&name, &world), "");
 
         name.set(&mut world, &"  Intro  ".to_string());
         assert_eq!(read::<String>(&name, &world), "Intro");
 
-        // The root is a chain, so there is no stagger to read.
-        let stagger = property(&[], Edit::Stagger);
+        let stagger = root(Edit::Stagger);
         assert!(stagger.get(&world).is_none());
         stagger.set(&mut world, &0.2f32);
-        assert_eq!(read::<f32>(&stagger, &world), 0.2);
+        let scene = world.resource::<EditorScene>().scene();
+        assert_eq!(scene.0.animation.combinator, Combinator::All);
+    }
+
+    #[test]
+    fn a_stagger_never_turns_a_chain_into_a_flow() {
+        let (mut world, _) = action_world();
+        let track = Property {
+            path: vec![0],
+            edit: Edit::Stagger,
+        };
+        track.set(&mut world, &0.2f32);
+
+        let scene = world.resource::<EditorScene>().scene();
+        let Some(Node::Block { block, .. }) =
+            node_at(&scene.0.animation, &[0])
+        else {
+            panic!("a track");
+        };
+        assert_eq!(block.combinator, Combinator::Chain);
     }
 
     #[test]
@@ -1128,7 +1166,7 @@ mod tests {
         let (mut world, _) = action_world();
         let combinator = |world: &World| {
             let scene = world.resource::<EditorScene>().scene();
-            match node_at(&scene.0.animation, &[1]) {
+            match node_at(&scene.0.animation, &in_track(&[1])) {
                 Some(Node::Block { block, .. }) => {
                     block.combinator.clone()
                 }
@@ -1136,28 +1174,41 @@ mod tests {
             }
         };
 
-        set_combinator(&mut world, &[1], 0);
+        set_combinator(&mut world, &in_track(&[1]), 0);
         assert!(matches!(combinator(&world), Combinator::Chain));
-        set_combinator(&mut world, &[1], 1);
+        set_combinator(&mut world, &in_track(&[1]), 1);
         assert!(matches!(combinator(&world), Combinator::All));
-        set_combinator(&mut world, &[1], 2);
+        set_combinator(&mut world, &in_track(&[1]), 2);
         assert!(matches!(
             combinator(&world),
             Combinator::Flow(stagger) if stagger == DEFAULT_STAGGER
         ));
+    }
 
-        set_combinator(&mut world, &[], 1);
-        let scene = world.resource::<EditorScene>().scene();
-        assert!(matches!(
-            scene.0.animation.combinator,
-            Combinator::All
-        ));
+    #[test]
+    fn the_type_picker_keeps_the_root_all_and_tracks_chain() {
+        let (mut world, _) = action_world();
+        for path in [&[][..], &[0][..]] {
+            for index in 0..3 {
+                set_combinator(&mut world, path, index);
+            }
+        }
+
+        let animation =
+            &world.resource::<EditorScene>().scene().0.animation;
+        assert_eq!(animation.combinator, Combinator::All);
+        let Some(Node::Block { block, .. }) =
+            node_at(animation, &[0])
+        else {
+            panic!("a track");
+        };
+        assert_eq!(block.combinator, Combinator::Chain);
     }
 
     #[test]
     fn the_type_picker_leaves_an_action_alone() {
         let (mut world, _) = action_world();
-        set_combinator(&mut world, &[0], 2);
+        set_combinator(&mut world, &in_track(&[0]), 2);
         assert!(matches!(node(&world, &[0]), Node::Action { .. }));
     }
 
@@ -1218,7 +1269,7 @@ mod tests {
                 vec![draft(Some(Duration::from_secs(1)))],
                 ValuePool::default(),
             ),
-            Some(vec![0]),
+            Some(vec![0, 0]),
         );
         editor.text("Duration");
         editor.text("Delay");
@@ -1233,7 +1284,7 @@ mod tests {
                 vec![Node::block(Block::chain(vec![draft(None)]))],
                 ValuePool::default(),
             ),
-            Some(vec![0]),
+            Some(vec![0, 0]),
         );
         editor.text("Type");
         // The timeline names the block too, so there is more than
@@ -1249,7 +1300,8 @@ mod tests {
             .0
             .animation
             .clone();
-        let Some(Node::Block { block, .. }) = node_at(&scene, &[0])
+        let Some(Node::Block { block, .. }) =
+            node_at(&scene, &[0, 0])
         else {
             panic!("a block");
         };
@@ -1286,7 +1338,7 @@ mod tests {
         )));
         editor
             .world()
-            .insert_resource(SelectedAction(Some(vec![0])));
+            .insert_resource(SelectedAction(Some(vec![0, 0])));
         editor.step(SETTLE);
 
         editor.text("Subject");
@@ -1308,7 +1360,7 @@ mod tests {
     fn typing_a_number_leaves_the_panel_standing() {
         let mut editor = selecting(
             scene(vec![draft(None)], ValuePool::default()),
-            Some(vec![0]),
+            Some(vec![0, 0]),
         );
         let duration = editor.text("Duration");
 

@@ -59,6 +59,34 @@ pub(super) fn empty_blocks(
     }
 }
 
+/// [`empty_blocks`] inside every track of `root`, which keeps each
+/// track itself even when empty.
+pub(super) fn in_tracks(
+    root: &mut Block<Backend>,
+    keep: &mut Option<Vec<usize>>,
+) {
+    for (track, node) in root.children.iter_mut().enumerate() {
+        let SceneNode::Block { block, .. } = node else {
+            continue;
+        };
+        let mut inner = match keep.as_deref() {
+            Some([first, rest @ ..]) if *first == track => {
+                Some(rest.to_vec())
+            }
+            _ => None,
+        };
+        empty_blocks(block, &mut inner);
+        if keep.as_deref().and_then(<[usize]>::first) == Some(&track)
+        {
+            *keep = inner.map(|rest| {
+                let mut path = vec![track];
+                path.extend(rest);
+                path
+            });
+        }
+    }
+}
+
 /// Drops any `Stage` entry no surviving action still animates -
 /// staging only ever appends when an action is created ([`create`](
 /// super::create)), so deleting the last action on a field otherwise
@@ -180,6 +208,38 @@ mod tests {
         ]);
         let mut keep = Some(vec![0, 1]);
         empty_blocks(&mut root, &mut keep);
+        assert_eq!(keep, Some(vec![0, 0]));
+    }
+
+    #[test]
+    fn an_emptied_track_stays() {
+        let mut root = Block::chain(vec![
+            block(vec![block(vec![])]),
+            block(vec![]),
+        ]);
+        let mut keep = Some(vec![1]);
+        in_tracks(&mut root, &mut keep);
+
+        assert_eq!(root.children.len(), 2);
+        assert_eq!(keep, Some(vec![1]));
+        let SceneNode::Block { block, .. } = &root.children[0] else {
+            panic!("a track");
+        };
+        assert!(block.children.is_empty(), "its empty block went");
+    }
+
+    #[test]
+    fn in_tracks_rebases_kept_within_its_track() {
+        let mut root = Block::chain(vec![
+            block(vec![leaf()]),
+            block(vec![block(vec![]), leaf()]),
+        ]);
+        let mut keep = Some(vec![1, 1]);
+        in_tracks(&mut root, &mut keep);
+        assert_eq!(keep, Some(vec![1, 0]));
+
+        let mut keep = Some(vec![0, 0]);
+        in_tracks(&mut root, &mut keep);
         assert_eq!(keep, Some(vec![0, 0]));
     }
 

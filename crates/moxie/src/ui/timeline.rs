@@ -35,7 +35,8 @@ use motiongfx_scene::refs::FieldRef;
 use moxie_ui::drag::Dragged;
 use moxie_ui::elements::{
     ActionGlyph, Placement, playhead_line, time_label, time_tick,
-    timeline_action, timeline_block, timeline_gap, timeline_link,
+    timeline_action, timeline_block, timeline_gap, timeline_lane,
+    timeline_link, timeline_span,
 };
 use moxie_ui::field_icon::{field_icon, root_hue};
 use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
@@ -50,6 +51,7 @@ use crate::playback::{
     on_track_click_release, on_track_drag, on_track_press,
     on_track_release,
 };
+use crate::scene::is_track;
 use crate::subject::Caption;
 use crate::{EditorScene, EditorState, SelectedAction, TimelineView};
 
@@ -425,8 +427,9 @@ fn block_view(world: &World, space: Spacing) -> BlockKey {
     (block_placements(world, space), selected, tick)
 }
 
-/// The boxes, nested the way the tree is: a block's header holds its
-/// children, and an action leaf is its own box. Either outlines in
+/// The boxes: a lane per track, and in it the tree nested the way it
+/// is. A block's header holds its children, and an action leaf is its
+/// own box. Either outlines in
 /// the theme's accent when [`SelectedAction`] names its path, and
 /// clicking either writes that path in; only the action also lights
 /// up under the cursor.
@@ -456,7 +459,7 @@ fn block_boxes(key: &BlockKey) -> AnyView<Bevy, EditorTheme> {
         } else {
             tree.nodes(0).0
         };
-        cx.build(row(views).gap(0.0))
+        cx.build(row(views).width(percent(100.0)).gap(0.0))
     })
 }
 
@@ -479,6 +482,12 @@ impl Tree<'_> {
         at: usize,
     ) -> (Vec<AnyView<Bevy, EditorTheme>>, usize) {
         let placed = &self.placements[at];
+        if placed.path.is_empty() {
+            return self.root(at);
+        }
+        if is_track(&placed.path) {
+            return self.track(at);
+        }
         let is_selected = self.selected == Some(&placed.path);
         let mut views = Vec::new();
         let mut next = at + 1;
@@ -486,9 +495,7 @@ impl Tree<'_> {
         // Built at zero width even with no delay yet, so a live
         // drag that opens one up has a node already in place to
         // grow.
-        if !placed.path.is_empty() {
-            views.push(self.gap(placed));
-        }
+        views.push(self.gap(placed));
         if let Some([left, top, width, height]) = placed.link_rect() {
             views.push(
                 timeline_link(
@@ -501,12 +508,10 @@ impl Tree<'_> {
         }
 
         if placed.label.is_some() {
-            let mut inside = vec![self.header(placed)];
-            // The root's box has no `delay` of its own to drag -
-            // it always starts at zero.
-            if !placed.path.is_empty() {
-                inside.push(self.edge(placed, retime::Kind::Delay));
-            }
+            let mut inside = vec![
+                self.header(placed),
+                self.edge(placed, retime::Kind::Delay),
+            ];
             while self.placements.get(next).is_some_and(|child| {
                 child.path.len() > placed.path.len()
             }) {
@@ -520,6 +525,89 @@ impl Tree<'_> {
         }
 
         (views, next)
+    }
+
+    /// The lanes of every track under the root, then the button that
+    /// adds one. The root draws nothing of its own.
+    fn root(
+        &self,
+        at: usize,
+    ) -> (Vec<AnyView<Bevy, EditorTheme>>, usize) {
+        let mut views = Vec::new();
+        let mut next = at + 1;
+        while next < self.placements.len() {
+            let (lane, after) = self.nodes(next);
+            views.extend(lane);
+            next = after;
+        }
+        views.push(self.add_track(self.placements[at].h));
+        (views, next)
+    }
+
+    /// One track as a full-width lane: its strip, the time range its
+    /// nodes sit in, and its header at the lane's left edge.
+    fn track(
+        &self,
+        at: usize,
+    ) -> (Vec<AnyView<Bevy, EditorTheme>>, usize) {
+        let placed = &self.placements[at];
+        let is_selected = self.selected == Some(&placed.path);
+        let mut inside = Vec::new();
+        let mut next = at + 1;
+        while self
+            .placements
+            .get(next)
+            .is_some_and(|child| child.path.len() > placed.path.len())
+        {
+            let (nested, after) = self.nodes(next);
+            inside.extend(nested);
+            next = after;
+        }
+
+        let secs = placed.x;
+        let span = (
+            resource::<TimelineView, _>(move |view| {
+                px(view.x_from_time(Duration::ZERO)
+                    + secs * view.px_per_second)
+            }),
+            resource::<TimelineView, _>({
+                let secs = placed.w;
+                move |view| px(secs * view.px_per_second)
+            }),
+        );
+        let views = vec![
+            timeline_lane(placed.top(), placed.h, is_selected)
+                .boxed(),
+            timeline_span(
+                Placement::new(
+                    span.0,
+                    placed.top(),
+                    span.1,
+                    px(placed.h),
+                ),
+                inside,
+            )
+            .tagged(retime::BoxPath(placed.path.clone()))
+            .boxed(),
+            self.header(placed),
+        ];
+        (views, next)
+    }
+
+    /// The button below the lanes that appends an empty track.
+    fn add_track(&self, top: f32) -> AnyView<Bevy, EditorTheme> {
+        button(label("+ Add track").wrap(false).opacity(0.8))
+            .position(PositionType::Absolute)
+            .inset(UiRect {
+                left: px(4.0),
+                top: px(top + 4.0),
+                right: Val::Auto,
+                bottom: Val::Auto,
+            })
+            .padding(UiRect::axes(px(8.0), px(4.0)))
+            .rules(ghost)
+            .on_activate(create::add_track)
+            .boxed()
     }
 
     /// The hatched stretch before a node's own delay ends.
@@ -538,32 +626,20 @@ impl Tree<'_> {
         .boxed()
     }
 
-    /// A block's box around `inside`. The root's follows the view,
-    /// the rest are a percent of their parent.
+    /// A nested block's box around `inside`, a percent of its parent.
     fn block(
         &self,
         placed: &Placed,
         is_selected: bool,
         inside: Vec<AnyView<Bevy, EditorTheme>>,
     ) -> AnyView<Bevy, EditorTheme> {
-        let (left, width): (Prop<Val>, Prop<Val>) =
-            if placed.path.is_empty() {
-                let secs = placed.w;
-                (
-                    resource::<TimelineView, _>(|view| {
-                        px(view.x_from_time(Duration::ZERO))
-                    })
-                    .into(),
-                    resource::<TimelineView, _>(move |view| {
-                        px(secs * view.px_per_second)
-                    })
-                    .into(),
-                )
-            } else {
-                (placed.left().into(), placed.width().into())
-            };
         timeline_block(
-            Placement::new(left, placed.top(), width, px(placed.h)),
+            Placement::new(
+                placed.left(),
+                placed.top(),
+                placed.width(),
+                px(placed.h),
+            ),
             is_selected,
             inside,
         )
@@ -604,20 +680,29 @@ impl Tree<'_> {
         let select_path = path.clone();
         let header = button(
             row((chevron, name)).align(AlignItems::Center).gap(4.0),
-        )
-        .width(percent(100.0))
-        .height(px(HEADER_ROW))
-        .justify(JustifyContent::FlexStart)
-        .padding(UiRect::axes(px(4.0), px(2.0)))
-        .radius(0.0)
-        .rules(ghost)
-        .on_activate(move |world| select(world, &select_path));
-        let header = reorder::body(header, path.clone());
-        // The root block has nothing above it to delete it from.
-        if path.is_empty() {
-            header
+        );
+        // A track's header floats at its lane's left edge.
+        let header = if is_track(&path) {
+            header.position(PositionType::Absolute).inset(UiRect {
+                left: Val::ZERO,
+                top: placed.top(),
+                right: Val::Auto,
+                bottom: Val::Auto,
+            })
         } else {
-            self.deletable(header, path)
+            header.width(percent(100.0))
+        };
+        let header = header
+            .height(px(HEADER_ROW))
+            .justify(JustifyContent::FlexStart)
+            .padding(UiRect::axes(px(4.0), px(2.0)))
+            .radius(0.0)
+            .rules(ghost)
+            .on_activate(move |world| select(world, &select_path));
+        if is_track(&path) {
+            self.deletable(header.boxed(), path)
+        } else {
+            self.deletable(reorder::body(header, path.clone()), path)
         }
     }
 
@@ -781,13 +866,26 @@ mod tests {
         }
     }
 
-    /// An editor whose timeline holds a draft per name.
+    /// The nodes of the first track.
+    fn first_track(
+        animation: &mut motiongfx_scene::block::Block<Backend>,
+    ) -> &mut Vec<SceneNode<Backend>> {
+        let Some(SceneNode::Block { block, .. }) =
+            animation.children.first_mut()
+        else {
+            panic!("a scene always has a track");
+        };
+        &mut block.children
+    }
+
+    /// An editor whose first track holds a draft per name.
     fn editor_with(names: &[&str]) -> Editor {
         let mut editor = Editor::new();
         let world = editor.world();
         let mut scene = world.resource_mut::<EditorScene>();
         for name in names {
-            scene.edit().animation.children.push(draft(name));
+            first_track(&mut scene.edit().animation)
+                .push(draft(name));
         }
         editor.step(SETTLE);
         editor
@@ -805,20 +903,59 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_timeline_draws_no_boxes() {
+    fn an_empty_timeline_draws_one_empty_lane() {
         let mut editor = Editor::new();
-        assert!(boxes(&mut editor).is_empty());
+        assert_eq!(boxes(&mut editor), vec![vec![0]]);
+        editor.text("Track 1");
     }
 
     #[test]
-    fn each_node_gets_a_box_under_the_root() {
+    fn each_node_gets_a_box_under_its_track() {
         let mut editor = editor_with(&["Intro", "Outro"]);
         assert_eq!(
             boxes(&mut editor),
-            vec![vec![], vec![0], vec![1]]
+            vec![vec![0], vec![0, 0], vec![0, 1]]
         );
         editor.text("Intro");
         editor.text("Outro");
+    }
+
+    #[test]
+    fn every_track_gets_a_lane_named_by_its_name_or_number() {
+        let mut editor = Editor::new();
+        {
+            let world = editor.world();
+            let mut scene = world.resource_mut::<EditorScene>();
+            let animation = &mut scene.edit().animation;
+            animation.children.push(SceneNode::block(
+                motiongfx_scene::block::Block {
+                    name: Some("Camera".into()),
+                    ..motiongfx_scene::block::Block::chain(Vec::new())
+                },
+            ));
+            animation.children.push(SceneNode::block(
+                motiongfx_scene::block::Block::chain(Vec::new()),
+            ));
+        }
+        editor.step(SETTLE);
+
+        assert_eq!(
+            boxes(&mut editor),
+            vec![vec![0], vec![1], vec![2]]
+        );
+        editor.text("Track 1");
+        editor.text("Camera");
+        editor.text("Track 3");
+    }
+
+    #[test]
+    fn the_add_button_appends_a_track() {
+        let mut editor = Editor::new();
+        editor.press("+ Add track");
+        editor.step(SETTLE);
+
+        assert_eq!(boxes(&mut editor), vec![vec![0], vec![1]]);
+        editor.text("Track 2");
     }
 
     #[test]
@@ -828,7 +965,7 @@ mod tests {
 
         assert_eq!(
             editor.world().resource::<SelectedAction>().0,
-            Some(vec![1])
+            Some(vec![0, 1])
         );
         let world = editor.world();
         let selected = world
@@ -836,16 +973,27 @@ mod tests {
             .iter(world)
             .map(|path| path.0.clone())
             .collect::<Vec<_>>();
-        assert_eq!(selected, vec![vec![1]]);
+        assert_eq!(selected, vec![vec![0, 1]]);
+    }
+
+    #[test]
+    fn pressing_a_track_header_selects_the_track() {
+        let mut editor = editor_with(&["Intro"]);
+        editor.press("Track 1");
+
+        assert_eq!(
+            editor.world().resource::<SelectedAction>().0,
+            Some(vec![0])
+        );
     }
 
     #[test]
     fn deleting_a_node_removes_its_box() {
         let mut editor = editor_with(&["Intro", "Outro"]);
-        reorder::delete(editor.world(), &[0]);
+        reorder::delete(editor.world(), &[0, 0]);
         editor.step(SETTLE);
 
-        assert_eq!(boxes(&mut editor), vec![vec![], vec![0]]);
+        assert_eq!(boxes(&mut editor), vec![vec![0], vec![0, 0]]);
         assert!(editor.texts("Intro").is_empty());
         editor.text("Outro");
     }
@@ -855,12 +1003,8 @@ mod tests {
         let mut editor = editor_with(&["Intro", "Outro"]);
         {
             let world = editor.world();
-            world
-                .resource_mut::<EditorScene>()
-                .edit()
-                .animation
-                .children
-                .swap(0, 1);
+            let mut scene = world.resource_mut::<EditorScene>();
+            first_track(&mut scene.edit().animation).swap(0, 1);
             RebuildTick::bump_in(world);
         }
         editor.step(SETTLE);
@@ -870,7 +1014,7 @@ mod tests {
         let first = world
             .query::<(&BoxPath, &Children)>()
             .iter(world)
-            .find(|(path, _)| path.0 == [0])
+            .find(|(path, _)| path.0 == [0, 0])
             .map(|(_, children)| children.len())
             .unwrap_or(0);
         assert!(first > 0);
@@ -878,15 +1022,15 @@ mod tests {
     }
 
     #[test]
-    fn folding_a_block_hides_what_it_holds() {
+    fn folding_a_track_hides_what_it_holds() {
         let mut editor = editor_with(&["Intro"]);
-        toggle_folded(editor.world(), &[]);
+        toggle_folded(editor.world(), &[0]);
         editor.step(SETTLE);
 
-        assert_eq!(boxes(&mut editor), vec![Vec::<usize>::new()]);
-        toggle_folded(editor.world(), &[]);
+        assert_eq!(boxes(&mut editor), vec![vec![0]]);
+        toggle_folded(editor.world(), &[0]);
         editor.step(SETTLE);
-        assert_eq!(boxes(&mut editor), vec![vec![], vec![0]]);
+        assert_eq!(boxes(&mut editor), vec![vec![0], vec![0, 0]]);
     }
 
     #[test]
