@@ -204,7 +204,13 @@ pub fn timeline_action(
                     set_margin_right(cx.world, sub, ACTION_ICON_GAP);
                 }
             }
-            cx.build(label(name).size(small).tone(tone).wrap(false));
+            cx.build(
+                label(name)
+                    .size(small)
+                    .tone(tone)
+                    .bold(true)
+                    .wrap(false),
+            );
         });
         action
     })

@@ -777,6 +777,7 @@ mod tests {
         let entity = cube(&mut app);
         let root = tests::show(&mut app, entity_inspector(entity));
 
+        tests::open_menus(&mut app, root);
         let options = labels(&app, root);
         assert!(
             options.contains(&"Cameras".to_string()),

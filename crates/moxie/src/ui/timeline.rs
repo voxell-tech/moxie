@@ -675,6 +675,7 @@ impl Tree<'_> {
         .toned(Tone::Faint)
         .on_activate(move |world| toggle_folded(world, &fold_path));
         let name = label(placed.label.clone().unwrap_or_default())
+            .bold(true)
             .wrap(false)
             .opacity(0.8)
             .when::<Dragged, _>(|label, _: &EditorTheme| {
@@ -892,25 +893,28 @@ impl Tree<'_> {
             // Only tracks sit under the root, so a track is not
             // wrapped.
             if !is_track(&path) {
-                let kinds = [
-                    ("All", Combinator::All),
-                    ("Chain", Combinator::Chain),
-                    ("Flow", Combinator::Flow(DEFAULT_STAGGER)),
-                ]
-                .into_iter()
-                .map(|(name, combinator)| {
-                    let path = path.clone();
-                    menu_item(label(name).wrap(false))
-                        .on_activate(move |world| {
-                            reorder::encapsulate(
-                                world,
-                                &path,
-                                combinator.clone(),
-                            );
-                        })
-                        .boxed()
-                })
-                .collect::<Vec<_>>();
+                let path = path.clone();
+                let kinds = move || {
+                    [
+                        ("All", Combinator::All),
+                        ("Chain", Combinator::Chain),
+                        ("Flow", Combinator::Flow(DEFAULT_STAGGER)),
+                    ]
+                    .into_iter()
+                    .map(|(name, combinator)| {
+                        let path = path.clone();
+                        menu_item(label(name).wrap(false))
+                            .on_activate(move |world| {
+                                reorder::encapsulate(
+                                    world,
+                                    &path,
+                                    combinator.clone(),
+                                );
+                            })
+                            .boxed()
+                    })
+                    .collect::<Vec<_>>()
+                };
                 rows.push(
                     submenu(
                         label("Encapsulate in..").wrap(false),

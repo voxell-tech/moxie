@@ -19,6 +19,7 @@ use bevy::prelude::*;
 use bevy::text::EditableText;
 use bevy::time::{TimePlugin, TimeUpdateStrategy};
 use bevy::ui::UiScale;
+use bevy::ui_widgets::{MenuAction, MenuButton, MenuEvent};
 use bevy::window::PrimaryWindow;
 use bevy_fynix::views::{button, ghost, label, row};
 use bevy_fynix::{Bevy, ScopedExt as _, View, mount};
@@ -88,6 +89,18 @@ pub fn all<C: Component>(app: &App, node: Entity) -> Vec<Entity> {
         .into_iter()
         .filter(|node| app.world().get::<C>(*node).is_some())
         .collect()
+}
+
+/// Opens the list of every dropdown and menu button under `node`.
+/// A list is only built while it is open.
+pub fn open_menus(app: &mut App, node: Entity) {
+    for button in all::<MenuButton>(app, node) {
+        app.world_mut().trigger(MenuEvent {
+            source: button,
+            action: MenuAction::Toggle,
+        });
+    }
+    app.update();
 }
 
 /// The text of every editable field under `node`, in order.
