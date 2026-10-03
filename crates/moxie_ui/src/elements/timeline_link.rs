@@ -15,13 +15,14 @@ pub fn timeline_link(
 ) -> impl View<Bevy, EditorTheme> {
     let color = color.into();
     AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let width = px(cx.theme().space.hairline);
         let link =
             cx.build(placement.apply(frame()).border_color(color));
         let mut link = cx.world.entity_mut(link);
         if let Some(mut ui) = link.get_mut::<Node>() {
             ui.border = UiRect {
-                left: px(3.0),
-                bottom: px(3.0),
+                left: width,
+                bottom: width,
                 ..UiRect::ZERO
             };
         }
@@ -81,7 +82,11 @@ mod tests {
         let ui = app.world().get::<Node>(node).unwrap();
         assert_eq!(ui.left, px(5.0));
         assert_eq!(ui.width, px(10.0));
-        assert_eq!(ui.border.left, px(3.0), "border survives");
+        assert_eq!(
+            ui.border.left,
+            px(EditorTheme::default().space.hairline),
+            "border survives"
+        );
         assert_eq!(
             app.world().get::<BorderColor>(node),
             Some(&BorderColor::all(Color::srgb(0.5, 0.0, 0.0)))

@@ -20,6 +20,8 @@ const SELECTED_FILL_ALPHA: f32 = 0.12;
 const SELECTED_EDGE_ALPHA: f32 = 0.5;
 /// A box's border width, in logical pixels.
 const BORDER: f32 = 1.0;
+/// Alpha of a block's border while it is dragged.
+const DRAGGED_EDGE_ALPHA: f32 = 0.04;
 
 /// A block's box: an absolutely placed, bordered container holding
 /// `children`. A selected block is tinted purple; one being dragged
@@ -34,7 +36,6 @@ where
 {
     AnyView::<Bevy, EditorTheme>::new(move |cx| {
         let theme = cx.theme();
-        let text = theme.color.text;
         let block = cx.build(
             placement
                 .apply(frame())
@@ -43,11 +44,16 @@ where
                 .align(AlignItems::Start)
                 .overflow(Overflow::clip())
                 .radius(theme.space.card_radius)
-                .fill(text.with_alpha(0.02))
-                .border_color(text.with_alpha(0.18))
+                .fill(theme.color.fill_faint)
+                .border_color(theme.color.hairline)
                 .when::<Selected, _>(selected_look)
-                .when::<Dragged, _>(move |frame, _: &EditorTheme| {
-                    frame.border_color(text.with_alpha(0.08))
+                .when::<Dragged, _>(|frame, theme: &EditorTheme| {
+                    frame.border_color(
+                        theme
+                            .color
+                            .hairline
+                            .with_alpha(DRAGGED_EDGE_ALPHA),
+                    )
                 }),
         );
         outline(cx.world, block, selected);

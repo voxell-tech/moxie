@@ -219,7 +219,7 @@ impl Default for EditorTheme {
                 bg: base[0],
                 panel: base[1],
                 fill: base[8].with_alpha(0.06),
-                fill_faint: base[8].with_alpha(0.03),
+                fill_faint: base[4].with_alpha(0.2),
                 hairline: base[8].with_alpha(0.08),
                 panel_edge: base[8].with_alpha(0.05),
                 hover: base[8].with_alpha(0.14),
