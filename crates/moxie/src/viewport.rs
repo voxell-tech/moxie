@@ -12,7 +12,7 @@ use bevy::dev_tools::infinite_grid::{
 use bevy::ecs::schedule::common_conditions::not;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::math::bounding::Aabb3d;
-use bevy::picking::events::{Click, Drag, Pointer, Scroll};
+use bevy::picking::events::{Click, Drag, DragEnd, Pointer, Scroll};
 use bevy::picking::hover::HoverMap;
 use bevy::picking::mesh_picking::MeshPickingPlugin;
 use bevy::picking::pointer::{PointerButton, PointerId};
@@ -39,6 +39,9 @@ const ZOOM_PER_LINE: f32 = 0.1;
 const ZOOM_PER_PIXEL: f32 = 0.002;
 const MIN_DISTANCE: f32 = 0.05;
 const MAX_DISTANCE: f32 = 10_000.0;
+/// How far a pressed pointer moves, in logical pixels, before its
+/// release stops being a click.
+const CLICK_SLOP: f32 = 4.0;
 /// Short of straight up or down, where the yaw would flip.
 const MAX_PITCH: f32 = FRAC_PI_2 - 0.01;
 
@@ -192,6 +195,7 @@ pub(crate) fn panel() -> AnyView<Bevy, EditorTheme> {
         cx.world
             .entity_mut(node)
             .observe(on_drag)
+            .observe(on_drag_end)
             .observe(on_scroll)
             .observe(on_click);
         node
@@ -206,14 +210,21 @@ fn shift(keys: &ButtonInput<KeyCode>) -> bool {
     keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight])
 }
 
+/// On a viewport whose pointer has moved past [`CLICK_SLOP`] since
+/// its press, until the press ends.
+#[derive(Component)]
+struct Swept;
+
 fn on_drag(
     mut drag: On<Pointer<Drag>>,
     nodes: Query<&ViewportNode>,
     mut cameras: Query<&mut EditorCamera>,
     keys: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
 ) {
+    let node = drag.event_target();
     let Some(mut camera) = nodes
-        .get(drag.event_target())
+        .get(node)
         .ok()
         .and_then(|node| node.camera)
         .and_then(|camera| cameras.get_mut(camera).ok())
@@ -221,11 +232,18 @@ fn on_drag(
         return;
     };
     drag.propagate(false);
+    if drag.distance.length() > CLICK_SLOP {
+        commands.entity(node).insert(Swept);
+    }
     match Gesture::of(drag.button, alt(&keys), shift(&keys)) {
         Some(Gesture::Orbit) => camera.orbit(drag.delta),
         Some(Gesture::Pan) => camera.pan(drag.delta),
         None => {}
     }
+}
+
+fn on_drag_end(end: On<Pointer<DragEnd>>, mut commands: Commands) {
+    commands.entity(end.event_target()).remove::<Swept>();
 }
 
 fn on_scroll(
@@ -257,11 +275,14 @@ fn on_click(
     hovered: Res<HoverMap>,
     subjects: Query<(), With<EntityUid>>,
     parents: Query<&ChildOf>,
-    keys: Res<ButtonInput<KeyCode>>,
+    swept: Query<(), With<Swept>>,
     mut selected: ResMut<SelectedEntity>,
 ) {
-    // An alt click is an orbit let go.
-    if click.button != PointerButton::Primary || alt(&keys) {
+    // The release of a drag is a click too, fired before the drag
+    // ends.
+    if click.button != PointerButton::Primary
+        || swept.contains(click.event_target())
+    {
         return;
     }
     // The pointer the node forwards into its camera's image, which
