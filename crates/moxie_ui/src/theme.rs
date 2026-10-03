@@ -56,6 +56,30 @@ impl Default for Palette {
     }
 }
 
+/// One of the palette's accent colours.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hue {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+}
+
+impl Palette {
+    pub fn hue(&self, hue: Hue) -> Color {
+        match hue {
+            Hue::Red => self.red,
+            Hue::Orange => self.orange,
+            Hue::Yellow => self.yellow,
+            Hue::Green => self.green,
+            Hue::Blue => self.blue,
+            Hue::Purple => self.purple,
+        }
+    }
+}
+
 /// The editor's look, grouped by what it governs.
 #[derive(Clone, Debug)]
 pub struct EditorTheme {
@@ -98,12 +122,6 @@ pub struct Colors {
     pub hover: Color,
     /// A selected row's surface tint.
     pub selection: Color,
-    /// A timeline clip's fill.
-    pub clip: Color,
-    /// A clip's own hover and press brighten, in its blue family
-    /// rather than [`Self::hover`]'s neutral gray.
-    pub clip_hover: Color,
-    pub clip_press: Color,
 }
 
 /// The spacing and sizing scale.
@@ -206,9 +224,6 @@ impl Default for EditorTheme {
                 panel_edge: base[8].with_alpha(0.05),
                 hover: base[8].with_alpha(0.14),
                 selection: palette.blue.with_alpha(0.18),
-                clip: palette.blue.with_alpha(0.5),
-                clip_hover: Color::srgb(0.35, 0.70, 1.0),
-                clip_press: Color::srgb(0.55, 0.82, 1.0),
             },
             space: Spacing {
                 xs: 2.0,

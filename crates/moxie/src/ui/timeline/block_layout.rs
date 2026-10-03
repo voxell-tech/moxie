@@ -12,10 +12,10 @@ use std::collections::BTreeSet;
 use bevy::ui::{Val, percent, px};
 use bevy_motiongfx::scene::backend::Backend;
 use motiongfx_scene::block::{Block, Combinator, Node};
-use motiongfx_scene::refs::FieldRef;
 use moxie_ui::theme::Spacing;
 
 use crate::TimelineView;
+use crate::subject::Target;
 
 /// Height of a block's header strip.
 pub(crate) const HEADER_HEIGHT: f32 = 24.0;
@@ -54,9 +54,9 @@ pub(crate) struct Placed {
     /// An action leaf's own name, if set. `None` for a block - its
     /// name, if any, is already folded into `label`.
     pub(crate) name: Option<String>,
-    /// The field an action leaf drives. `None` for a block or a
-    /// draft, which has none yet.
-    pub(crate) field: Option<FieldRef>,
+    /// The field of a subject an action leaf drives. `None` for a
+    /// block or a draft, which has none yet.
+    pub(crate) target: Option<Target>,
     /// `true` when a block's children are folded away. Always
     /// `false` for an action leaf.
     pub(crate) folded: bool,
@@ -184,7 +184,7 @@ struct Measured {
 enum MeasuredKind {
     Action {
         name: Option<String>,
-        field: FieldRef,
+        target: Target,
     },
     Draft {
         name: Option<String>,
@@ -283,7 +283,10 @@ fn measure_node(
             height: space.action_row,
             kind: MeasuredKind::Action {
                 name: action.name.clone(),
-                field: action.field.clone(),
+                target: Target {
+                    subject: action.subject,
+                    field: action.field.clone(),
+                },
             },
         },
         Node::Draft { duration, name, .. } => Measured {
@@ -445,7 +448,7 @@ fn flatten(
     });
 
     match &measured.kind {
-        MeasuredKind::Action { name, field } => out.push(Placed {
+        MeasuredKind::Action { name, target } => out.push(Placed {
             x,
             y,
             w,
@@ -453,7 +456,7 @@ fn flatten(
             depth,
             label: None,
             name: name.clone(),
-            field: Some(field.clone()),
+            target: Some(target.clone()),
             folded: false,
             draft: false,
             gap_x,
@@ -469,7 +472,7 @@ fn flatten(
             depth,
             label: None,
             name: name.clone(),
-            field: None,
+            target: None,
             folded: false,
             draft: true,
             gap_x,
@@ -491,7 +494,7 @@ fn flatten(
                 depth,
                 label: Some(label.clone()),
                 name: None,
-                field: None,
+                target: None,
                 folded: *folded,
                 draft: false,
                 gap_x,
@@ -554,7 +557,7 @@ mod tests {
             depth: 1,
             label: None,
             name: None,
-            field: None,
+            target: None,
             folded: false,
             draft: false,
             gap_x: None,

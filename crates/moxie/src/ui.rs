@@ -25,7 +25,7 @@ use bevy_motiongfx::motiongfx::field_path::field;
 use moxie_ui::MoxieUiPlugin;
 use moxie_ui::field_icon::FieldIconAppExt as _;
 use moxie_ui::gaps::{anchored, changing_under};
-use moxie_ui::theme::EditorTheme;
+use moxie_ui::theme::{EditorTheme, Hue};
 
 use crate::subject::Target;
 use crate::{
@@ -67,6 +67,14 @@ impl Plugin for UiPlugin {
                 field!(Transform.scale),
                 crate::icons::SCALE,
             )
+            .register_root_hue::<Transform>(Hue::Blue)
+            .register_root_hue::<Visibility>(Hue::Purple)
+            .register_root_hue::<StandardMaterial>(Hue::Orange)
+            .register_root_hue::<Projection>(Hue::Green)
+            .register_root_hue::<PointLight>(Hue::Yellow)
+            .register_root_hue::<DirectionalLight>(Hue::Yellow)
+            .register_root_hue::<SpotLight>(Hue::Yellow)
+            .register_root_hue::<RectLight>(Hue::Yellow)
             .init_resource::<EditorState>()
             .init_resource::<SelectedAction>()
             .init_resource::<SelectedEntity>()

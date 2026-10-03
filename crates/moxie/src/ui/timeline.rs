@@ -30,12 +30,13 @@ use bevy_fynix::{
 };
 use bevy_motiongfx::prelude::MotionGfxManager;
 use block_layout::Placed;
+use motiongfx_scene::refs::FieldRef;
 use moxie_ui::drag::Dragged;
 use moxie_ui::elements::{
-    Placement, playhead_line, time_label, time_tick, timeline_action,
-    timeline_block, timeline_gap, timeline_link,
+    ActionGlyph, Placement, playhead_line, time_label, time_tick,
+    timeline_action, timeline_block, timeline_gap, timeline_link,
 };
-use moxie_ui::field_icon::field_icon;
+use moxie_ui::field_icon::{field_icon, root_hue};
 use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use moxie_ui::gaps::{changing, changing_under};
 use moxie_ui::icons as ui_icons;
@@ -48,6 +49,7 @@ use crate::playback::{
     on_track_click_release, on_track_drag, on_track_press,
     on_track_release,
 };
+use crate::subject::Caption;
 use crate::{EditorScene, EditorState, SelectedAction, TimelineView};
 
 /// The timeline's resources and interaction systems.
@@ -566,31 +568,55 @@ impl Tree<'_> {
         }
     }
 
+    /// The icon `field` is shown with, tinted by its root type. A
+    /// field no icon covers gets the generic one, with its whole
+    /// path as the subscript.
+    fn glyph(&self, field: &FieldRef) -> ActionGlyph {
+        let type_path = field.type_name().to_string();
+        let registry =
+            self.world.resource::<AppTypeRegistry>().read();
+        let (icon, subscript) =
+            match field_icon(&registry, &type_path, field.path()) {
+                Some(bound) => (bound.icon, bound.rest),
+                None => {
+                    (crate::icons::ACTION, field.path().to_string())
+                }
+            };
+        let tint = root_hue(&registry, &type_path)
+            .map_or(self.theme.color.text_dim, |hue| {
+                self.theme.palette.hue(hue)
+            });
+        ActionGlyph {
+            image: self.world.resource::<AssetServer>().load(icon),
+            tint,
+            subscript,
+        }
+    }
+
     /// An action leaf's own box, with its two edge handles.
     fn action(
         &self,
         placed: &Placed,
         is_selected: bool,
     ) -> AnyView<Bevy, EditorTheme> {
-        let image = placed.field.as_ref().and_then(|field| {
-            let registry =
-                self.world.resource::<AppTypeRegistry>().read();
-            field_icon(
-                &registry,
-                &field.type_name().to_string(),
-                field.path(),
-            )
-        });
-        let image = image.map(|path| {
-            self.world.resource::<AssetServer>().load::<Image>(path)
-        });
-        let name = placed.name.clone().unwrap_or_else(|| {
-            if placed.draft {
-                "Draft".to_string()
-            } else {
-                String::new()
+        let glyph = placed
+            .target
+            .as_ref()
+            .map(|target| self.glyph(&target.field));
+        let name: Prop<String> = match &placed.target {
+            Some(target) => {
+                let subject = target.subject;
+                changing(move |world: &World| {
+                    Caption::of(world, subject).text().to_string()
+                })
+                .into()
             }
-        });
+            None => placed
+                .name
+                .clone()
+                .unwrap_or_else(|| "Draft".to_string())
+                .into(),
+        };
         let path = placed.path.clone();
         let select_path = path.clone();
         let action = timeline_action(
@@ -601,7 +627,7 @@ impl Tree<'_> {
                 px(placed.h),
             ),
             name,
-            image,
+            glyph,
             placed.draft,
             is_selected,
         )

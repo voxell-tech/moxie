@@ -1,8 +1,10 @@
 use bevy::asset::Handle;
 use bevy::color::{Alpha as _, Color};
 use bevy::ecs::component::Component;
+use bevy::ecs::entity::Entity;
 use bevy::ecs::query::With;
 use bevy::ecs::system::Query;
+use bevy::ecs::world::World;
 use bevy::image::Image;
 use bevy::math::Vec2;
 use bevy::ui::widget::ImageNode;
@@ -11,7 +13,7 @@ use bevy::ui::{
 };
 use bevy::ui_widgets::Button as ButtonBehavior;
 use bevy::window::SystemCursorIcon;
-use bevy_fynix::tokens::{Motion, Tone};
+use bevy_fynix::tokens::{Motion, SurfaceTokens as _, Tone};
 use bevy_fynix::views::{Label, frame, icon, label};
 use bevy_fynix::{
     AnyView, Bevy, Cx, EntityCursor, Hovered, Pressed, Prop,
@@ -27,6 +29,10 @@ use crate::theme::EditorTheme;
 pub const ACTION_ICON_SIZE: f32 = 14.0;
 /// Gap between an action icon and its label.
 const ACTION_ICON_GAP: f32 = 4.0;
+/// Gap between an action icon and the subscript that continues it.
+const SUBSCRIPT_HUG: f32 = 1.0;
+/// Text size of the subscript.
+const SUBSCRIPT_SIZE: f32 = 8.0;
 /// The bar width from which the icon is at full size.
 const ICON_FULL_AT: f32 = 28.0;
 /// The bar width up to which the icon is gone.
@@ -38,8 +44,17 @@ const NAME_DRAGGED_OPACITY: f32 = 0.2;
 /// Alpha of a clip's fill while it is dragged.
 const DRAGGED_FILL_ALPHA: f32 = 0.2;
 
-/// One action's clip on the timeline: a coloured, absolutely
-/// placed, bordered hit area, its icon (if any) and `name` centred
+/// An action's field icon, tinted, with what its path adds past the
+/// path the icon stands for.
+pub struct ActionGlyph {
+    pub image: Handle<Image>,
+    pub tint: Color,
+    /// Empty when the icon stands for the whole path.
+    pub subscript: String,
+}
+
+/// One action's clip on the timeline: a surface-coloured, absolutely
+/// placed, bordered hit area, its glyph (if any) and `name` centred
 /// vertically at its left edge. It is clipped rather than measured,
 /// so a bar too narrow for them shows nothing instead of overflowing
 /// its neighbour, and the icon shrinks and fades as the bar narrows
@@ -51,7 +66,7 @@ const DRAGGED_FILL_ALPHA: f32 = 0.2;
 pub fn timeline_action(
     placement: Placement,
     name: impl Into<Prop<String>>,
-    image: Option<Handle<Image>>,
+    glyph: Option<ActionGlyph>,
     draft: bool,
     selected: bool,
 ) -> impl View<Bevy, EditorTheme> {
@@ -64,38 +79,41 @@ pub fn timeline_action(
         let fill = if draft {
             theme.color.critical.with_alpha(0.5)
         } else {
-            theme.color.clip
+            theme.fill()
+        };
+        let dragged_fill = if draft {
+            fill.with_alpha(DRAGGED_FILL_ALPHA)
+        } else {
+            theme.color.fill_faint
         };
         let border = if draft {
             theme.color.critical.with_alpha(0.5)
         } else {
-            Color::NONE
+            theme.color.hairline
         };
-        let tone = if draft { Tone::Critical } else { Tone::Accent };
+        let tone = if draft { Tone::Critical } else { Tone::Body };
         let small = theme.text.small;
 
         let action = cx.build(
             placement
                 .apply(frame())
                 .padding(UiRect::left(px(4.0)))
-                .gap(ACTION_ICON_GAP)
+                .gap(0.0)
                 .align(AlignItems::Center)
                 .overflow(Overflow::clip())
                 .radius(theme.space.radius)
                 .fill(fill)
                 .border_color(border)
                 .when::<Hovered, _>(|frame, theme: &EditorTheme| {
-                    frame.fill(theme.color.clip_hover)
+                    frame.fill(theme.hover())
                 })
                 .when::<Pressed, _>(|frame, theme: &EditorTheme| {
-                    frame.fill(theme.color.clip_press)
+                    frame.fill(theme.pressed())
                 })
                 .when::<Dragged, _>(move |frame, _: &EditorTheme| {
-                    frame
-                        .fill(fill.with_alpha(DRAGGED_FILL_ALPHA))
-                        .border_color(
-                            border.with_alpha(DRAGGED_FILL_ALPHA),
-                        )
+                    frame.fill(dragged_fill).border_color(
+                        border.with_alpha(DRAGGED_FILL_ALPHA),
+                    )
                 })
                 // After the dragged rule, so a selected clip keeps
                 // its coloured border while it is dragged.
@@ -110,14 +128,31 @@ pub fn timeline_action(
         ));
         snap_selected_border(cx.world, action, selected);
         cx.under(action, |cx| {
-            if let Some(image) = image {
-                cx.build(
-                    icon(image)
+            if let Some(glyph) = glyph {
+                let hugged = !glyph.subscript.is_empty();
+                let image = cx.build(
+                    icon(glyph.image)
                         .size(ACTION_ICON_SIZE * fit)
+                        .tint(Some(glyph.tint))
                         .opacity(fit),
                 );
+                let after = if hugged {
+                    SUBSCRIPT_HUG
+                } else {
+                    ACTION_ICON_GAP
+                };
+                set_margin_right(cx.world, image, after);
+                if hugged {
+                    let sub = cx.build(
+                        label(glyph.subscript)
+                            .size(SUBSCRIPT_SIZE)
+                            .tone(Tone::Faint)
+                            .wrap(false),
+                    );
+                    set_margin_right(cx.world, sub, ACTION_ICON_GAP);
+                }
             }
-            cx.build(label(name).size(small).tone(tone));
+            cx.build(label(name).size(small).tone(tone).wrap(false));
         });
         action
     })
@@ -132,6 +167,12 @@ pub fn timeline_action(
         });
     })
     .transition(Motion::Interact)
+}
+
+fn set_margin_right(world: &mut World, node: Entity, margin: f32) {
+    if let Some(mut ui) = world.get_mut::<Node>(node) {
+        ui.margin.right = px(margin);
+    }
 }
 
 /// A [`timeline_action`]'s node, for [`fit_action_icons`] to find.
@@ -334,6 +375,58 @@ mod tests {
         )
     }
 
+    fn glyph(subscript: &str) -> Option<ActionGlyph> {
+        Some(ActionGlyph {
+            image: Handle::default(),
+            tint: Color::srgb(0.2, 0.4, 0.6),
+            subscript: subscript.to_string(),
+        })
+    }
+
+    #[test]
+    fn the_icon_takes_its_tint_and_a_subscript_follows_it() {
+        let mut app = app();
+        let node = mount::<EditorTheme>(
+            app.world_mut(),
+            timeline_action(
+                placed(80.0),
+                "Cube",
+                glyph(".x"),
+                false,
+                false,
+            ),
+        );
+
+        let kids = kids(&app, node);
+        assert_eq!(kids.len(), 3);
+        assert_eq!(
+            app.world().get::<ImageNode>(kids[0]).unwrap().color,
+            Color::srgb(0.2, 0.4, 0.6)
+        );
+        assert_eq!(app.world().get::<Text>(kids[1]).unwrap().0, ".x");
+        assert_eq!(
+            app.world().get::<Text>(kids[2]).unwrap().0,
+            "Cube"
+        );
+    }
+
+    #[test]
+    fn no_subscript_leaves_only_the_icon_and_the_name() {
+        let mut app = app();
+        let node = mount::<EditorTheme>(
+            app.world_mut(),
+            timeline_action(
+                placed(80.0),
+                "Cube",
+                glyph(""),
+                false,
+                false,
+            ),
+        );
+
+        assert_eq!(kids(&app, node).len(), 2);
+    }
+
     #[test]
     fn an_icon_is_built_at_the_size_its_bar_fits() {
         let mut app = app();
@@ -342,7 +435,7 @@ mod tests {
             timeline_action(
                 placed((ICON_FULL_AT + ICON_GONE_AT) / 2.0),
                 "",
-                Some(Handle::default()),
+                glyph(""),
                 false,
                 false,
             ),
@@ -431,7 +524,7 @@ mod tests {
             timeline_action(
                 Placement::new(px(0.0), px(0.0), Val::Auto, px(32.0)),
                 "",
-                Some(Handle::default()),
+                glyph(""),
                 false,
                 false,
             ),
