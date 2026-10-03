@@ -15,6 +15,7 @@ moxie_asset = { workspace = true }
 bevy_fynix = { workspace = true }
 fynix = { workspace = true }
 bevy = { workspace = true, default-features = true, features = [
+    "bevy_dev_tools",
     "bevy_feathers",
     "bevy_ui_widgets",
     "bevy_settings",

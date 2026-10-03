@@ -7,10 +7,11 @@ use bevy::prelude::*;
 
 use crate::thumbnails::ThumbnailCamera;
 use crate::ui::TrackViewportCamera;
+use crate::viewport::EditorCamera;
 use crate::{EditorSettings, PreviewImage};
 
-/// Point every scene camera (all but the editor's own
-/// [`TrackViewportCamera`]) at the offscreen [`PreviewImage`] instead
+/// Point every scene camera (all but the editor's own) at the
+/// offscreen [`PreviewImage`] instead
 /// of the window. `bevy_ui` then scales that image to fit the preview
 /// area, so growing the panel shrinks the whole composition
 /// uniformly.
@@ -23,6 +24,7 @@ pub(crate) fn retarget_scene_cameras(
             With<Camera>,
             Without<TrackViewportCamera>,
             Without<ThumbnailCamera>,
+            Without<EditorCamera>,
         ),
     >,
 ) {

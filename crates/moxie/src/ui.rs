@@ -106,7 +106,7 @@ impl Plugin for UiPlugin {
 }
 
 /// True while a text field holds focus.
-fn text_field_focused(
+pub(crate) fn text_field_focused(
     focus: Res<InputFocus>,
     q_editable: Query<(), With<EditableText>>,
 ) -> bool {
@@ -169,7 +169,7 @@ fn setup_editor_ui(
     //
     let viewport = tree.set_root_leaf(
         DockLeaf::new("viewport", DockAreaStyle::TabBar)
-            .with_windows(vec!["viewport".into()]),
+            .with_windows(vec!["viewport".into(), "preview".into()]),
     );
 
     tree.split(viewport, Edge::Bottom, "timeline".into());
@@ -244,7 +244,15 @@ fn register_windows(
     registry
         .register(
             "viewport",
-            kind("Viewport", crate::icons::VIEWPORT, viewport),
+            kind(
+                "Viewport",
+                crate::icons::VIEWPORT,
+                crate::viewport::panel,
+            ),
+        )
+        .register(
+            "preview",
+            kind("Preview", crate::icons::PREVIEW, preview),
         )
         .register(
             "timeline",
@@ -281,7 +289,7 @@ fn register_windows(
 }
 
 /// The composition's preview, letterboxed to the area it sits in.
-fn viewport() -> AnyView<Bevy, EditorTheme> {
+fn preview() -> AnyView<Bevy, EditorTheme> {
     AnyView::<Bevy, EditorTheme>::new(|cx| {
         let preview = cx.world.resource::<PreviewImage>().0.clone();
         cx.build(
