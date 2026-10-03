@@ -61,11 +61,13 @@ pub struct ActionGlyph {
 /// ([`fit_action_icons`]).
 ///
 /// A `draft` has no subject or field yet, so it reads as an empty
-/// slot in the critical colour. A `selected` clip carries
+/// slot in the critical colour. A `stand_in` name is one shown for
+/// want of the action's own, and is dimmed. A `selected` clip carries
 /// [`Selected`], which an app can also insert and remove later.
 pub fn timeline_action(
     placement: Placement,
     name: impl Into<Prop<String>>,
+    stand_in: bool,
     glyph: Option<ActionGlyph>,
     draft: bool,
     selected: bool,
@@ -91,7 +93,13 @@ pub fn timeline_action(
         } else {
             theme.color.hairline
         };
-        let tone = if draft { Tone::Critical } else { Tone::Body };
+        let tone = if draft {
+            Tone::Critical
+        } else if stand_in {
+            Tone::Dim
+        } else {
+            Tone::Body
+        };
         let small = theme.text.small;
 
         let action = cx.build(
@@ -366,6 +374,7 @@ mod tests {
             timeline_action(
                 placed(80.0),
                 "move",
+                false,
                 None,
                 draft,
                 selected,
@@ -389,6 +398,7 @@ mod tests {
             timeline_action(
                 placed(80.0),
                 "Cube",
+                false,
                 glyph(".x"),
                 false,
                 false,
@@ -416,6 +426,7 @@ mod tests {
             timeline_action(
                 placed(80.0),
                 "Cube",
+                false,
                 glyph(""),
                 false,
                 false,
@@ -433,6 +444,7 @@ mod tests {
             timeline_action(
                 placed((ICON_FULL_AT + ICON_GONE_AT) / 2.0),
                 "",
+                false,
                 glyph(""),
                 false,
                 false,
@@ -462,6 +474,7 @@ mod tests {
                     px(32.0),
                 ),
                 resource::<Span, _>(|span| format!("{}", span.0)),
+                false,
                 None,
                 false,
                 false,
@@ -505,6 +518,7 @@ mod tests {
             timeline_action(
                 Placement::new(px(0.0), px(0.0), Val::Auto, px(32.0)),
                 "",
+                false,
                 glyph(""),
                 false,
                 false,

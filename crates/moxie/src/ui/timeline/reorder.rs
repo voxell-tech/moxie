@@ -13,7 +13,7 @@ use bevy::prelude::*;
 use bevy::ui::{UiGlobalTransform, UiScale};
 use bevy_fynix::{AnyView, Bevy, OverrideCursor, Theme, View};
 use bevy_motiongfx::scene::backend::Backend;
-use motiongfx_scene::block::{Block, Node as SceneNode};
+use motiongfx_scene::block::{Block, Combinator, Node as SceneNode};
 use moxie_ui::cursor::{Cursor, PointerEventExt as _};
 use moxie_ui::drag::{Dragged, grab, ungrab};
 use moxie_ui::layout::logical_rect;
@@ -245,8 +245,8 @@ pub(super) fn to_content(
     Vec2::new(cursor.x - min.x, cursor.y - min.y + scrolled(node))
 }
 
-/// How far the viewport is scrolled, in logical pixels. The layout's
-/// own figure, which never runs past the content.
+/// The viewport's scroll offset in logical pixels, as the layout
+/// applied it.
 pub(super) fn scrolled(viewport: &ComputedNode) -> f32 {
     viewport.scroll_position.y * viewport.inverse_scale_factor()
 }
@@ -359,6 +359,82 @@ pub(crate) fn delete(world: &mut World, path: &[usize]) {
         selected.0 = kept;
     }
     RebuildTick::bump_in(world);
+}
+
+/// Puts the node at `path` alone in a new block under `combinator`,
+/// where it was, with the selection following it in.
+pub(crate) fn encapsulate(
+    world: &mut World,
+    path: &[usize],
+    combinator: Combinator,
+) {
+    // Only tracks sit under the root.
+    if is_track(path) {
+        return;
+    }
+    let Some(mut editor_scene) =
+        world.get_resource_mut::<EditorScene>()
+    else {
+        return;
+    };
+    if wrap(&mut editor_scene.edit().animation, path, combinator)
+        .is_none()
+    {
+        return;
+    }
+
+    if let Some(mut selected) =
+        world.get_resource_mut::<SelectedAction>()
+        && let Some(inside) = selected
+            .0
+            .as_deref()
+            .and_then(|selected| into_wrapper(selected, path))
+    {
+        selected.0 = Some(inside);
+    }
+    RebuildTick::bump_in(world);
+}
+
+/// Replaces the node at `path` with a block under `combinator`
+/// holding only that node.
+fn wrap(
+    root: &mut Block<Backend>,
+    path: &[usize],
+    combinator: Combinator,
+) -> Option<()> {
+    let (&index, parent) = path.split_last()?;
+    let children = &mut block_at_mut(root, parent)?.children;
+    if index >= children.len() {
+        return None;
+    }
+    // Its delay stays on the node; the wrapper has none.
+    let node = children.remove(index);
+    children.insert(
+        index,
+        SceneNode::Block {
+            delay: None,
+            block: Block {
+                combinator,
+                children: vec![node],
+                name: None,
+            },
+        },
+    );
+    Some(())
+}
+
+/// The path of `selected` once the node at `wrapped` sits alone in a
+/// new block, if it is that node or inside it.
+fn into_wrapper(
+    selected: &[usize],
+    wrapped: &[usize],
+) -> Option<Vec<usize>> {
+    under(selected, wrapped).then(|| {
+        let mut path = wrapped.to_vec();
+        path.push(0);
+        path.extend(&selected[wrapped.len()..]);
+        path
+    })
 }
 
 /// Writes the drop's result back into the scene, following the
@@ -489,6 +565,43 @@ mod tests {
             duration: Duration::from_secs(1),
             name: None,
         }
+    }
+
+    #[test]
+    fn wrapping_puts_a_node_alone_in_a_block_where_it_was() {
+        let mut root = Block {
+            combinator: Combinator::All,
+            children: vec![track(vec![delayed(1), delayed(2)])],
+            name: None,
+        };
+
+        wrap(&mut root, &[0, 1], Combinator::All).unwrap();
+
+        let SceneNode::Block { block: track, .. } = &root.children[0]
+        else {
+            panic!("a track");
+        };
+        assert_eq!(track.children[0], delayed(1));
+        let SceneNode::Block { delay, block } = &track.children[1]
+        else {
+            panic!("the wrapper");
+        };
+        assert_eq!(*delay, None);
+        assert_eq!(block.combinator, Combinator::All);
+        assert_eq!(block.children, vec![delayed(2)]);
+    }
+
+    #[test]
+    fn a_selection_follows_its_node_into_the_wrapper() {
+        assert_eq!(
+            into_wrapper(&[0, 1], &[0, 1]),
+            Some(vec![0, 1, 0])
+        );
+        assert_eq!(
+            into_wrapper(&[0, 1, 2], &[0, 1]),
+            Some(vec![0, 1, 0, 2])
+        );
+        assert_eq!(into_wrapper(&[0, 2], &[0, 1]), None);
     }
 
     #[test]

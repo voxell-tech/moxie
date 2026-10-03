@@ -28,9 +28,9 @@ use moxie_ui::theme::EditorTheme;
 
 use crate::{EditorScene, EditorSettings, SelectedAction, subject};
 
-/// The stagger a block gets when the Type picker switches it to
-/// `Flow`.
-const DEFAULT_STAGGER: Duration = Duration::from_millis(150);
+/// The stagger a new `Flow` block starts with.
+pub(super) const DEFAULT_STAGGER: Duration =
+    Duration::from_millis(150);
 
 /// The action panel.
 ///

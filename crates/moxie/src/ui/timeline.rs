@@ -23,7 +23,7 @@ use bevy_fynix::tokens::Tone;
 use bevy_fynix::views::{
     BehaviorExt as _, ContextMenuExt as _, FrameProps as _, button,
     column, frame, ghost, icon, label, menu_item, number_field, row,
-    tint,
+    submenu, tint,
 };
 use bevy_fynix::{
     AnyView, Bevy, Hovered, Pressed, Prop, ScopedExt as _,
@@ -31,6 +31,7 @@ use bevy_fynix::{
 };
 use bevy_motiongfx::prelude::MotionGfxManager;
 use block_layout::Placed;
+use motiongfx_scene::block::Combinator;
 use motiongfx_scene::refs::FieldRef;
 use moxie_ui::drag::Dragged;
 use moxie_ui::elements::{
@@ -53,6 +54,7 @@ use crate::playback::{
 };
 use crate::scene::is_track;
 use crate::subject::Caption;
+use crate::ui::action::DEFAULT_STAGGER;
 use crate::{EditorScene, EditorState, SelectedAction, TimelineView};
 
 /// The timeline's resources and interaction systems.
@@ -679,8 +681,8 @@ impl Tree<'_> {
         let header = button(
             row((chevron, name)).align(AlignItems::Center).gap(4.0),
         );
-        // A track's header floats at its lane's left edge. Selected,
-        // it is the header that is tinted, the lane having no box.
+        // A track's header floats at its lane's left edge, and is
+        // what a selected track tints.
         let header = if is_track(&path) {
             let header = header
                 .position(PositionType::Absolute)
@@ -748,19 +750,18 @@ impl Tree<'_> {
             .target
             .as_ref()
             .map(|target| self.glyph(&target.field));
-        let name: Prop<String> = match &placed.target {
-            Some(target) => {
+        // Its own name, or its subject's standing in for one.
+        let own = placed.name.clone().filter(|name| !name.is_empty());
+        let stand_in = own.is_none() && placed.target.is_some();
+        let name = match (own, &placed.target) {
+            (Some(name), _) => Prop::<String>::from(name),
+            (None, Some(target)) => {
                 let subject = target.subject;
-                changing(move |world: &World| {
+                Prop::from(changing(move |world: &World| {
                     Caption::of(world, subject).text().to_string()
-                })
-                .into()
+                }))
             }
-            None => placed
-                .name
-                .clone()
-                .unwrap_or_else(|| "Draft".to_string())
-                .into(),
+            (None, None) => Prop::from("Draft".to_string()),
         };
         let path = placed.path.clone();
         let select_path = path.clone();
@@ -772,6 +773,7 @@ impl Tree<'_> {
                 px(placed.h),
             ),
             name,
+            stand_in,
             glyph,
             placed.draft,
             is_selected,
@@ -831,19 +833,54 @@ impl Tree<'_> {
         let trash = self.trash.clone();
         let gap = self.theme.space.md;
         view.context_menu(move || {
+            let mut rows = Vec::new();
+            // Only tracks sit under the root, so a track is not
+            // wrapped.
+            if !is_track(&path) {
+                let kinds = [
+                    ("All", Combinator::All),
+                    ("Chain", Combinator::Chain),
+                    ("Flow", Combinator::Flow(DEFAULT_STAGGER)),
+                ]
+                .into_iter()
+                .map(|(name, combinator)| {
+                    let path = path.clone();
+                    menu_item(label(name).wrap(false))
+                        .on_activate(move |world| {
+                            reorder::encapsulate(
+                                world,
+                                &path,
+                                combinator.clone(),
+                            );
+                        })
+                        .boxed()
+                })
+                .collect::<Vec<_>>();
+                rows.push(
+                    submenu(
+                        label("Encapsulate in..").wrap(false),
+                        kinds,
+                    )
+                    .boxed(),
+                );
+            }
             let path = path.clone();
-            (menu_item(
-                row((
-                    icon(trash.clone()),
-                    label("Delete").wrap(false),
-                ))
-                .align(AlignItems::Center)
-                .gap(gap)
-                .toned(Tone::Critical),
-            )
-            .on_activate(move |world| {
-                reorder::delete(world, &path);
-            }),)
+            rows.push(
+                menu_item(
+                    row((
+                        icon(trash.clone()),
+                        label("Delete").wrap(false),
+                    ))
+                    .align(AlignItems::Center)
+                    .gap(gap)
+                    .toned(Tone::Critical),
+                )
+                .on_activate(move |world| {
+                    reorder::delete(world, &path);
+                })
+                .boxed(),
+            );
+            rows
         })
         .boxed()
     }
