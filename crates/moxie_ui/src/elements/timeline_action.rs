@@ -21,7 +21,7 @@ use bevy_fynix::{
 };
 
 use super::placement::Placement;
-use super::timeline_block::{Selected, snap_selected_border};
+use super::timeline_block::{Selected, outline, selected_look};
 use crate::drag::Dragged;
 use crate::theme::EditorTheme;
 
@@ -116,17 +116,15 @@ pub fn timeline_action(
                     )
                 })
                 // After the dragged rule, so a selected clip keeps
-                // its coloured border while it is dragged.
-                .when::<Selected, _>(|frame, theme: &EditorTheme| {
-                    frame.border_color(theme.color.accent)
-                }),
+                // its look while it is dragged.
+                .when::<Selected, _>(selected_look),
         );
         cx.world.entity_mut(action).insert((
             ButtonBehavior,
             EntityCursor(SystemCursorIcon::Pointer),
             ActionClip,
         ));
-        snap_selected_border(cx.world, action, selected);
+        outline(cx.world, action, selected);
         cx.under(action, |cx| {
             if let Some(glyph) = glyph {
                 let hugged = !glyph.subscript.is_empty();
@@ -482,37 +480,20 @@ mod tests {
     }
 
     #[test]
-    fn selected_thickens_the_border() {
+    fn selecting_recolours_the_border_and_keeps_its_width() {
         let mut app = app();
-        let node = mounted(&mut app, false, true);
-        app.update();
-
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.border, UiRect::all(px(3.0)));
-
-        app.world_mut().entity_mut(node).remove::<Selected>();
-        app.update();
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.border, UiRect::all(px(1.0)));
-    }
-
-    #[test]
-    fn the_border_width_snaps_where_the_colour_eases() {
-        let mut app = app();
-        app.insert_resource(ReducedMotion(false));
         let node = mounted(&mut app, false, false);
         app.update();
+        let rest = edge(&app, node);
+        let width = app.world().get::<Node>(node).unwrap().border;
 
         app.world_mut().entity_mut(node).insert(Selected);
         app.update();
 
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.border, UiRect::all(px(3.0)));
-        let accent = EditorTheme::default().color.accent;
-        assert_ne!(
-            edge(&app, node),
-            BorderColor::all(accent),
-            "the colour is still on its way"
+        assert_ne!(edge(&app, node), rest);
+        assert_eq!(
+            app.world().get::<Node>(node).unwrap().border,
+            width
         );
     }
 

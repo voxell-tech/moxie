@@ -1,4 +1,3 @@
-use bevy::color::Alpha as _;
 use bevy::ecs::entity::Entity;
 use bevy::ecs::world::World;
 use bevy::ui::{Node, UiRect, Val, percent, px};
@@ -10,27 +9,24 @@ use crate::theme::EditorTheme;
 
 /// A track's lane: an absolutely placed strip as wide as its parent,
 /// `height` tall and `top` from the parent's top, with a hairline
-/// under it. A selected lane is tinted.
+/// under it.
 pub fn timeline_lane(
     top: Val,
     height: f32,
-    selected: bool,
 ) -> impl View<Bevy, EditorTheme> {
     AnyView::<Bevy, EditorTheme>::new(move |cx| {
         let theme = cx.theme();
         let width = theme.space.hairline;
-        let mut lane = Placement::new(
-            Val::ZERO,
-            top,
-            percent(100.0),
-            px(height),
-        )
-        .apply(frame())
-        .border_color(theme.color.hairline);
-        if selected {
-            lane = lane.fill(theme.palette.purple.with_alpha(0.12));
-        }
-        let lane = cx.build(lane);
+        let lane = cx.build(
+            Placement::new(
+                Val::ZERO,
+                top,
+                percent(100.0),
+                px(height),
+            )
+            .apply(frame())
+            .border_color(theme.color.hairline),
+        );
         set_bottom_border(cx.world, lane, width);
         lane
     })

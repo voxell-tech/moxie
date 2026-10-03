@@ -37,7 +37,7 @@ pub use timeline_action::{
     ACTION_ICON_SIZE, ActionClip, ActionGlyph, fit_action_icons,
     icon_fit, timeline_action,
 };
-pub use timeline_block::{Selected, timeline_block};
+pub use timeline_block::{Selected, selected_fill, timeline_block};
 pub use timeline_gap::timeline_gap;
 pub use timeline_lane::{timeline_lane, timeline_span};
 pub use timeline_link::timeline_link;

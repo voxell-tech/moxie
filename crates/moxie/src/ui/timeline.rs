@@ -34,9 +34,9 @@ use block_layout::Placed;
 use motiongfx_scene::refs::FieldRef;
 use moxie_ui::drag::Dragged;
 use moxie_ui::elements::{
-    ActionGlyph, Placement, playhead_line, time_label, time_tick,
-    timeline_action, timeline_block, timeline_gap, timeline_lane,
-    timeline_link, timeline_span,
+    ActionGlyph, Placement, playhead_line, selected_fill, time_label,
+    time_tick, timeline_action, timeline_block, timeline_gap,
+    timeline_lane, timeline_link, timeline_span,
 };
 use moxie_ui::field_icon::{field_icon, root_hue};
 use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
@@ -551,7 +551,6 @@ impl Tree<'_> {
         at: usize,
     ) -> (Vec<AnyView<Bevy, EditorTheme>>, usize) {
         let placed = &self.placements[at];
-        let is_selected = self.selected == Some(&placed.path);
         let mut inside = Vec::new();
         let mut next = at + 1;
         while self
@@ -576,8 +575,7 @@ impl Tree<'_> {
             }),
         );
         let views = vec![
-            timeline_lane(placed.top(), placed.h, is_selected)
-                .boxed(),
+            timeline_lane(placed.top(), placed.h).boxed(),
             timeline_span(
                 Placement::new(
                     span.0,
@@ -681,22 +679,31 @@ impl Tree<'_> {
         let header = button(
             row((chevron, name)).align(AlignItems::Center).gap(4.0),
         );
-        // A track's header floats at its lane's left edge.
+        // A track's header floats at its lane's left edge. Selected,
+        // it is the header that is tinted, the lane having no box.
         let header = if is_track(&path) {
-            header.position(PositionType::Absolute).inset(UiRect {
-                left: Val::ZERO,
-                top: placed.top(),
-                right: Val::Auto,
-                bottom: Val::Auto,
-            })
+            let header = header
+                .position(PositionType::Absolute)
+                .inset(UiRect {
+                    left: Val::ZERO,
+                    top: placed.top(),
+                    right: Val::Auto,
+                    bottom: Val::Auto,
+                });
+            if self.selected == Some(&path) {
+                header
+                    .fill(selected_fill(self.theme))
+                    .radius(self.theme.space.radius)
+            } else {
+                header.radius(0.0)
+            }
         } else {
-            header.width(percent(100.0))
+            header.width(percent(100.0)).radius(0.0)
         };
         let header = header
             .height(px(HEADER_ROW))
             .justify(JustifyContent::FlexStart)
             .padding(UiRect::axes(px(4.0), px(2.0)))
-            .radius(0.0)
             .rules(ghost)
             .on_activate(move |world| select(world, &select_path));
         if is_track(&path) {
