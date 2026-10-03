@@ -10,7 +10,7 @@
 use bevy::picking::events::{DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
+use bevy::ui::{UiGlobalTransform, UiScale};
 use bevy_fynix::{AnyView, Bevy, OverrideCursor, Theme, View};
 use bevy_motiongfx::scene::backend::Backend;
 use motiongfx_scene::block::{Block, Node as SceneNode};
@@ -19,7 +19,7 @@ use moxie_ui::drag::{Dragged, grab, ungrab};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::theme::EditorTheme;
 
-use super::hint::HintNode;
+use super::hint::{self, HintNode};
 use super::landing::{self, Target, block_at_mut, under};
 use super::retime::{BoxPath, GapPath};
 use super::{
@@ -45,6 +45,10 @@ impl Dragging {
     }
 }
 
+/// On a node a drag moved out of the box list.
+#[derive(Component)]
+struct Detached;
+
 /// One drag in progress.
 struct Gesture {
     path: Vec<usize>,
@@ -69,7 +73,7 @@ pub(crate) fn body(
             move |start: On<Pointer<DragStart>>,
                   scale: Res<UiScale>,
                   q_viewport: Query<
-                (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+                (&ComputedNode, &UiGlobalTransform),
                 With<TrackViewport>,
             >,
                   q_boxes: Query<(Entity, &BoxPath)>,
@@ -84,8 +88,7 @@ pub(crate) fn body(
                     // The root and the tracks stay where they are.
                     return;
                 }
-                let Ok((node, transform, scroll)) =
-                    q_viewport.single()
+                let Ok((node, transform)) = q_viewport.single()
                 else {
                     return;
                 };
@@ -108,9 +111,7 @@ pub(crate) fn body(
                 }
                 dragging.0 = Some(Gesture {
                     path: path.clone(),
-                    cursor_start: to_content(
-                        cursor, node, transform, scroll,
-                    ),
+                    cursor_start: to_content(cursor, node, transform),
                     hold: None,
                     target: None,
                 });
@@ -131,9 +132,10 @@ fn preview(
     view: Res<TimelineView>,
     mut dragging: ResMut<Dragging>,
     q_viewport: Query<
-        (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+        (&ComputedNode, &UiGlobalTransform),
         With<TrackViewport>,
     >,
+    q_rects: Query<(&ComputedNode, &UiGlobalTransform)>,
     q_boxes: Query<(Entity, &BoxPath, Option<&ChildOf>)>,
     q_gaps: Query<(Entity, &GapPath), Without<BoxPath>>,
     mut nodes: Query<&mut Node>,
@@ -145,19 +147,14 @@ fn preview(
     let Some(cursor) = pointer.position() else {
         return;
     };
-    let Ok((viewport_node, viewport_transform, scroll)) =
-        q_viewport.single()
+    let Ok((viewport_node, viewport_transform)) = q_viewport.single()
     else {
         return;
     };
-    let viewport_rect =
-        logical_rect(viewport_node, viewport_transform);
     let drag_z = theme.0.layer.drag;
 
-    let content = Vec2::new(
-        cursor.x - viewport_rect.min.x,
-        cursor.y - viewport_rect.min.y + scroll.y,
-    );
+    let content =
+        to_content(cursor, viewport_node, viewport_transform);
     let root = &editor_scene.scene().0.animation;
     let layout = block_layout::layout(
         root,
@@ -166,12 +163,20 @@ fn preview(
         theme.0.space,
     );
 
-    // Detaches to the tracks' parent, which sits at the content's
-    // origin. The rebuild that ends the drag puts it back.
-    let drag_parent = q_boxes
-        .iter()
-        .find(|(_, box_path, _)| is_track(&box_path.0))
-        .and_then(|(_, _, child_of)| child_of.map(ChildOf::parent));
+    // Detaches to the hint's area, outside the scrolled content: a
+    // box dragged past the content's end would grow it.
+    let Some((drag_parent, to_area)) = hint.area().and_then(|area| {
+        let (area_node, area_transform) = q_rects.get(area).ok()?;
+        Some((
+            area,
+            hint::content_to_area(
+                (viewport_node, viewport_transform),
+                (area_node, area_transform),
+            ),
+        ))
+    }) else {
+        return;
+    };
     let Some(placed) = layout.iter().find(|p| p.path == gesture.path)
     else {
         return;
@@ -179,17 +184,17 @@ fn preview(
     let hold = *gesture.hold.get_or_insert(
         gesture.cursor_start - Vec2::new(placed.x, placed.y),
     );
-    let at = content - hold;
+    let at = content - hold + to_area;
 
     for (entity, box_path, child_of) in &q_boxes {
         if box_path.0 != gesture.path {
             continue;
         }
         commands.entity(entity).insert(GlobalZIndex(drag_z));
-        if let Some(drag_parent) = drag_parent
-            && child_of.map(ChildOf::parent) != Some(drag_parent)
-        {
-            commands.entity(entity).insert(ChildOf(drag_parent));
+        if child_of.map(ChildOf::parent) != Some(drag_parent) {
+            commands
+                .entity(entity)
+                .insert((ChildOf(drag_parent), Detached));
         }
         if let Ok(mut node) = nodes.get_mut(entity) {
             node.left = px(at.x);
@@ -203,10 +208,11 @@ fn preview(
         if gap_path.0 != gesture.path {
             continue;
         }
-        commands.entity(entity).insert(GlobalZIndex(drag_z));
-        if let Some(drag_parent) = drag_parent {
-            commands.entity(entity).insert(ChildOf(drag_parent));
-        }
+        commands.entity(entity).insert((
+            GlobalZIndex(drag_z),
+            ChildOf(drag_parent),
+            Detached,
+        ));
         if let Some(gap_x) = placed.gap_x
             && let Ok(mut node) = nodes.get_mut(entity)
         {
@@ -234,20 +240,35 @@ pub(super) fn to_content(
     cursor: Vec2,
     node: &ComputedNode,
     transform: &UiGlobalTransform,
-    scroll: &ScrollPosition,
 ) -> Vec2 {
     let min = logical_rect(node, transform).min;
-    Vec2::new(cursor.x - min.x, cursor.y - min.y + scroll.y)
+    Vec2::new(cursor.x - min.x, cursor.y - min.y + scrolled(node))
+}
+
+/// How far the viewport is scrolled, in logical pixels. The layout's
+/// own figure, which never runs past the content.
+pub(super) fn scrolled(viewport: &ComputedNode) -> f32 {
+    viewport.scroll_position.y * viewport.inverse_scale_factor()
 }
 
 /// Common tail of a committed drop and a cancel: drop the drag-wide
-/// cursor and bump [`RebuildTick`], so the box list respawns and
-/// every dragged box loses both its preview offset and its raised z.
+/// cursor, despawn what the drag detached, and bump [`RebuildTick`]
+/// so the box list respawns with the dragged box back in it.
 fn end_drag(
     override_cursor: &mut OverrideCursor,
     commands: &mut Commands,
 ) {
     ungrab(override_cursor);
+    commands.queue(|world: &mut World| {
+        // Outside the box list, so its rebuild leaves them behind.
+        let detached = world
+            .query_filtered::<Entity, With<Detached>>()
+            .iter(world)
+            .collect::<Vec<_>>();
+        for entity in detached {
+            world.entity_mut(entity).despawn();
+        }
+    });
     commands.queue(RebuildTick::bump_in);
 }
 

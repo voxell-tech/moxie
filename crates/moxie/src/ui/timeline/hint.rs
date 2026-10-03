@@ -2,13 +2,14 @@
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use bevy::ui::{ScrollPosition, UiGlobalTransform};
+use bevy::ui::UiGlobalTransform;
 use bevy_fynix::views::{BehaviorExt as _, frame};
 use bevy_fynix::{AnyView, Bevy, Theme};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::theme::EditorTheme;
 
 use super::TrackViewport;
+use super::reorder::scrolled;
 
 const OUTLINE_GROW: f32 = 2.0;
 const OUTLINE_FILL_ALPHA: f32 = 0.15;
@@ -37,21 +38,38 @@ struct Hide {
 /// Shows and hides the [`Hint`] node.
 #[derive(SystemParam)]
 pub(super) struct HintNode<'w, 's> {
-    hints: Query<'w, 's, Entity, With<Hint>>,
+    hints: Query<'w, 's, (Entity, &'static ChildOf), With<Hint>>,
 }
 
 impl HintNode<'_, '_> {
     pub(super) fn show(&self, commands: &mut Commands, shape: Shape) {
-        if let Ok(entity) = self.hints.single() {
+        if let Ok((entity, _)) = self.hints.single() {
             commands.trigger(Show { entity, shape });
         }
     }
 
     pub(super) fn hide(&self, commands: &mut Commands) {
-        if let Ok(entity) = self.hints.single() {
+        if let Ok((entity, _)) = self.hints.single() {
             commands.trigger(Hide { entity });
         }
     }
+
+    /// The node the hint floats over: the viewport's parent, which
+    /// does not scroll.
+    pub(super) fn area(&self) -> Option<Entity> {
+        self.hints.single().ok().map(|(_, parent)| parent.parent())
+    }
+}
+
+/// The offset from the viewport's content space to `area`'s own,
+/// with the viewport scrolled as it is.
+pub(super) fn content_to_area(
+    viewport: (&ComputedNode, &UiGlobalTransform),
+    area: (&ComputedNode, &UiGlobalTransform),
+) -> Vec2 {
+    logical_rect(viewport.0, viewport.1).min
+        - Vec2::new(0.0, scrolled(viewport.0))
+        - logical_rect(area.0, area.1).min
 }
 
 /// The hint, hidden until something shows it. It floats over its
@@ -78,7 +96,7 @@ fn on_show(
     show: On<Show>,
     theme: Res<Theme<EditorTheme>>,
     q_viewport: Query<
-        (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+        (&ComputedNode, &UiGlobalTransform),
         With<TrackViewport>,
     >,
     q_area: Query<(&ComputedNode, &UiGlobalTransform)>,
@@ -89,9 +107,7 @@ fn on_show(
         &mut BorderColor,
     )>,
 ) {
-    let Ok((viewport_node, viewport_transform, scroll)) =
-        q_viewport.single()
-    else {
+    let Ok(viewport) = q_viewport.single() else {
         return;
     };
     let Ok((parent, mut node, mut background, mut border)) =
@@ -99,8 +115,7 @@ fn on_show(
     else {
         return;
     };
-    let Ok((area_node, area_transform)) = q_area.get(parent.parent())
-    else {
+    let Ok(area) = q_area.get(parent.parent()) else {
         return;
     };
     let theme = &theme.0;
@@ -119,11 +134,7 @@ fn on_show(
         }
     };
 
-    // The area is the hint's parent, and the viewport scrolls under
-    // it.
-    let to_area = logical_rect(viewport_node, viewport_transform).min
-        - Vec2::new(0.0, scroll.y)
-        - logical_rect(area_node, area_transform).min;
+    let to_area = content_to_area(viewport, area);
     node.display = Display::Flex;
     node.left = px(bounds.min.x + to_area.x);
     node.top = px(bounds.min.y + to_area.y);

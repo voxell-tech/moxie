@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 use bevy::asset::uuid::Uuid;
 use bevy::picking::events::{DragDrop, Pointer};
 use bevy::prelude::*;
-use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
+use bevy::ui::{UiGlobalTransform, UiScale};
 use bevy_fynix::Theme;
 use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
 use bevy_motiongfx::scene::id::SceneUid;
@@ -27,6 +27,7 @@ use moxie_ui::layout::logical_rect;
 use moxie_ui::theme::EditorTheme;
 
 use super::hint::HintNode;
+use super::reorder::to_content;
 use super::{
     BlockFoldState, RebuildTick, TrackViewport, block_layout, landing,
 };
@@ -51,7 +52,7 @@ fn preview(
     folded: Res<BlockFoldState>,
     view: Res<TimelineView>,
     q_viewport: Query<
-        (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+        (&ComputedNode, &UiGlobalTransform),
         With<TrackViewport>,
     >,
     mut was_dragging: Local<bool>,
@@ -71,10 +72,8 @@ fn preview(
         return;
     }
     *was_dragging = true;
-    let (
-        Some(cursor),
-        Ok((viewport_node, viewport_transform, scroll)),
-    ) = (pointer.position(), q_viewport.single())
+    let (Some(cursor), Ok((viewport_node, viewport_transform))) =
+        (pointer.position(), q_viewport.single())
     else {
         hint.hide(&mut commands);
         return;
@@ -86,10 +85,8 @@ fn preview(
         return;
     }
 
-    let content = Vec2::new(
-        cursor.x - viewport_rect.min.x,
-        cursor.y - viewport_rect.min.y + scroll.y,
-    );
+    let content =
+        to_content(cursor, viewport_node, viewport_transform);
     let root = &editor_scene.scene().0.animation;
     let layout = block_layout::layout(
         root,
@@ -118,7 +115,7 @@ fn on_drop(
     folded: Res<BlockFoldState>,
     mut dragged: ResMut<DraggedField>,
     q_viewport: Query<
-        (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+        (&ComputedNode, &UiGlobalTransform),
         With<TrackViewport>,
     >,
     mut commands: Commands,
@@ -130,8 +127,7 @@ fn on_drop(
     };
     hint.hide(&mut commands);
     let cursor = drop.logical(&scale);
-    let Ok((viewport_node, viewport_transform, scroll)) =
-        q_viewport.single()
+    let Ok((viewport_node, viewport_transform)) = q_viewport.single()
     else {
         return;
     };
@@ -141,10 +137,8 @@ fn on_drop(
         return;
     }
 
-    let content = Vec2::new(
-        cursor.x - viewport_rect.min.x,
-        cursor.y - viewport_rect.min.y + scroll.y,
-    );
+    let content =
+        to_content(cursor, viewport_node, viewport_transform);
     let view = *view;
     let folded = folded.paths().clone();
 
