@@ -79,12 +79,12 @@ pub fn timeline_action(
         let fill = if draft {
             theme.color.critical.with_alpha(0.5)
         } else {
-            theme.fill()
+            theme.color.fill_faint
         };
         let dragged_fill = if draft {
             fill.with_alpha(DRAGGED_FILL_ALPHA)
         } else {
-            theme.color.fill_faint
+            Color::NONE
         };
         let border = if draft {
             theme.color.critical.with_alpha(0.5)

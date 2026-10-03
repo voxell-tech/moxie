@@ -234,7 +234,7 @@ impl Default for EditorTheme {
                 radius: 4.0,
                 row: 24.0,
                 action_row: 32.0,
-                lane_gap: 2.0,
+                lane_gap: 8.0,
                 touch: 26.0,
                 icon: 11.0,
                 hairline: 1.0,

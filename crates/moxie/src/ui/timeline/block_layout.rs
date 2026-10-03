@@ -336,6 +336,12 @@ fn measure_block(
     } else {
         content_height
     };
+    // Room under the last row, so it clears the box's bottom edge.
+    let content_height = if content_height > 0.0 && !path.is_empty() {
+        content_height + space.lane_gap
+    } else {
+        content_height
+    };
     Measured {
         start,
         end: start.saturating_add(block_duration(block)),

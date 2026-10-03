@@ -42,8 +42,8 @@ where
                 .align(AlignItems::Start)
                 .overflow(Overflow::clip())
                 .radius(theme.space.card_radius)
-                .fill(text.with_alpha(0.03))
-                .border_color(text.with_alpha(0.5))
+                .fill(text.with_alpha(0.02))
+                .border_color(text.with_alpha(0.18))
                 .when::<Selected, _>(move |frame, _: &EditorTheme| {
                     frame
                         .fill(
@@ -54,7 +54,7 @@ where
                         .border_color(purple.with_alpha(0.5))
                 })
                 .when::<Dragged, _>(move |frame, _: &EditorTheme| {
-                    frame.border_color(text.with_alpha(0.2))
+                    frame.border_color(text.with_alpha(0.08))
                 }),
         );
         snap_selected_border(cx.world, block, selected);
