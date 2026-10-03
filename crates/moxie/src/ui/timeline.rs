@@ -16,6 +16,7 @@ mod zoom;
 use core::time::Duration;
 use std::collections::BTreeSet;
 
+use bevy::picking::Pickable;
 use bevy::prelude::*;
 use bevy::ui::ScrollPosition;
 use bevy_fynix::tokens::Tone;
@@ -262,12 +263,64 @@ fn axis_marks(
     })
 }
 
+/// Faint vertical lines under the boxes at the ruler's major ticks,
+/// drawn again when their width or the view changes.
+fn time_grid() -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(|cx| {
+        let grid = cx.build(
+            frame()
+                .position(PositionType::Absolute)
+                .inset(UiRect::all(px(0.0)))
+                .tagged(Pickable::IGNORE),
+        );
+        let lines = keyed::<EditorTheme, (u32, TimelineView)>(
+            changing_under(Some(grid), move |world: &World| {
+                axis_view(world, grid)
+            }),
+            |&(width, view)| grid_lines(width, view),
+        )
+        .within(
+            frame()
+                .width(percent(100.0))
+                .height(percent(100.0))
+                .tagged(Pickable::IGNORE),
+        );
+        cx.under(grid, |cx| cx.build(lines));
+        grid
+    })
+}
+
+/// A full-height line at every major tick across `width` px of
+/// `view`.
+fn grid_lines(
+    width: u32,
+    view: TimelineView,
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let color = cx.theme().color.text_dim.with_alpha(0.12);
+        let lines = time_axis::ticks(&view, width as f32)
+            .into_iter()
+            .filter(|tick| tick.label.is_some())
+            .map(|tick| {
+                time_tick(px(tick.x), percent(100.0), color).boxed()
+            })
+            .collect::<Vec<_>>();
+        cx.build(
+            row(lines)
+                .width(percent(100.0))
+                .height(percent(100.0))
+                .gap(0.0)
+                .tagged(Pickable::IGNORE),
+        )
+    })
+}
+
 /// Clips the viewport and the hint, both its children, so a
 /// scrolled-off hint cannot bleed up over the time axis. The
 /// playhead sits outside this on purpose: it runs the ruler's full
 /// height.
 fn clipped_tracks() -> AnyView<Bevy, EditorTheme> {
-    column((viewport(), hint::hint()))
+    column((time_grid(), viewport(), hint::hint()))
         .width(percent(100.0))
         .grow(1.0)
         .min_height(px(0.0))
