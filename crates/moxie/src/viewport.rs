@@ -22,26 +22,13 @@ use bevy::ui::widget::ViewportNode;
 use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, Theme};
 use bevy_motiongfx::scene::id::EntityUid;
-use moxie_ui::theme::EditorTheme;
+use moxie_ui::theme::{EditorTheme, ViewportControls};
 
 use crate::SelectedEntity;
 use crate::ui::text_field_focused;
 
 /// The render layer of what only a viewport draws.
 const EDITOR_LAYER: usize = 2;
-
-/// Radians a pixel of drag orbits by.
-const ORBIT_SPEED: f32 = 0.005;
-/// The share of the distance to the focus a pixel of drag pans by.
-const PAN_SPEED: f32 = 0.0015;
-/// The share of the distance a scrolled line, or pixel, zooms by.
-const ZOOM_PER_LINE: f32 = 0.1;
-const ZOOM_PER_PIXEL: f32 = 0.002;
-const MIN_DISTANCE: f32 = 0.05;
-const MAX_DISTANCE: f32 = 10_000.0;
-/// How far a pressed pointer moves, in logical pixels, before its
-/// release stops being a click.
-const CLICK_SLOP: f32 = 4.0;
 /// Short of straight up or down, where the yaw would flip.
 const MAX_PITCH: f32 = FRAC_PI_2 - 0.01;
 
@@ -108,24 +95,24 @@ impl EditorCamera {
         .with_rotation(rotation)
     }
 
-    fn orbit(&mut self, delta: Vec2) {
-        self.yaw -= delta.x * ORBIT_SPEED;
-        self.pitch = (self.pitch - delta.y * ORBIT_SPEED)
+    fn orbit(&mut self, delta: Vec2, controls: &ViewportControls) {
+        self.yaw -= delta.x * controls.orbit_speed;
+        self.pitch = (self.pitch - delta.y * controls.orbit_speed)
             .clamp(-MAX_PITCH, MAX_PITCH);
     }
 
-    fn pan(&mut self, delta: Vec2) {
+    fn pan(&mut self, delta: Vec2, controls: &ViewportControls) {
         let rotation = self.rotation();
-        let step = self.distance * PAN_SPEED;
+        let step = self.distance * controls.pan_speed;
         self.focus += rotation * Vec3::X * -delta.x * step
             + rotation * Vec3::Y * delta.y * step;
     }
 
     /// Moves toward the focus for a positive `amount`, a share of
     /// the distance.
-    fn zoom(&mut self, amount: f32) {
+    fn zoom(&mut self, amount: f32, controls: &ViewportControls) {
         self.distance = (self.distance * (1.0 - amount))
-            .clamp(MIN_DISTANCE, MAX_DISTANCE);
+            .clamp(controls.min_distance, controls.max_distance);
     }
 }
 
@@ -210,8 +197,8 @@ fn shift(keys: &ButtonInput<KeyCode>) -> bool {
     keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight])
 }
 
-/// On a viewport whose pointer has moved past [`CLICK_SLOP`] since
-/// its press, until the press ends.
+/// On a viewport whose pointer has moved past the theme's click slop
+/// since its press, until the press ends.
 #[derive(Component)]
 struct Swept;
 
@@ -220,8 +207,10 @@ fn on_drag(
     nodes: Query<&ViewportNode>,
     mut cameras: Query<&mut EditorCamera>,
     keys: Res<ButtonInput<KeyCode>>,
+    theme: Res<Theme<EditorTheme>>,
     mut commands: Commands,
 ) {
+    let controls = &theme.0.viewport;
     let node = drag.event_target();
     let Some(mut camera) = nodes
         .get(node)
@@ -232,12 +221,12 @@ fn on_drag(
         return;
     };
     drag.propagate(false);
-    if drag.distance.length() > CLICK_SLOP {
+    if drag.distance.length() > controls.click_slop {
         commands.entity(node).insert(Swept);
     }
     match Gesture::of(drag.button, alt(&keys), shift(&keys)) {
-        Some(Gesture::Orbit) => camera.orbit(drag.delta),
-        Some(Gesture::Pan) => camera.pan(drag.delta),
+        Some(Gesture::Orbit) => camera.orbit(drag.delta, controls),
+        Some(Gesture::Pan) => camera.pan(drag.delta, controls),
         None => {}
     }
 }
@@ -250,6 +239,7 @@ fn on_scroll(
     mut scroll: On<Pointer<Scroll>>,
     nodes: Query<&ViewportNode>,
     mut cameras: Query<&mut EditorCamera>,
+    theme: Res<Theme<EditorTheme>>,
 ) {
     let Some(mut camera) = nodes
         .get(scroll.event_target())
@@ -260,11 +250,12 @@ fn on_scroll(
         return;
     };
     scroll.propagate(false);
+    let controls = &theme.0.viewport;
     let per_unit = match scroll.unit {
-        MouseScrollUnit::Line => ZOOM_PER_LINE,
-        MouseScrollUnit::Pixel => ZOOM_PER_PIXEL,
+        MouseScrollUnit::Line => controls.zoom_per_line,
+        MouseScrollUnit::Pixel => controls.zoom_per_pixel,
     };
-    camera.zoom(scroll.y * per_unit);
+    camera.zoom(scroll.y * per_unit, controls);
 }
 
 /// Selects the subject under a click, or nothing for a click on
@@ -416,12 +407,16 @@ mod tests {
         );
     }
 
+    fn controls() -> ViewportControls {
+        EditorTheme::default().viewport
+    }
+
     #[test]
     fn an_orbit_stops_short_of_straight_up_and_down() {
         let mut orbit = EditorCamera::default();
-        orbit.orbit(Vec2::new(0.0, 1e6));
+        orbit.orbit(Vec2::new(0.0, 1e6), &controls());
         assert_eq!(orbit.pitch, -MAX_PITCH);
-        orbit.orbit(Vec2::new(0.0, -1e6));
+        orbit.orbit(Vec2::new(0.0, -1e6), &controls());
         assert_eq!(orbit.pitch, MAX_PITCH);
     }
 
@@ -429,7 +424,7 @@ mod tests {
     fn a_pan_moves_the_focus_and_keeps_the_distance() {
         let mut orbit = EditorCamera::default();
         let before = orbit;
-        orbit.pan(Vec2::new(40.0, -25.0));
+        orbit.pan(Vec2::new(40.0, -25.0), &controls());
 
         assert_ne!(orbit.focus, before.focus);
         assert_eq!(orbit.distance, before.distance);
@@ -441,14 +436,15 @@ mod tests {
     #[test]
     fn a_zoom_stays_within_its_bounds() {
         let mut orbit = EditorCamera::default();
+        let controls = controls();
         for _ in 0..1000 {
-            orbit.zoom(0.9);
+            orbit.zoom(0.9, &controls);
         }
-        assert_eq!(orbit.distance, MIN_DISTANCE);
+        assert_eq!(orbit.distance, controls.min_distance);
         for _ in 0..1000 {
-            orbit.zoom(-10.0);
+            orbit.zoom(-10.0, &controls);
         }
-        assert_eq!(orbit.distance, MAX_DISTANCE);
+        assert_eq!(orbit.distance, controls.max_distance);
     }
 
     #[test]
