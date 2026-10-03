@@ -19,6 +19,7 @@ mod tests;
 mod thumbnails;
 mod ui;
 mod view;
+mod viewport;
 
 use core::time::Duration;
 use std::path::PathBuf;
@@ -65,6 +66,7 @@ impl Plugin for MoxiePlugin {
             thumbnails::plugin,
             catalog::plugin,
             materials::plugin,
+            viewport::plugin,
         ))
         .add_systems(PreUpdate, ensure_scene_root);
     }

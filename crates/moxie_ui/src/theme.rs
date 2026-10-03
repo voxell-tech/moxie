@@ -89,6 +89,7 @@ pub struct EditorTheme {
     pub text: TextScale,
     pub motion: Motion,
     pub layer: Layers,
+    pub viewport: ViewportControls,
 }
 
 /// Semantic colour slots. A fill is translucent and layers over
@@ -184,6 +185,29 @@ pub struct Layers {
     pub tooltip: i32,
 }
 
+/// How a viewport's camera answers the pointer.
+#[derive(Clone, Copy, Debug)]
+pub struct ViewportControls {
+    /// Radians a pixel of drag orbits by.
+    pub orbit_speed: f32,
+    /// The share of the distance to the focus a pixel of drag pans
+    /// by.
+    pub pan_speed: f32,
+    /// The share of the distance to the focus a scrolled line zooms
+    /// by.
+    pub zoom_per_line: f32,
+    /// The share of the distance to the focus a scrolled pixel zooms
+    /// by.
+    pub zoom_per_pixel: f32,
+    /// The closest the camera sits to its focus.
+    pub min_distance: f32,
+    /// The farthest the camera sits from its focus.
+    pub max_distance: f32,
+    /// How far a pressed pointer moves, in logical pixels, before
+    /// its release stops being a click.
+    pub click_slop: f32,
+}
+
 /// Font sizes, three steps.
 #[derive(Clone, Copy, Debug)]
 pub struct TextScale {
@@ -266,6 +290,15 @@ impl Default for EditorTheme {
                 drag: 200,
                 context_menu: 250,
                 tooltip: 300,
+            },
+            viewport: ViewportControls {
+                orbit_speed: 0.005,
+                pan_speed: 0.0015,
+                zoom_per_line: 0.1,
+                zoom_per_pixel: 0.002,
+                min_distance: 0.05,
+                max_distance: 10_000.0,
+                click_slop: 4.0,
             },
             palette,
         }

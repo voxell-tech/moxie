@@ -106,7 +106,7 @@ impl Plugin for UiPlugin {
 }
 
 /// True while a text field holds focus.
-fn text_field_focused(
+pub(crate) fn text_field_focused(
     focus: Res<InputFocus>,
     q_editable: Query<(), With<EditableText>>,
 ) -> bool {
@@ -203,6 +203,8 @@ fn setup_editor_ui(
     if let Some(hsplit) = tree.parent_of(viewport) {
         tree.set_fraction(hsplit, 0.2);
     }
+
+    tree.split(viewport, Edge::Right, "preview".into());
 }
 
 /// Mounts the top bar over the dock, on the UI camera. Runs after
@@ -244,7 +246,15 @@ fn register_windows(
     registry
         .register(
             "viewport",
-            kind("Viewport", crate::icons::VIEWPORT, viewport),
+            kind(
+                "Viewport",
+                crate::icons::VIEWPORT,
+                crate::viewport::panel,
+            ),
+        )
+        .register(
+            "preview",
+            kind("Preview", crate::icons::PREVIEW, preview),
         )
         .register(
             "timeline",
@@ -281,7 +291,7 @@ fn register_windows(
 }
 
 /// The composition's preview, letterboxed to the area it sits in.
-fn viewport() -> AnyView<Bevy, EditorTheme> {
+fn preview() -> AnyView<Bevy, EditorTheme> {
     AnyView::<Bevy, EditorTheme>::new(|cx| {
         let preview = cx.world.resource::<PreviewImage>().0.clone();
         cx.build(
