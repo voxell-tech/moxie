@@ -13,6 +13,8 @@ use bevy::reflect::{
 };
 use bevy_motiongfx::motiongfx::field_path::field::Field;
 
+use crate::theme::Hue;
+
 /// Binds an icon asset path to the field, or the whole type, it is
 /// written on:
 ///
@@ -40,9 +42,30 @@ pub trait FieldIconAppExt {
         field: Field<S, T>,
         icon: &'static str,
     ) -> &mut Self;
+
+    /// Tints the icons of every field of `S` with `hue`.
+    fn register_root_hue<S: Reflect + GetTypeRegistration>(
+        &mut self,
+        hue: Hue,
+    ) -> &mut Self;
 }
 
 impl FieldIconAppExt for App {
+    fn register_root_hue<S: Reflect + GetTypeRegistration>(
+        &mut self,
+        hue: Hue,
+    ) -> &mut Self {
+        self.register_type::<S>();
+        let registry: TypeRegistryArc =
+            self.world().resource::<AppTypeRegistry>().0.clone();
+        if let Some(registration) =
+            registry.write().get_mut(std::any::TypeId::of::<S>())
+        {
+            registration.insert(RootHue(hue));
+        }
+        self
+    }
+
     fn register_field_icon<S: Reflect + GetTypeRegistration, T>(
         &mut self,
         field: Field<S, T>,
@@ -67,6 +90,21 @@ impl FieldIconAppExt for App {
     }
 }
 
+/// The accent a type's icons are tinted with. Lives on that type's
+/// registration.
+#[derive(Clone, Copy)]
+struct RootHue(Hue);
+
+/// The icon that applies to a field, and what the field's path
+/// holds past the path the icon is bound to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundIcon {
+    pub icon: &'static str,
+    /// A dotted path such as `.x`, empty when the icon is bound to
+    /// the field itself.
+    pub rest: String,
+}
+
 /// The icon for the field at `field_path` of the type at `type_path`:
 /// the field's own, else the nearest parent's, up to the type itself.
 /// `None` when nothing on the way binds one.
@@ -77,7 +115,7 @@ pub fn field_icon(
     registry: &TypeRegistry,
     type_path: &str,
     field_path: &str,
-) -> Option<&'static str> {
+) -> Option<BoundIcon> {
     let registration = registry.get_with_type_path(type_path)?;
     let registered = registration.data::<FieldIcons>();
     let segments = segments(field_path);
@@ -97,7 +135,22 @@ pub fn field_icon(
             .and_then(|icons| icons.0.get(&join(&segments[..depth])))
             .copied()
             .or(attributed[depth])
+            .map(|icon| BoundIcon {
+                icon,
+                rest: join(&segments[depth..]),
+            })
     })
+}
+
+/// The accent registered for the type at `type_path`, if any.
+pub fn root_hue(
+    registry: &TypeRegistry,
+    type_path: &str,
+) -> Option<Hue> {
+    registry
+        .get_with_type_path(type_path)?
+        .data::<RootHue>()
+        .map(|root| root.0)
 }
 
 /// Into `info` by one path `segment`: the icon that field binds
@@ -229,7 +282,41 @@ mod tests {
         type_path: &str,
         path: &str,
     ) -> Option<&'static str> {
-        field_icon(registry, type_path, path)
+        field_icon(registry, type_path, path).map(|bound| bound.icon)
+    }
+
+    fn rest(
+        registry: &TypeRegistry,
+        type_path: &str,
+        path: &str,
+    ) -> Option<String> {
+        field_icon(registry, type_path, path).map(|bound| bound.rest)
+    }
+
+    #[test]
+    fn rest_is_the_path_past_the_icons_own() {
+        let registry = registry();
+        let rest = |path| rest(&registry, outer(), path);
+        assert_eq!(rest(".inner.x"), Some(String::new()));
+        assert_eq!(rest(".inner.y"), Some(".y".to_string()));
+        assert_eq!(
+            rest(".inner.nope.deeper"),
+            Some(".nope.deeper".to_string())
+        );
+        assert_eq!(rest(".nope"), None);
+    }
+
+    #[test]
+    fn a_root_hue_is_found_by_type() {
+        let mut app = App::new();
+        app.register_type::<Outer>()
+            .register_type::<Bare>()
+            .register_root_hue::<Outer>(Hue::Green);
+        let registry =
+            app.world().resource::<AppTypeRegistry>().read();
+        assert_eq!(root_hue(&registry, outer()), Some(Hue::Green));
+        let bare = <Bare as bevy::reflect::TypePath>::type_path();
+        assert_eq!(root_hue(&registry, bare), None);
     }
 
     fn outer() -> &'static str {

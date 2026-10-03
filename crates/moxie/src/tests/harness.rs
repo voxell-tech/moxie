@@ -24,6 +24,7 @@ use bevy::ui_widgets::{
 };
 use bevy::window::{ExitCondition, PrimaryWindow};
 use bevy::winit::WinitPlugin;
+use bevy_fynix::Leaving;
 
 use crate::MoxiePlugin;
 
@@ -86,17 +87,32 @@ impl Editor {
         self.app.world_mut()
     }
 
-    /// Every visible entity showing exactly `text`. A shut menu's
-    /// rows are there but hidden, and don't count.
+    /// Every visible entity showing exactly `text`. A menu fading
+    /// out after it shut still has its rows, which don't count.
     pub(crate) fn texts(&mut self, text: &str) -> Vec<Entity> {
         let world = self.world();
-        world
+        let shown = world
             .query::<(Entity, &Text, &InheritedVisibility)>()
             .iter(world)
             .filter(|(_, shown, visible)| {
                 shown.0 == text && visible.get()
             })
             .map(|(entity, ..)| entity)
+            .collect::<Vec<_>>();
+        shown
+            .into_iter()
+            .filter(|&entity| {
+                let mut at = entity;
+                loop {
+                    if world.get::<Leaving>(at).is_some() {
+                        return false;
+                    }
+                    match world.get::<ChildOf>(at) {
+                        Some(parent) => at = parent.parent(),
+                        None => return true,
+                    }
+                }
+            })
             .collect()
     }
 

@@ -56,6 +56,30 @@ impl Default for Palette {
     }
 }
 
+/// One of the palette's accent colours.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hue {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+}
+
+impl Palette {
+    pub fn hue(&self, hue: Hue) -> Color {
+        match hue {
+            Hue::Red => self.red,
+            Hue::Orange => self.orange,
+            Hue::Yellow => self.yellow,
+            Hue::Green => self.green,
+            Hue::Blue => self.blue,
+            Hue::Purple => self.purple,
+        }
+    }
+}
+
 /// The editor's look, grouped by what it governs.
 #[derive(Clone, Debug)]
 pub struct EditorTheme {
@@ -98,12 +122,6 @@ pub struct Colors {
     pub hover: Color,
     /// A selected row's surface tint.
     pub selection: Color,
-    /// A timeline clip's fill.
-    pub clip: Color,
-    /// A clip's own hover and press brighten, in its blue family
-    /// rather than [`Self::hover`]'s neutral gray.
-    pub clip_hover: Color,
-    pub clip_press: Color,
 }
 
 /// The spacing and sizing scale.
@@ -201,14 +219,11 @@ impl Default for EditorTheme {
                 bg: base[0],
                 panel: base[1],
                 fill: base[8].with_alpha(0.06),
-                fill_faint: base[8].with_alpha(0.03),
+                fill_faint: base[4].with_alpha(0.2),
                 hairline: base[8].with_alpha(0.08),
                 panel_edge: base[8].with_alpha(0.05),
                 hover: base[8].with_alpha(0.14),
                 selection: palette.blue.with_alpha(0.18),
-                clip: palette.blue.with_alpha(0.5),
-                clip_hover: Color::srgb(0.35, 0.70, 1.0),
-                clip_press: Color::srgb(0.55, 0.82, 1.0),
             },
             space: Spacing {
                 xs: 2.0,
@@ -219,7 +234,7 @@ impl Default for EditorTheme {
                 radius: 4.0,
                 row: 24.0,
                 action_row: 32.0,
-                lane_gap: 2.0,
+                lane_gap: 8.0,
                 touch: 26.0,
                 icon: 11.0,
                 hairline: 1.0,

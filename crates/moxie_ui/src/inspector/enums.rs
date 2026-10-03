@@ -290,6 +290,7 @@ mod tests {
         let root = kind_picker(&mut app, probe);
         assert_eq!(shown(&app, root), "Dot");
 
+        tests::open_menus(&mut app, root);
         let texts = tests::all::<Text>(&app, root)
             .into_iter()
             .map(|node| {
@@ -310,6 +311,7 @@ mod tests {
         app.update();
         assert_eq!(shown(&app, root), "Circle");
 
+        tests::open_menus(&mut app, root);
         let rows =
             tests::all::<bevy::ui_widgets::MenuItem>(&app, root);
         app.world_mut().trigger(Activate { entity: rows[2] });

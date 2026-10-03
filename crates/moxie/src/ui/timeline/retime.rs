@@ -20,9 +20,10 @@ use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::UiScale;
 use bevy::window::SystemCursorIcon;
-use bevy_fynix::{AnyView, Bevy, EntityCursor, Theme, View};
+use bevy_fynix::{AnyView, Bevy, EntityCursor, Hovered, Theme, View};
 use bevy_motiongfx::scene::backend::Backend;
 use motiongfx_scene::block::Node as SceneNode;
+use moxie_ui::elements::Selected;
 use moxie_ui::theme::{EditorTheme, Spacing};
 
 use super::super::action::{node_at, node_at_mut};
@@ -32,11 +33,42 @@ use crate::{EditorScene, EditorSettings, TimelineView};
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<Dragging>()
-        .add_systems(Update, cancel_on_escape);
+        .add_systems(Update, (cancel_on_escape, show_handles));
 }
 
 /// An edge handle's width.
 pub(crate) const EDGE_HANDLE_PX: f32 = 6.0;
+/// The width of an action's retime handle.
+pub(crate) const ACTION_HANDLE_PX: f32 = 12.0;
+
+/// On an action's retime handle, a child of the action's box.
+#[derive(Component)]
+pub(crate) struct ActionHandle;
+
+/// Shows an action's handles while the action is hovered, selected
+/// or being retimed. Hidden, they are not picked either.
+fn show_handles(
+    dragging: Res<Dragging>,
+    boxes: Query<(&BoxPath, Has<Hovered>, Has<Selected>)>,
+    mut handles: Query<
+        (&ChildOf, &mut Visibility),
+        With<ActionHandle>,
+    >,
+) {
+    let retimed = dragging.0.as_ref().map(|gesture| &gesture.path);
+    for (parent, mut visibility) in &mut handles {
+        let shown = boxes.get(parent.parent()).is_ok_and(
+            |(path, hovered, selected)| {
+                hovered || selected || retimed == Some(&path.0)
+            },
+        );
+        visibility.set_if_neq(if shown {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        });
+    }
+}
 
 /// The field an edge handle edits.
 #[derive(Clone, Copy, PartialEq)]

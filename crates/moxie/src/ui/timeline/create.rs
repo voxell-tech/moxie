@@ -13,12 +13,12 @@ use std::collections::BTreeSet;
 use bevy::asset::uuid::Uuid;
 use bevy::picking::events::{DragDrop, Pointer};
 use bevy::prelude::*;
-use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
+use bevy::ui::{UiGlobalTransform, UiScale};
 use bevy_fynix::Theme;
 use bevy_motiongfx::scene::backend::{AnimInterp, AnimOp, Backend};
 use bevy_motiongfx::scene::id::SceneUid;
 use bevy_motiongfx::scene::value_pool::insert_scene_value;
-use motiongfx_scene::block::{ActionCmd, Node as SceneNode};
+use motiongfx_scene::block::{ActionCmd, Block, Node as SceneNode};
 use motiongfx_scene::refs::FieldRef;
 use motiongfx_scene::scene::{FieldSeed, Scene, Subject};
 use moxie_ui::cursor::{Cursor, PointerEventExt as _};
@@ -27,6 +27,7 @@ use moxie_ui::layout::logical_rect;
 use moxie_ui::theme::EditorTheme;
 
 use super::hint::HintNode;
+use super::reorder::to_content;
 use super::{
     BlockFoldState, RebuildTick, TrackViewport, block_layout, landing,
 };
@@ -51,7 +52,7 @@ fn preview(
     folded: Res<BlockFoldState>,
     view: Res<TimelineView>,
     q_viewport: Query<
-        (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+        (&ComputedNode, &UiGlobalTransform),
         With<TrackViewport>,
     >,
     mut was_dragging: Local<bool>,
@@ -71,10 +72,8 @@ fn preview(
         return;
     }
     *was_dragging = true;
-    let (
-        Some(cursor),
-        Ok((viewport_node, viewport_transform, scroll)),
-    ) = (pointer.position(), q_viewport.single())
+    let (Some(cursor), Ok((viewport_node, viewport_transform))) =
+        (pointer.position(), q_viewport.single())
     else {
         hint.hide(&mut commands);
         return;
@@ -86,10 +85,8 @@ fn preview(
         return;
     }
 
-    let content = Vec2::new(
-        cursor.x - viewport_rect.min.x,
-        cursor.y - viewport_rect.min.y + scroll.y,
-    );
+    let content =
+        to_content(cursor, viewport_node, viewport_transform);
     let root = &editor_scene.scene().0.animation;
     let layout = block_layout::layout(
         root,
@@ -118,7 +115,7 @@ fn on_drop(
     folded: Res<BlockFoldState>,
     mut dragged: ResMut<DraggedField>,
     q_viewport: Query<
-        (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+        (&ComputedNode, &UiGlobalTransform),
         With<TrackViewport>,
     >,
     mut commands: Commands,
@@ -130,8 +127,7 @@ fn on_drop(
     };
     hint.hide(&mut commands);
     let cursor = drop.logical(&scale);
-    let Ok((viewport_node, viewport_transform, scroll)) =
-        q_viewport.single()
+    let Ok((viewport_node, viewport_transform)) = q_viewport.single()
     else {
         return;
     };
@@ -141,10 +137,8 @@ fn on_drop(
         return;
     }
 
-    let content = Vec2::new(
-        cursor.x - viewport_rect.min.x,
-        cursor.y - viewport_rect.min.y + scroll.y,
-    );
+    let content =
+        to_content(cursor, viewport_node, viewport_transform);
     let view = *view;
     let folded = folded.paths().clone();
 
@@ -224,11 +218,14 @@ fn create(
         });
         match target {
             Some(target) => landing::place(animation, &target, node),
-            // Loose past every block: a top-level child.
-            None => {
-                animation.children.push(node);
-                Some(vec![animation.children.len() - 1])
-            }
+            None => landing::place(
+                animation,
+                &landing::Target::Insert {
+                    parent: vec![0],
+                    index: usize::MAX,
+                },
+                node,
+            ),
         }
     };
 
@@ -237,6 +234,24 @@ fn create(
             world.get_resource_mut::<SelectedAction>()
     {
         selected.0 = Some(path);
+    }
+    RebuildTick::bump_in(world);
+}
+
+/// Appends an empty track and selects it.
+pub(super) fn add_track(world: &mut World) {
+    let Some(mut editor) = world.get_resource_mut::<EditorScene>()
+    else {
+        return;
+    };
+    let children = &mut editor.edit().animation.children;
+    children.push(SceneNode::block(Block::chain(Vec::new())));
+    let track = children.len() - 1;
+
+    if let Some(mut selected) =
+        world.get_resource_mut::<SelectedAction>()
+    {
+        selected.0 = Some(vec![track]);
     }
     RebuildTick::bump_in(world);
 }
@@ -276,6 +291,24 @@ mod tests {
     use bevy_motiongfx::scene::id::EntityUid;
 
     use super::*;
+
+    #[test]
+    fn adding_a_track_appends_an_empty_chain_and_selects_it() {
+        let mut world = World::new();
+        world.insert_resource(EditorScene::default());
+        world.insert_resource(SelectedAction(None));
+        add_track(&mut world);
+
+        let scene = world.resource::<EditorScene>().scene();
+        assert_eq!(
+            scene.0.animation.children,
+            vec![SceneNode::block(Block::chain(Vec::new())); 2]
+        );
+        assert_eq!(
+            world.resource::<SelectedAction>().0,
+            Some(vec![1])
+        );
+    }
 
     #[test]
     fn a_field_is_seeded_once() {

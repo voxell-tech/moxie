@@ -10,21 +10,22 @@
 use bevy::picking::events::{DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy::ui::{ScrollPosition, UiGlobalTransform, UiScale};
+use bevy::ui::{UiGlobalTransform, UiScale};
 use bevy_fynix::{AnyView, Bevy, OverrideCursor, Theme, View};
 use bevy_motiongfx::scene::backend::Backend;
-use motiongfx_scene::block::{Block, Node as SceneNode};
+use motiongfx_scene::block::{Block, Combinator, Node as SceneNode};
 use moxie_ui::cursor::{Cursor, PointerEventExt as _};
 use moxie_ui::drag::{Dragged, grab, ungrab};
 use moxie_ui::layout::logical_rect;
 use moxie_ui::theme::EditorTheme;
 
-use super::hint::HintNode;
+use super::hint::{self, HintNode};
 use super::landing::{self, Target, block_at_mut, under};
 use super::retime::{BoxPath, GapPath};
 use super::{
     BlockFoldState, RebuildTick, TrackViewport, block_layout, prune,
 };
+use crate::scene::{is_track, normalize};
 use crate::{EditorScene, SelectedAction, TimelineView};
 
 pub(super) fn plugin(app: &mut App) {
@@ -43,6 +44,10 @@ impl Dragging {
         dragging.0.is_some()
     }
 }
+
+/// On a node a drag moved out of the box list.
+#[derive(Component)]
+struct Detached;
 
 /// One drag in progress.
 struct Gesture {
@@ -68,7 +73,7 @@ pub(crate) fn body(
             move |start: On<Pointer<DragStart>>,
                   scale: Res<UiScale>,
                   q_viewport: Query<
-                (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+                (&ComputedNode, &UiGlobalTransform),
                 With<TrackViewport>,
             >,
                   q_boxes: Query<(Entity, &BoxPath)>,
@@ -77,13 +82,13 @@ pub(crate) fn body(
                   mut override_cursor: ResMut<OverrideCursor>,
                   mut commands: Commands| {
                 if start.button != PointerButton::Primary
+                    || is_track(&path)
                     || path.is_empty()
                 {
-                    // The root has nowhere to land.
+                    // The root and the tracks stay where they are.
                     return;
                 }
-                let Ok((node, transform, scroll)) =
-                    q_viewport.single()
+                let Ok((node, transform)) = q_viewport.single()
                 else {
                     return;
                 };
@@ -106,9 +111,7 @@ pub(crate) fn body(
                 }
                 dragging.0 = Some(Gesture {
                     path: path.clone(),
-                    cursor_start: to_content(
-                        cursor, node, transform, scroll,
-                    ),
+                    cursor_start: to_content(cursor, node, transform),
                     hold: None,
                     target: None,
                 });
@@ -129,9 +132,10 @@ fn preview(
     view: Res<TimelineView>,
     mut dragging: ResMut<Dragging>,
     q_viewport: Query<
-        (&ComputedNode, &UiGlobalTransform, &ScrollPosition),
+        (&ComputedNode, &UiGlobalTransform),
         With<TrackViewport>,
     >,
+    q_rects: Query<(&ComputedNode, &UiGlobalTransform)>,
     q_boxes: Query<(Entity, &BoxPath, Option<&ChildOf>)>,
     q_gaps: Query<(Entity, &GapPath), Without<BoxPath>>,
     mut nodes: Query<&mut Node>,
@@ -143,19 +147,14 @@ fn preview(
     let Some(cursor) = pointer.position() else {
         return;
     };
-    let Ok((viewport_node, viewport_transform, scroll)) =
-        q_viewport.single()
+    let Ok((viewport_node, viewport_transform)) = q_viewport.single()
     else {
         return;
     };
-    let viewport_rect =
-        logical_rect(viewport_node, viewport_transform);
     let drag_z = theme.0.layer.drag;
 
-    let content = Vec2::new(
-        cursor.x - viewport_rect.min.x,
-        cursor.y - viewport_rect.min.y + scroll.y,
-    );
+    let content =
+        to_content(cursor, viewport_node, viewport_transform);
     let root = &editor_scene.scene().0.animation;
     let layout = block_layout::layout(
         root,
@@ -164,12 +163,20 @@ fn preview(
         theme.0.space,
     );
 
-    // Detaches to the root's parent.
-    // The rebuild that ends the drag puts it back.
-    let drag_parent = q_boxes
-        .iter()
-        .find(|(_, box_path, _)| box_path.0.is_empty())
-        .and_then(|(_, _, child_of)| child_of.map(ChildOf::parent));
+    // Detaches to the hint's area, outside the scrolled content: a
+    // box dragged past the content's end would grow it.
+    let Some((drag_parent, to_area)) = hint.area().and_then(|area| {
+        let (area_node, area_transform) = q_rects.get(area).ok()?;
+        Some((
+            area,
+            hint::content_to_area(
+                (viewport_node, viewport_transform),
+                (area_node, area_transform),
+            ),
+        ))
+    }) else {
+        return;
+    };
     let Some(placed) = layout.iter().find(|p| p.path == gesture.path)
     else {
         return;
@@ -177,17 +184,17 @@ fn preview(
     let hold = *gesture.hold.get_or_insert(
         gesture.cursor_start - Vec2::new(placed.x, placed.y),
     );
-    let at = content - hold;
+    let at = content - hold + to_area;
 
     for (entity, box_path, child_of) in &q_boxes {
         if box_path.0 != gesture.path {
             continue;
         }
         commands.entity(entity).insert(GlobalZIndex(drag_z));
-        if let Some(drag_parent) = drag_parent
-            && child_of.map(ChildOf::parent) != Some(drag_parent)
-        {
-            commands.entity(entity).insert(ChildOf(drag_parent));
+        if child_of.map(ChildOf::parent) != Some(drag_parent) {
+            commands
+                .entity(entity)
+                .insert((ChildOf(drag_parent), Detached));
         }
         if let Ok(mut node) = nodes.get_mut(entity) {
             node.left = px(at.x);
@@ -201,10 +208,11 @@ fn preview(
         if gap_path.0 != gesture.path {
             continue;
         }
-        commands.entity(entity).insert(GlobalZIndex(drag_z));
-        if let Some(drag_parent) = drag_parent {
-            commands.entity(entity).insert(ChildOf(drag_parent));
-        }
+        commands.entity(entity).insert((
+            GlobalZIndex(drag_z),
+            ChildOf(drag_parent),
+            Detached,
+        ));
         if let Some(gap_x) = placed.gap_x
             && let Ok(mut node) = nodes.get_mut(entity)
         {
@@ -232,20 +240,35 @@ pub(super) fn to_content(
     cursor: Vec2,
     node: &ComputedNode,
     transform: &UiGlobalTransform,
-    scroll: &ScrollPosition,
 ) -> Vec2 {
     let min = logical_rect(node, transform).min;
-    Vec2::new(cursor.x - min.x, cursor.y - min.y + scroll.y)
+    Vec2::new(cursor.x - min.x, cursor.y - min.y + scrolled(node))
+}
+
+/// The viewport's scroll offset in logical pixels, as the layout
+/// applied it.
+pub(super) fn scrolled(viewport: &ComputedNode) -> f32 {
+    viewport.scroll_position.y * viewport.inverse_scale_factor()
 }
 
 /// Common tail of a committed drop and a cancel: drop the drag-wide
-/// cursor and bump [`RebuildTick`], so the box list respawns and
-/// every dragged box loses both its preview offset and its raised z.
+/// cursor, despawn what the drag detached, and bump [`RebuildTick`]
+/// so the box list respawns with the dragged box back in it.
 fn end_drag(
     override_cursor: &mut OverrideCursor,
     commands: &mut Commands,
 ) {
     ungrab(override_cursor);
+    commands.queue(|world: &mut World| {
+        // Outside the box list, so its rebuild leaves them behind.
+        let detached = world
+            .query_filtered::<Entity, With<Detached>>()
+            .iter(world)
+            .collect::<Vec<_>>();
+        for entity in detached {
+            world.entity_mut(entity).despawn();
+        }
+    });
     commands.queue(RebuildTick::bump_in);
 }
 
@@ -325,10 +348,9 @@ pub(crate) fn delete(world: &mut World, path: &[usize]) {
     if take(&mut editor_scene.edit().animation, path).is_none() {
         return;
     }
-    prune::empty_blocks(
-        &mut editor_scene.edit().animation,
-        &mut kept,
-    );
+    prune::in_tracks(&mut editor_scene.edit().animation, &mut kept);
+    // Taking the last track leaves one empty track behind.
+    normalize(&mut editor_scene.edit().animation);
     prune::stage(editor_scene.edit());
 
     if let Some(mut selected) =
@@ -337,6 +359,82 @@ pub(crate) fn delete(world: &mut World, path: &[usize]) {
         selected.0 = kept;
     }
     RebuildTick::bump_in(world);
+}
+
+/// Puts the node at `path` alone in a new block under `combinator`,
+/// where it was, with the selection following it in.
+pub(crate) fn encapsulate(
+    world: &mut World,
+    path: &[usize],
+    combinator: Combinator,
+) {
+    // Only tracks sit under the root.
+    if is_track(path) {
+        return;
+    }
+    let Some(mut editor_scene) =
+        world.get_resource_mut::<EditorScene>()
+    else {
+        return;
+    };
+    if wrap(&mut editor_scene.edit().animation, path, combinator)
+        .is_none()
+    {
+        return;
+    }
+
+    if let Some(mut selected) =
+        world.get_resource_mut::<SelectedAction>()
+        && let Some(inside) = selected
+            .0
+            .as_deref()
+            .and_then(|selected| into_wrapper(selected, path))
+    {
+        selected.0 = Some(inside);
+    }
+    RebuildTick::bump_in(world);
+}
+
+/// Replaces the node at `path` with a block under `combinator`
+/// holding only that node.
+fn wrap(
+    root: &mut Block<Backend>,
+    path: &[usize],
+    combinator: Combinator,
+) -> Option<()> {
+    let (&index, parent) = path.split_last()?;
+    let children = &mut block_at_mut(root, parent)?.children;
+    if index >= children.len() {
+        return None;
+    }
+    // Its delay stays on the node; the wrapper has none.
+    let node = children.remove(index);
+    children.insert(
+        index,
+        SceneNode::Block {
+            delay: None,
+            block: Block {
+                combinator,
+                children: vec![node],
+                name: None,
+            },
+        },
+    );
+    Some(())
+}
+
+/// The path of `selected` once the node at `wrapped` sits alone in a
+/// new block, if it is that node or inside it.
+fn into_wrapper(
+    selected: &[usize],
+    wrapped: &[usize],
+) -> Option<Vec<usize>> {
+    under(selected, wrapped).then(|| {
+        let mut path = wrapped.to_vec();
+        path.push(0);
+        path.extend(&selected[wrapped.len()..]);
+        path
+    })
 }
 
 /// Writes the drop's result back into the scene, following the
@@ -368,10 +466,7 @@ fn commit(world: &mut World, from: &[usize], target: &Target) {
         path.extend(tail);
         path
     });
-    prune::empty_blocks(
-        &mut editor_scene.edit().animation,
-        &mut kept,
-    );
+    prune::in_tracks(&mut editor_scene.edit().animation, &mut kept);
 
     if let Some(mut selected) =
         world.get_resource_mut::<SelectedAction>()
@@ -389,6 +484,9 @@ fn relocate(
     from: &[usize],
     target: &Target,
 ) -> Option<Vec<usize>> {
+    if is_track(from) {
+        return None;
+    }
     let (from_index, from_parent) = from.split_last()?;
     let node = take(root, from)?;
 
@@ -470,10 +568,51 @@ mod tests {
     }
 
     #[test]
+    fn wrapping_puts_a_node_alone_in_a_block_where_it_was() {
+        let mut root = Block {
+            combinator: Combinator::All,
+            children: vec![track(vec![delayed(1), delayed(2)])],
+            name: None,
+        };
+
+        wrap(&mut root, &[0, 1], Combinator::All).unwrap();
+
+        let SceneNode::Block { block: track, .. } = &root.children[0]
+        else {
+            panic!("a track");
+        };
+        assert_eq!(track.children[0], delayed(1));
+        let SceneNode::Block { delay, block } = &track.children[1]
+        else {
+            panic!("the wrapper");
+        };
+        assert_eq!(*delay, None);
+        assert_eq!(block.combinator, Combinator::All);
+        assert_eq!(block.children, vec![delayed(2)]);
+    }
+
+    #[test]
+    fn a_selection_follows_its_node_into_the_wrapper() {
+        assert_eq!(
+            into_wrapper(&[0, 1], &[0, 1]),
+            Some(vec![0, 1, 0])
+        );
+        assert_eq!(
+            into_wrapper(&[0, 1, 2], &[0, 1]),
+            Some(vec![0, 1, 0, 2])
+        );
+        assert_eq!(into_wrapper(&[0, 2], &[0, 1]), None);
+    }
+
+    #[test]
     fn moving_later_in_its_own_block_lands_where_aimed() {
         let mut root = Block {
-            combinator: Combinator::Chain,
-            children: vec![delayed(1), delayed(2), delayed(3)],
+            combinator: Combinator::All,
+            children: vec![track(vec![
+                delayed(1),
+                delayed(2),
+                delayed(3),
+            ])],
             name: None,
         };
 
@@ -481,16 +620,19 @@ mod tests {
         // still in place.
         let landed = relocate(
             &mut root,
-            &[0],
+            &[0, 0],
             &Target::Insert {
-                parent: vec![],
+                parent: vec![0],
                 index: 2,
             },
         );
 
-        assert_eq!(landed, Some(vec![1]));
+        assert_eq!(landed, Some(vec![0, 1]));
+        let SceneNode::Block { block, .. } = &root.children[0] else {
+            panic!("a track");
+        };
         let delays =
-            root.children.iter().map(delay).collect::<Vec<_>>();
+            block.children.iter().map(delay).collect::<Vec<_>>();
         assert_eq!(
             delays,
             [2, 1, 3].map(|secs| Some(Duration::from_secs(secs)))
@@ -509,25 +651,29 @@ mod tests {
     fn merging_leaves_each_delay_on_its_own_node() {
         let mut root = Block {
             combinator: Combinator::All,
-            children: vec![delayed(2), delayed(3)],
+            children: vec![track(vec![delayed(2), delayed(3)])],
             name: None,
         };
 
         let landed = relocate(
             &mut root,
-            &[1],
+            &[0, 1],
             &Target::Merge {
-                path: vec![0],
+                path: vec![0, 0],
                 combinator: Combinator::Chain,
                 before: false,
             },
         );
 
-        assert_eq!(landed, Some(vec![0, 1]));
+        assert_eq!(landed, Some(vec![0, 0, 1]));
+        let SceneNode::Block { block: track, .. } = &root.children[0]
+        else {
+            panic!("a track");
+        };
         let SceneNode::Block {
             delay: wrapper,
             block,
-        } = &root.children[0]
+        } = &track.children[0]
         else {
             panic!("the pair should be wrapped in a block");
         };
@@ -539,6 +685,104 @@ mod tests {
         assert_eq!(
             delay(&block.children[1]),
             Some(Duration::from_secs(3))
+        );
+    }
+
+    fn track(
+        children: Vec<SceneNode<Backend>>,
+    ) -> SceneNode<Backend> {
+        SceneNode::block(Block::chain(children))
+    }
+
+    /// A world whose scene holds `tracks`.
+    fn world_of(tracks: Vec<SceneNode<Backend>>) -> World {
+        let mut scene = EditorScene::default();
+        scene.edit().animation.children = tracks;
+        let mut world = World::new();
+        world.insert_resource(scene);
+        world
+    }
+
+    fn tracks_of(world: &World) -> &[SceneNode<Backend>] {
+        &world.resource::<EditorScene>().scene().0.animation.children
+    }
+
+    #[test]
+    fn deleting_the_last_track_leaves_an_empty_one() {
+        let mut world = world_of(vec![track(vec![delayed(1)])]);
+        delete(&mut world, &[0]);
+
+        assert_eq!(tracks_of(&world), [track(Vec::new())]);
+    }
+
+    #[test]
+    fn deleting_one_of_several_tracks_keeps_the_rest() {
+        let mut world = world_of(vec![
+            track(vec![delayed(1)]),
+            track(vec![delayed(2)]),
+        ]);
+        delete(&mut world, &[0]);
+
+        assert_eq!(tracks_of(&world), [track(vec![delayed(2)])]);
+    }
+
+    #[test]
+    fn emptying_a_track_keeps_it() {
+        let mut world = world_of(vec![
+            track(vec![SceneNode::block(Block::chain(vec![
+                delayed(1),
+            ]))]),
+            track(vec![delayed(2)]),
+        ]);
+        delete(&mut world, &[0, 0, 0]);
+
+        assert_eq!(
+            tracks_of(&world),
+            [track(Vec::new()), track(vec![delayed(2)])]
+        );
+    }
+
+    #[test]
+    fn a_track_cannot_be_moved() {
+        let mut root = Block {
+            combinator: Combinator::All,
+            children: vec![track(vec![]), track(vec![])],
+            name: None,
+        };
+        let before = root.clone();
+        let landed = relocate(
+            &mut root,
+            &[0],
+            &Target::Insert {
+                parent: vec![],
+                index: 2,
+            },
+        );
+
+        assert_eq!(landed, None);
+        assert_eq!(root, before);
+    }
+
+    #[test]
+    fn a_node_moves_between_tracks() {
+        let mut root = Block {
+            combinator: Combinator::All,
+            children: vec![track(vec![delayed(1)]), track(vec![])],
+            name: None,
+        };
+        let landed = relocate(
+            &mut root,
+            &[0, 0],
+            &Target::Insert {
+                parent: vec![1],
+                index: 0,
+            },
+        );
+
+        assert_eq!(landed, Some(vec![1, 0]));
+        assert_eq!(
+            root.children,
+            [track(vec![]), track(vec![delayed(1)])]
         );
     }
 }

@@ -20,6 +20,7 @@ mod time_tick;
 mod timeline_action;
 mod timeline_block;
 mod timeline_gap;
+mod timeline_lane;
 mod timeline_link;
 mod timeline_track;
 
@@ -33,10 +34,11 @@ pub use playhead::playhead_line;
 pub use time_label::time_label;
 pub use time_tick::time_tick;
 pub use timeline_action::{
-    ACTION_ICON_SIZE, ActionClip, fit_action_icons, icon_fit,
-    timeline_action,
+    ACTION_ICON_SIZE, ActionBody, ActionClip, ActionGlyph,
+    fit_action_icons, icon_fit, timeline_action,
 };
-pub use timeline_block::{Selected, timeline_block};
+pub use timeline_block::{Selected, selected_fill, timeline_block};
 pub use timeline_gap::timeline_gap;
+pub use timeline_lane::{timeline_lane, timeline_span};
 pub use timeline_link::timeline_link;
 pub use timeline_track::timeline_track;

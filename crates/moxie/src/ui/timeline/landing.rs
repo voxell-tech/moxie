@@ -8,8 +8,9 @@ use bevy_motiongfx::scene::backend::Backend;
 use motiongfx_scene::block::{Block, Combinator, Node as SceneNode};
 use moxie_ui::theme::EditorTheme;
 
-use super::block_layout::{HEADER_HEIGHT, Placed};
+use super::block_layout::{Placed, header_height};
 use super::hint::{HintNode, Shape};
+use crate::scene::is_track;
 
 /// How close to a node's own edge a drop stops being about that node
 /// and starts being about the block around it.
@@ -49,8 +50,54 @@ impl Axis {
 }
 
 /// Where dropping at `cursor` would land. `dragged` is the node being
-/// moved, if one is: nothing lands on or inside it.
+/// moved, if one is: nothing lands on or inside it. Only tracks sit
+/// under the root, so a drop that would land there lands at the end
+/// of the track whose lane holds the cursor instead.
 pub(super) fn resolve(
+    cursor: Vec2,
+    layout: &[Placed],
+    root: &Block<Backend>,
+    dragged: Option<&[usize]>,
+) -> Option<Target> {
+    let resolved = resolve_in(cursor, layout, root, dragged);
+    let on_root = match &resolved {
+        None => true,
+        Some(Target::Insert { parent, .. }) => parent.is_empty(),
+        Some(Target::Merge { path, .. }) => is_track(path),
+    };
+    if !on_root {
+        return resolved;
+    }
+    into_track(cursor, layout)
+}
+
+/// The lane's track nearest `cursor` vertically, the cursor's place
+/// among its children chosen along the time axis.
+fn into_track(cursor: Vec2, layout: &[Placed]) -> Option<Target> {
+    let tracks = layout
+        .iter()
+        .filter(|placed| {
+            placed.label.is_some() && is_track(&placed.path)
+        })
+        .collect::<Vec<_>>();
+    let track = tracks
+        .iter()
+        .rev()
+        .find(|track| track.y <= cursor.y)
+        .or(tracks.first())?;
+    let index = layout
+        .iter()
+        .filter(|placed| is_child_of(&placed.path, &track.path))
+        .filter(|child| cursor.x > rect(child).center().x)
+        .count();
+    Some(Target::Insert {
+        parent: track.path.clone(),
+        index,
+    })
+}
+
+/// [`resolve`] without the root's special case.
+fn resolve_in(
     cursor: Vec2,
     layout: &[Placed],
     root: &Block<Backend>,
@@ -155,7 +202,8 @@ fn innermost_block(
         .filter(|placed| {
             let bounds = rect(placed);
             bounds.contains(cursor)
-                && cursor.y >= bounds.min.y + HEADER_HEIGHT
+                && cursor.y
+                    >= bounds.min.y + header_height(&placed.path)
         })
         .max_by_key(|placed| placed.path.len())
         .map(|placed| placed.path.clone())
@@ -405,7 +453,7 @@ fn line_rect(
         rect(layout.iter().find(|placed| placed.path == *parent)?);
     let content = Rect::new(
         block.min.x,
-        block.min.y + HEADER_HEIGHT,
+        block.min.y + header_height(parent),
         block.max.x,
         block.max.y,
     );
@@ -467,7 +515,7 @@ mod tests {
             &BTreeSet::new(),
             EditorTheme::default().space,
         );
-        resolve(cursor, &layout, root, Some(&[1]))
+        resolve_in(cursor, &layout, root, Some(&[1]))
     }
 
     #[test]
@@ -484,14 +532,14 @@ mod tests {
         );
 
         assert_eq!(
-            drop_at(&root, Vec2::new(40.0, 36.0)),
+            drop_at(&root, Vec2::new(40.0, 12.0)),
             Some(Target::Insert {
                 parent: vec![0],
                 index: 0
             })
         );
         assert_eq!(
-            drop_at(&root, Vec2::new(280.0, 36.0)),
+            drop_at(&root, Vec2::new(280.0, 12.0)),
             Some(Target::Insert {
                 parent: vec![0],
                 index: 2
@@ -513,7 +561,7 @@ mod tests {
         );
 
         assert_eq!(
-            drop_at(&root, Vec2::new(80.0, 36.0)),
+            drop_at(&root, Vec2::new(80.0, 12.0)),
             Some(Target::Insert {
                 parent: vec![0],
                 index: 2
@@ -546,10 +594,111 @@ mod tests {
             );
 
             assert_eq!(
-                drop_at(&root, Vec2::new(x, 36.0)),
+                drop_at(&root, Vec2::new(x, 12.0)),
                 merged,
                 "into {inner:?}"
             );
         }
+    }
+
+    /// An `All` root of `Chain` tracks holding the given drafts.
+    fn tracks(counts: &[usize]) -> Block<Backend> {
+        combined(
+            Combinator::All,
+            counts
+                .iter()
+                .map(|&count| {
+                    SceneNode::block(combined(
+                        Combinator::Chain,
+                        vec![timed(); count],
+                    ))
+                })
+                .collect(),
+        )
+    }
+
+    fn lands(root: &Block<Backend>, cursor: Vec2) -> Option<Target> {
+        let layout = block_layout::layout(
+            root,
+            TimelineView::default(),
+            &BTreeSet::new(),
+            EditorTheme::default().space,
+        );
+        resolve(cursor, &layout, root, None)
+    }
+
+    #[test]
+    fn a_drop_past_a_tracks_content_lands_at_its_end() {
+        let root = tracks(&[1, 2]);
+
+        // The second lane starts below the first's header and row.
+        assert_eq!(
+            lands(&root, Vec2::new(900.0, 70.0)),
+            Some(Target::Insert {
+                parent: vec![1],
+                index: 2
+            })
+        );
+    }
+
+    #[test]
+    fn a_drop_on_a_tracks_header_lands_in_that_track() {
+        let root = tracks(&[2, 2]);
+
+        assert_eq!(
+            lands(&root, Vec2::new(50.0, 10.0)),
+            Some(Target::Insert {
+                parent: vec![0],
+                index: 0
+            })
+        );
+    }
+
+    #[test]
+    fn a_drop_off_the_lanes_lands_in_the_nearest_track() {
+        let root = tracks(&[1, 1]);
+
+        assert!(matches!(
+            lands(&root, Vec2::new(10.0, 900.0)),
+            Some(Target::Insert { parent, .. }) if parent == [1]
+        ));
+        assert!(matches!(
+            lands(&root, Vec2::new(10.0, -20.0)),
+            Some(Target::Insert { parent, .. }) if parent == [0]
+        ));
+    }
+
+    #[test]
+    fn nothing_lands_on_the_root_or_wraps_a_track() {
+        let root = tracks(&[1, 1, 0]);
+        for y in (0..200).step_by(7) {
+            for x in [0.0, 30.0, 90.0, 400.0] {
+                let target = lands(&root, Vec2::new(x, y as f32));
+                let ok = match &target {
+                    Some(Target::Insert { parent, .. }) => {
+                        parent.len() == 1
+                    }
+                    Some(Target::Merge { path, .. }) => {
+                        path.len() > 1
+                    }
+                    None => false,
+                };
+                assert!(ok, "at ({x}, {y}): {target:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_drop_on_a_node_in_a_track_still_wraps_it() {
+        let root = tracks(&[2]);
+
+        assert_eq!(
+            lands(&root, Vec2::new(80.0, 40.0)),
+            Some(Target::Merge {
+                path: vec![0, 0],
+                combinator: Combinator::All,
+                before: false
+            })
+        );
     }
 }

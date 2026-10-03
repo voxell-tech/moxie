@@ -7,6 +7,7 @@ use bevy::ui::UiGlobalTransform;
 use moxie_ui::cursor::PointerEventExt as _;
 
 use super::TrackViewport;
+use super::reorder::scrolled;
 use crate::playback::x_from_cursor;
 use crate::{EditorState, TimelineView};
 
@@ -93,6 +94,9 @@ pub(super) fn on_track_scroll(
         let overflow = ((computed.content_size() - computed.size())
             * inv)
             .max(Vec2::ZERO);
-        position.y = (position.y - scroll_y).clamp(0.0, overflow.y);
+        // From where the layout has it: content that shrank since the
+        // last scroll leaves `position` past its end.
+        position.y =
+            (scrolled(computed) - scroll_y).clamp(0.0, overflow.y);
     }
 }

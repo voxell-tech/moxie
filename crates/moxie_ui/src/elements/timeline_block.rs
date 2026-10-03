@@ -1,13 +1,10 @@
-use bevy::color::{Alpha as _, Luminance as _};
+use bevy::color::{Alpha as _, Color};
 use bevy::ecs::component::Component;
 use bevy::ecs::entity::Entity;
-use bevy::ecs::lifecycle::{Add, Remove};
-use bevy::ecs::observer::On;
-use bevy::ecs::system::Query;
 use bevy::ecs::world::World;
 use bevy::ui::{AlignItems, Node, Overflow, UiRect, px};
 use bevy_fynix::tokens::Motion;
-use bevy_fynix::views::frame;
+use bevy_fynix::views::{Frame, frame};
 use bevy_fynix::{AnyView, Bevy, ScopedExt as _, View, ViewSeq};
 
 use super::placement::Placement;
@@ -19,9 +16,16 @@ use crate::theme::EditorTheme;
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Selected;
 
+const SELECTED_FILL_ALPHA: f32 = 0.12;
+const SELECTED_EDGE_ALPHA: f32 = 0.5;
+/// A box's border width, in logical pixels.
+const BORDER: f32 = 1.0;
+/// Alpha of a block's border while it is dragged.
+const DRAGGED_EDGE_ALPHA: f32 = 0.04;
+
 /// A block's box: an absolutely placed, bordered container holding
-/// `children`. A selected block thickens its border and turns purple;
-/// one being dragged fades its border.
+/// `children`. A selected block is tinted purple; one being dragged
+/// fades its border.
 pub fn timeline_block<C>(
     placement: Placement,
     selected: bool,
@@ -32,8 +36,6 @@ where
 {
     AnyView::<Bevy, EditorTheme>::new(move |cx| {
         let theme = cx.theme();
-        let text = theme.color.text;
-        let purple = theme.palette.purple;
         let block = cx.build(
             placement
                 .apply(frame())
@@ -42,65 +44,50 @@ where
                 .align(AlignItems::Start)
                 .overflow(Overflow::clip())
                 .radius(theme.space.card_radius)
-                .fill(text.with_alpha(0.03))
-                .border_color(text.with_alpha(0.5))
-                .when::<Selected, _>(move |frame, _: &EditorTheme| {
-                    frame
-                        .fill(
-                            purple
-                                .with_luminance(0.3)
-                                .with_alpha(0.8),
-                        )
-                        .border_color(purple.with_alpha(0.5))
-                })
-                .when::<Dragged, _>(move |frame, _: &EditorTheme| {
-                    frame.border_color(text.with_alpha(0.2))
+                .fill(theme.color.fill_faint)
+                .border_color(theme.color.hairline)
+                .when::<Selected, _>(selected_look)
+                .when::<Dragged, _>(|frame, theme: &EditorTheme| {
+                    frame.border_color(
+                        theme
+                            .color
+                            .hairline
+                            .with_alpha(DRAGGED_EDGE_ALPHA),
+                    )
                 }),
         );
-        snap_selected_border(cx.world, block, selected);
+        outline(cx.world, block, selected);
         cx.under(block, |cx| children.build_each(cx));
         block
     })
     .transition(Motion::Interact)
 }
 
-/// A selected box's border width, in logical pixels.
-pub(super) const SELECTED_BORDER: f32 = 3.0;
-/// An unselected box's border width.
-pub(super) const REST_BORDER: f32 = 1.0;
+/// The fill of what is selected on the timeline.
+pub fn selected_fill(theme: &EditorTheme) -> Color {
+    theme.palette.purple.with_alpha(SELECTED_FILL_ALPHA)
+}
 
-/// Gives `node` a border that is [`SELECTED_BORDER`] wide while it
-/// holds [`Selected`] and [`REST_BORDER`] otherwise, and inserts
-/// `Selected` if `selected`.
-///
-/// The width is written straight to the node rather than through a
-/// frame's `border` prop: a transition blends every prop that can
-/// blend, so a width set by a rule would ease between the two.
-pub(super) fn snap_selected_border(
+/// The fill and border of a selected box.
+pub(super) fn selected_look(
+    frame: Frame,
+    theme: &EditorTheme,
+) -> Frame {
+    frame.fill(selected_fill(theme)).border_color(
+        theme.palette.purple.with_alpha(SELECTED_EDGE_ALPHA),
+    )
+}
+
+/// Gives `node` its border, and [`Selected`] if `selected`.
+pub(super) fn outline(
     world: &mut World,
     node: Entity,
     selected: bool,
 ) {
     let mut entity = world.entity_mut(node);
     if let Some(mut ui) = entity.get_mut::<Node>() {
-        ui.border = UiRect::all(px(REST_BORDER));
+        ui.border = UiRect::all(px(BORDER));
     }
-    entity
-        .observe(
-            |add: On<Add, Selected>, mut nodes: Query<&mut Node>| {
-                if let Ok(mut ui) = nodes.get_mut(add.entity) {
-                    ui.border = UiRect::all(px(SELECTED_BORDER));
-                }
-            },
-        )
-        .observe(
-            |remove: On<Remove, Selected>,
-             mut nodes: Query<&mut Node>| {
-                if let Ok(mut ui) = nodes.get_mut(remove.entity) {
-                    ui.border = UiRect::all(px(REST_BORDER));
-                }
-            },
-        );
     if selected {
         entity.insert(Selected);
     }

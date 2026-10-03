@@ -1,17 +1,21 @@
 use bevy::asset::Handle;
 use bevy::color::{Alpha as _, Color};
 use bevy::ecs::component::Component;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::lifecycle::{Add, Remove};
+use bevy::ecs::observer::On;
 use bevy::ecs::query::With;
-use bevy::ecs::system::Query;
+use bevy::ecs::system::{Commands, Query};
+use bevy::ecs::world::World;
 use bevy::image::Image;
 use bevy::math::Vec2;
 use bevy::ui::widget::ImageNode;
 use bevy::ui::{
-    AlignItems, ComputedNode, Node, Overflow, UiRect, px,
+    AlignItems, ComputedNode, Node, Overflow, UiRect, percent, px,
 };
 use bevy::ui_widgets::Button as ButtonBehavior;
 use bevy::window::SystemCursorIcon;
-use bevy_fynix::tokens::{Motion, Tone};
+use bevy_fynix::tokens::{Motion, SurfaceTokens as _, Tone};
 use bevy_fynix::views::{Label, frame, icon, label};
 use bevy_fynix::{
     AnyView, Bevy, Cx, EntityCursor, Hovered, Pressed, Prop,
@@ -19,7 +23,7 @@ use bevy_fynix::{
 };
 
 use super::placement::Placement;
-use super::timeline_block::{Selected, snap_selected_border};
+use super::timeline_block::{Selected, outline, selected_look};
 use crate::drag::Dragged;
 use crate::theme::EditorTheme;
 
@@ -27,6 +31,10 @@ use crate::theme::EditorTheme;
 pub const ACTION_ICON_SIZE: f32 = 14.0;
 /// Gap between an action icon and its label.
 const ACTION_ICON_GAP: f32 = 4.0;
+/// Gap between an action icon and the subscript that continues it.
+const SUBSCRIPT_HUG: f32 = 1.0;
+/// Text size of the subscript.
+const SUBSCRIPT_SIZE: f32 = 8.0;
 /// The bar width from which the icon is at full size.
 const ICON_FULL_AT: f32 = 28.0;
 /// The bar width up to which the icon is gone.
@@ -38,20 +46,32 @@ const NAME_DRAGGED_OPACITY: f32 = 0.2;
 /// Alpha of a clip's fill while it is dragged.
 const DRAGGED_FILL_ALPHA: f32 = 0.2;
 
-/// One action's clip on the timeline: a coloured, absolutely
-/// placed, bordered hit area, its icon (if any) and `name` centred
-/// vertically at its left edge. It is clipped rather than measured,
+/// An action's field icon, tinted, with what its path adds past the
+/// path the icon stands for.
+pub struct ActionGlyph {
+    pub image: Handle<Image>,
+    pub tint: Color,
+    /// Empty when the icon stands for the whole path.
+    pub subscript: String,
+}
+
+/// One action's clip on the timeline: a surface-coloured, absolutely
+/// placed, bordered hit area, its glyph (if any) and `name` centred
+/// vertically at its left edge, in an [`ActionBody`] that fills the
+/// bar. It is clipped rather than measured,
 /// so a bar too narrow for them shows nothing instead of overflowing
 /// its neighbour, and the icon shrinks and fades as the bar narrows
 /// ([`fit_action_icons`]).
 ///
 /// A `draft` has no subject or field yet, so it reads as an empty
-/// slot in the critical colour. A `selected` clip carries
+/// slot in the critical colour. A `stand_in` name is one shown for
+/// want of the action's own, and is dimmed. A `selected` clip carries
 /// [`Selected`], which an app can also insert and remove later.
 pub fn timeline_action(
     placement: Placement,
     name: impl Into<Prop<String>>,
-    image: Option<Handle<Image>>,
+    stand_in: bool,
+    glyph: Option<ActionGlyph>,
     draft: bool,
     selected: bool,
 ) -> impl View<Bevy, EditorTheme> {
@@ -64,60 +84,133 @@ pub fn timeline_action(
         let fill = if draft {
             theme.color.critical.with_alpha(0.5)
         } else {
-            theme.color.clip
+            theme.color.fill_faint
+        };
+        let dragged_fill = if draft {
+            fill.with_alpha(DRAGGED_FILL_ALPHA)
+        } else {
+            Color::NONE
         };
         let border = if draft {
             theme.color.critical.with_alpha(0.5)
         } else {
-            Color::NONE
+            theme.color.hairline
         };
-        let tone = if draft { Tone::Critical } else { Tone::Accent };
+        let tone = if draft {
+            Tone::Critical
+        } else if stand_in {
+            Tone::Dim
+        } else {
+            Tone::Body
+        };
         let small = theme.text.small;
 
+        let radius = theme.space.radius;
         let action = cx.build(
             placement
                 .apply(frame())
-                .padding(UiRect::left(px(4.0)))
-                .gap(ACTION_ICON_GAP)
+                .gap(0.0)
                 .align(AlignItems::Center)
                 .overflow(Overflow::clip())
-                .radius(theme.space.radius)
-                .fill(fill)
-                .border_color(border)
-                .when::<Hovered, _>(|frame, theme: &EditorTheme| {
-                    frame.fill(theme.color.clip_hover)
-                })
-                .when::<Pressed, _>(|frame, theme: &EditorTheme| {
-                    frame.fill(theme.color.clip_press)
-                })
-                .when::<Dragged, _>(move |frame, _: &EditorTheme| {
-                    frame
-                        .fill(fill.with_alpha(DRAGGED_FILL_ALPHA))
-                        .border_color(
-                            border.with_alpha(DRAGGED_FILL_ALPHA),
-                        )
-                })
-                // After the dragged rule, so a selected clip keeps
-                // its coloured border while it is dragged.
-                .when::<Selected, _>(|frame, theme: &EditorTheme| {
-                    frame.border_color(theme.color.accent)
-                }),
+                // A rule that waits on the hover has the bar report
+                // it, for what shows only over the bar.
+                .when::<Hovered, _>(|frame, _: &EditorTheme| frame),
         );
         cx.world.entity_mut(action).insert((
             ButtonBehavior,
             EntityCursor(SystemCursorIcon::Pointer),
             ActionClip,
         ));
-        snap_selected_border(cx.world, action, selected);
-        cx.under(action, |cx| {
-            if let Some(image) = image {
-                cx.build(
-                    icon(image)
+        // The surface. It takes what the bar has left, so a view
+        // built beside it under the bar keeps its own width and is
+        // not drawn over.
+        let body = cx.under(action, |cx| {
+            cx.build(
+                frame()
+                    .grow(1.0)
+                    .min_width(px(0.0))
+                    .height(percent(100.0))
+                    .padding(UiRect::left(px(4.0)))
+                    .gap(0.0)
+                    .align(AlignItems::Center)
+                    .overflow(Overflow::clip())
+                    .radius(radius)
+                    .fill(fill)
+                    .border_color(border)
+                    .when::<Hovered, _>(
+                        |frame, theme: &EditorTheme| {
+                            frame.fill(theme.hover())
+                        },
+                    )
+                    .when::<Pressed, _>(
+                        |frame, theme: &EditorTheme| {
+                            frame.fill(theme.pressed())
+                        },
+                    )
+                    .when::<Dragged, _>(
+                        move |frame, _: &EditorTheme| {
+                            frame.fill(dragged_fill).border_color(
+                                border.with_alpha(DRAGGED_FILL_ALPHA),
+                            )
+                        },
+                    )
+                    // After the dragged rule, so a selected clip
+                    // keeps its look while it is dragged.
+                    .when::<Selected, _>(selected_look),
+            )
+        });
+        cx.world.entity_mut(body).insert(ActionBody);
+        outline(cx.world, body, false);
+        // The bar is what is selected, and the body what shows it.
+        cx.world
+            .entity_mut(action)
+            .observe(
+                move |_: On<Add, Selected>,
+                      mut commands: Commands| {
+                    commands.entity(body).try_insert(Selected);
+                },
+            )
+            .observe(
+                move |_: On<Remove, Selected>,
+                      mut commands: Commands| {
+                    commands.entity(body).try_remove::<Selected>();
+                },
+            );
+        if selected {
+            cx.world.entity_mut(action).insert(Selected);
+        }
+        cx.under(body, |cx| {
+            if let Some(glyph) = glyph {
+                let hugged = !glyph.subscript.is_empty();
+                let image = cx.build(
+                    icon(glyph.image)
                         .size(ACTION_ICON_SIZE * fit)
+                        .tint(Some(glyph.tint))
                         .opacity(fit),
                 );
+                let after = if hugged {
+                    SUBSCRIPT_HUG
+                } else {
+                    ACTION_ICON_GAP
+                };
+                set_margin_right(cx.world, image, after);
+                if hugged {
+                    let sub = cx.build(
+                        label(glyph.subscript)
+                            .size(SUBSCRIPT_SIZE)
+                            .tone(Tone::Faint)
+                            .wrap(false),
+                    );
+                    set_margin_right(cx.world, sub, ACTION_ICON_GAP);
+                }
             }
-            cx.build(label(name).size(small).tone(tone));
+            cx.build(
+                label(name)
+                    .size(small)
+                    .tone(tone)
+                    .bold(true)
+                    .wrap(false),
+            );
         });
         action
     })
@@ -134,9 +227,19 @@ pub fn timeline_action(
     .transition(Motion::Interact)
 }
 
+fn set_margin_right(world: &mut World, node: Entity, margin: f32) {
+    if let Some(mut ui) = world.get_mut::<Node>(node) {
+        ui.margin.right = px(margin);
+    }
+}
+
 /// A [`timeline_action`]'s node, for [`fit_action_icons`] to find.
 #[derive(Component)]
 pub struct ActionClip;
+
+/// The node under a [`timeline_action`] holding its glyph and name.
+#[derive(Component)]
+pub struct ActionBody;
 
 /// How much of its full size an action icon keeps on a bar `width`
 /// logical pixels wide: all of it on a wide bar, none on one too
@@ -157,6 +260,7 @@ pub fn fit_action_icons(
         (&ComputedNode, &bevy::ecs::hierarchy::Children),
         With<ActionClip>,
     >,
+    bodies: Query<&bevy::ecs::hierarchy::Children, With<ActionBody>>,
     mut icons: Query<(&mut Node, &mut ImageNode)>,
 ) {
     for (computed, children) in &clips {
@@ -167,7 +271,11 @@ pub fn fit_action_icons(
             computed.size().x * computed.inverse_scale_factor(),
         );
 
-        for child in children {
+        let inside = children
+            .iter()
+            .filter_map(|child| bodies.get(*child).ok())
+            .flatten();
+        for child in inside {
             let Ok((mut node, mut image)) = icons.get_mut(*child)
             else {
                 continue;
@@ -208,6 +316,7 @@ mod tests {
         let mut world = World::new();
         let icon =
             world.spawn((Node::default(), ImageNode::default())).id();
+        let body = world.spawn(ActionBody).add_child(icon).id();
         world
             .spawn((
                 ActionClip,
@@ -217,7 +326,7 @@ mod tests {
                     ..Default::default()
                 },
             ))
-            .add_child(icon);
+            .add_child(body);
 
         world
             .run_system_cached(fit_action_icons)
@@ -265,9 +374,10 @@ mod tests {
                 ImageNode::default(),
             ))
             .id();
+        let body = world.spawn(ActionBody).add_child(icon).id();
         world
             .spawn((ActionClip, ComputedNode::default()))
-            .add_child(icon);
+            .add_child(body);
 
         world
             .run_system_cached(fit_action_icons)
@@ -313,8 +423,10 @@ mod tests {
         *app.world().get::<BorderColor>(node).unwrap()
     }
 
+    /// What the action's body holds.
     fn kids(app: &App, node: Entity) -> Vec<Entity> {
-        app.world().get::<Children>(node).unwrap().iter().collect()
+        let body = app.world().get::<Children>(node).unwrap()[0];
+        app.world().get::<Children>(body).unwrap().iter().collect()
     }
 
     fn name_of(app: &App, node: Entity) -> Entity {
@@ -327,11 +439,66 @@ mod tests {
             timeline_action(
                 placed(80.0),
                 "move",
+                false,
                 None,
                 draft,
                 selected,
             ),
         )
+    }
+
+    fn glyph(subscript: &str) -> Option<ActionGlyph> {
+        Some(ActionGlyph {
+            image: Handle::default(),
+            tint: Color::srgb(0.2, 0.4, 0.6),
+            subscript: subscript.to_string(),
+        })
+    }
+
+    #[test]
+    fn the_icon_takes_its_tint_and_a_subscript_follows_it() {
+        let mut app = app();
+        let node = mount::<EditorTheme>(
+            app.world_mut(),
+            timeline_action(
+                placed(80.0),
+                "Cube",
+                false,
+                glyph(".x"),
+                false,
+                false,
+            ),
+        );
+
+        let kids = kids(&app, node);
+        assert_eq!(kids.len(), 3);
+        assert_eq!(
+            app.world().get::<ImageNode>(kids[0]).unwrap().color,
+            Color::srgb(0.2, 0.4, 0.6)
+        );
+        assert_eq!(app.world().get::<Text>(kids[1]).unwrap().0, ".x");
+        assert_eq!(
+            app.world().get::<Text>(kids[2]).unwrap().0,
+            "Cube"
+        );
+    }
+
+    #[test]
+    fn no_subscript_leaves_only_the_icon_and_the_name() {
+        let mut app = app();
+        let node = mount::<EditorTheme>(
+            app.world_mut(),
+            timeline_action(
+                placed(80.0),
+                "Cube",
+                false,
+                glyph(""),
+                false,
+                false,
+            ),
+        );
+
+        assert_eq!(kids(&app, node).len(), 2);
     }
 
     #[test]
@@ -342,7 +509,8 @@ mod tests {
             timeline_action(
                 placed((ICON_FULL_AT + ICON_GONE_AT) / 2.0),
                 "",
-                Some(Handle::default()),
+                false,
+                glyph(""),
                 false,
                 false,
             ),
@@ -371,6 +539,7 @@ mod tests {
                     px(32.0),
                 ),
                 resource::<Span, _>(|span| format!("{}", span.0)),
+                false,
                 None,
                 false,
                 false,
@@ -383,43 +552,27 @@ mod tests {
 
         let ui = app.world().get::<Node>(node).unwrap();
         assert_eq!(ui.width, px(60.0));
-        assert_eq!(ui.border, UiRect::all(px(1.0)));
         assert_eq!(name_of(&app, node), name);
         assert_eq!(app.world().get::<Text>(name).unwrap().0, "60");
     }
 
     #[test]
-    fn selected_thickens_the_border() {
+    fn selecting_recolours_the_bodys_border_and_keeps_its_width() {
         let mut app = app();
-        let node = mounted(&mut app, false, true);
-        app.update();
-
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.border, UiRect::all(px(3.0)));
-
-        app.world_mut().entity_mut(node).remove::<Selected>();
-        app.update();
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.border, UiRect::all(px(1.0)));
-    }
-
-    #[test]
-    fn the_border_width_snaps_where_the_colour_eases() {
-        let mut app = app();
-        app.insert_resource(ReducedMotion(false));
         let node = mounted(&mut app, false, false);
         app.update();
+        let body = app.world().get::<Children>(node).unwrap()[0];
+        let rest = edge(&app, body);
+        let width = app.world().get::<Node>(body).unwrap().border;
 
         app.world_mut().entity_mut(node).insert(Selected);
         app.update();
+        app.update();
 
-        let ui = app.world().get::<Node>(node).unwrap();
-        assert_eq!(ui.border, UiRect::all(px(3.0)));
-        let accent = EditorTheme::default().color.accent;
-        assert_ne!(
-            edge(&app, node),
-            BorderColor::all(accent),
-            "the colour is still on its way"
+        assert_ne!(edge(&app, body), rest);
+        assert_eq!(
+            app.world().get::<Node>(body).unwrap().border,
+            width
         );
     }
 
@@ -431,7 +584,8 @@ mod tests {
             timeline_action(
                 Placement::new(px(0.0), px(0.0), Val::Auto, px(32.0)),
                 "",
-                Some(Handle::default()),
+                false,
+                glyph(""),
                 false,
                 false,
             ),
