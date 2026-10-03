@@ -823,6 +823,7 @@ impl Tree<'_> {
             .justify(JustifyContent::Center)
             .align(AlignItems::Center)
             .overflow(Overflow::clip())
+            .radius(self.theme.space.radius)
             .fill(color.hover)
             .when::<Hovered, _>(move |frame, _: &EditorTheme| {
                 frame.fill(color.accent.with_alpha(0.35))
