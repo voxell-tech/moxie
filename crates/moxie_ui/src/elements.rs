@@ -34,8 +34,8 @@ pub use playhead::playhead_line;
 pub use time_label::time_label;
 pub use time_tick::time_tick;
 pub use timeline_action::{
-    ACTION_ICON_SIZE, ActionClip, ActionGlyph, fit_action_icons,
-    icon_fit, timeline_action,
+    ACTION_ICON_SIZE, ActionBody, ActionClip, ActionGlyph,
+    fit_action_icons, icon_fit, timeline_action,
 };
 pub use timeline_block::{Selected, selected_fill, timeline_block};
 pub use timeline_gap::timeline_gap;
