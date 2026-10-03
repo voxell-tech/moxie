@@ -98,6 +98,10 @@ const MAJOR_TICK: f32 = 8.0;
 const MINOR_TICK: f32 = 4.0;
 /// A block header's height.
 const HEADER_ROW: f32 = 18.0;
+/// The side of a retime handle's chevron.
+const HANDLE_ICON: f32 = 7.0;
+/// The rotation that points the chevron left, in degrees.
+const CHEVRON_LEFT: f32 = 270.0;
 
 /// Viewport where the timeline, track and action UI is displayed.
 #[derive(Component, Default, Clone)]
@@ -781,13 +785,66 @@ impl Tree<'_> {
         let action = reorder::body(action, path.clone());
         let action = self.deletable(action, path.clone());
 
-        let edges = vec![
-            self.edge(placed, retime::Kind::Delay),
-            self.edge(placed, retime::Kind::Resize),
+        let handles = vec![
+            self.handle(placed, retime::Kind::Delay),
+            self.handle(placed, retime::Kind::Resize),
         ];
         AnyView::<Bevy, EditorTheme>::new(move |cx| {
             let node = cx.build(action);
-            cx.under(node, |cx| edges.build_each(cx));
+            cx.under(node, |cx| handles.build_each(cx));
+            node
+        })
+    }
+
+    /// A retime control at one end of the action it is built inside:
+    /// a chevron pointing the way it drags, wired to `kind` via
+    /// [`retime::edge`]. Hidden until [`retime`] shows it.
+    fn handle(
+        &self,
+        placed: &Placed,
+        kind: retime::Kind,
+    ) -> AnyView<Bevy, EditorTheme> {
+        let color = self.theme.color;
+        let (inset, rotation) = match kind {
+            retime::Kind::Delay => (
+                UiRect::new(Val::ZERO, auto(), Val::ZERO, auto()),
+                CHEVRON_LEFT,
+            ),
+            retime::Kind::Resize => (
+                UiRect::new(auto(), Val::ZERO, Val::ZERO, auto()),
+                CHEVRON_SHUT,
+            ),
+        };
+        let surface = frame()
+            .position(PositionType::Absolute)
+            .inset(inset)
+            .width(px(retime::ACTION_HANDLE_PX))
+            // A bar narrower than its two handles splits between
+            // them.
+            .max_width(percent(50.0))
+            .height(percent(100.0))
+            .justify(JustifyContent::Center)
+            .align(AlignItems::Center)
+            .overflow(Overflow::clip())
+            .fill(color.hover)
+            .when::<Hovered, _>(move |frame, _: &EditorTheme| {
+                frame.fill(color.accent.with_alpha(0.35))
+            })
+            .when::<Pressed, _>(move |frame, _: &EditorTheme| {
+                frame.fill(color.accent.with_alpha(0.6))
+            });
+        let edge = retime::edge(surface, placed.path.clone(), kind);
+        let chevron = icon(self.chevron.clone())
+            .size(HANDLE_ICON)
+            .rotation(rotation);
+        AnyView::<Bevy, EditorTheme>::new(move |cx| {
+            let node = cx.build(edge);
+            // The press is the handle's, not the icon's.
+            let glyph = cx.under(node, |cx| cx.build(chevron));
+            cx.world.entity_mut(glyph).insert(Pickable::IGNORE);
+            cx.world
+                .entity_mut(node)
+                .insert((retime::ActionHandle, Visibility::Hidden));
             node
         })
     }
@@ -963,6 +1020,50 @@ mod tests {
 
         assert_eq!(boxes(&mut editor), vec![vec![0], vec![1]]);
         editor.text("Track 2");
+    }
+
+    /// The box at `path`, and whether each of its retime handles
+    /// shows.
+    fn handles(
+        editor: &mut Editor,
+        path: &[usize],
+    ) -> (Entity, Vec<bool>) {
+        let world = editor.world();
+        let action = world
+            .query::<(Entity, &BoxPath)>()
+            .iter(world)
+            .find(|(_, box_path)| box_path.0 == path)
+            .map(|(entity, _)| entity)
+            .expect("a box at the path");
+        let shown = world
+            .query_filtered::<(&ChildOf, &Visibility), With<retime::ActionHandle>>()
+            .iter(world)
+            .filter(|(parent, _)| parent.parent() == action)
+            .map(|(_, visibility)| *visibility != Visibility::Hidden)
+            .collect();
+        (action, shown)
+    }
+
+    #[test]
+    fn an_actions_handles_show_only_while_it_is_hovered_or_selected()
+    {
+        let mut editor = editor_with(&["Intro", "Outro"]);
+        let (intro, shown) = handles(&mut editor, &[0, 0]);
+        assert_eq!(shown, [false, false]);
+
+        editor.world().entity_mut(intro).insert(Hovered);
+        editor.step(1);
+        assert_eq!(handles(&mut editor, &[0, 0]).1, [true, true]);
+        assert_eq!(handles(&mut editor, &[0, 1]).1, [false, false]);
+
+        editor.world().entity_mut(intro).remove::<Hovered>();
+        editor.step(1);
+        assert_eq!(handles(&mut editor, &[0, 0]).1, [false, false]);
+
+        editor.press("Outro");
+        editor.step(SETTLE);
+        assert_eq!(handles(&mut editor, &[0, 0]).1, [false, false]);
+        assert_eq!(handles(&mut editor, &[0, 1]).1, [true, true]);
     }
 
     #[test]
