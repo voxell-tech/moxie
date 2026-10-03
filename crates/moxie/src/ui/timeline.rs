@@ -27,7 +27,7 @@ use bevy_fynix::views::{
 };
 use bevy_fynix::{
     AnyView, Bevy, Hovered, Pressed, Prop, ScopedExt as _,
-    ViewExt as _, ViewSeq as _, keyed, resource,
+    ViewExt as _, keyed, resource,
 };
 use bevy_motiongfx::prelude::MotionGfxManager;
 use block_layout::Placed;
@@ -785,19 +785,23 @@ impl Tree<'_> {
         let action = reorder::body(action, path.clone());
         let action = self.deletable(action, path.clone());
 
-        let handles = vec![
+        let handles = [
             self.handle(placed, retime::Kind::Delay),
             self.handle(placed, retime::Kind::Resize),
         ];
         AnyView::<Bevy, EditorTheme>::new(move |cx| {
             let node = cx.build(action);
-            cx.under(node, |cx| handles.build_each(cx));
+            let [delay, _] =
+                cx.under(node, |cx| handles.map(|h| cx.build(h)));
+            // Before the body, which the action built first.
+            cx.world.entity_mut(node).insert_children(0, &[delay]);
             node
         })
     }
 
-    /// A retime control at one end of the action it is built inside:
-    /// a chevron pointing the way it drags, wired to `kind` via
+    /// A retime control at one end of the action it is built inside,
+    /// with a width of its own beside the action's body: a chevron
+    /// pointing the way it drags, wired to `kind` via
     /// [`retime::edge`]. Hidden until [`retime`] shows it.
     fn handle(
         &self,
@@ -805,20 +809,13 @@ impl Tree<'_> {
         kind: retime::Kind,
     ) -> AnyView<Bevy, EditorTheme> {
         let color = self.theme.color;
-        let (inset, rotation) = match kind {
-            retime::Kind::Delay => (
-                UiRect::new(Val::ZERO, auto(), Val::ZERO, auto()),
-                CHEVRON_LEFT,
-            ),
-            retime::Kind::Resize => (
-                UiRect::new(auto(), Val::ZERO, Val::ZERO, auto()),
-                CHEVRON_SHUT,
-            ),
+        let rotation = match kind {
+            retime::Kind::Delay => CHEVRON_LEFT,
+            retime::Kind::Resize => CHEVRON_SHUT,
         };
         let surface = frame()
-            .position(PositionType::Absolute)
-            .inset(inset)
             .width(px(retime::ACTION_HANDLE_PX))
+            .shrink(0.0)
             // A bar narrower than its two handles splits between
             // them.
             .max_width(percent(50.0))

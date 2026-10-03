@@ -9,7 +9,7 @@ use bevy::image::Image;
 use bevy::math::Vec2;
 use bevy::ui::widget::ImageNode;
 use bevy::ui::{
-    AlignItems, ComputedNode, Node, Overflow, UiRect, px,
+    AlignItems, ComputedNode, Node, Overflow, UiRect, percent, px,
 };
 use bevy::ui_widgets::Button as ButtonBehavior;
 use bevy::window::SystemCursorIcon;
@@ -55,7 +55,8 @@ pub struct ActionGlyph {
 
 /// One action's clip on the timeline: a surface-coloured, absolutely
 /// placed, bordered hit area, its glyph (if any) and `name` centred
-/// vertically at its left edge. It is clipped rather than measured,
+/// vertically at its left edge, in an [`ActionBody`] that fills the
+/// bar. It is clipped rather than measured,
 /// so a bar too narrow for them shows nothing instead of overflowing
 /// its neighbour, and the icon shrinks and fades as the bar narrows
 /// ([`fit_action_icons`]).
@@ -97,7 +98,6 @@ pub fn timeline_action(
         let action = cx.build(
             placement
                 .apply(frame())
-                .padding(UiRect::left(px(4.0)))
                 .gap(0.0)
                 .align(AlignItems::Center)
                 .overflow(Overflow::clip())
@@ -125,7 +125,22 @@ pub fn timeline_action(
             ActionClip,
         ));
         outline(cx.world, action, selected);
-        cx.under(action, |cx| {
+        // Takes what the bar has left, so a view built beside it
+        // under the bar keeps its own width.
+        let body = cx.under(action, |cx| {
+            cx.build(
+                frame()
+                    .grow(1.0)
+                    .min_width(px(0.0))
+                    .height(percent(100.0))
+                    .padding(UiRect::left(px(4.0)))
+                    .gap(0.0)
+                    .align(AlignItems::Center)
+                    .overflow(Overflow::clip()),
+            )
+        });
+        cx.world.entity_mut(body).insert(ActionBody);
+        cx.under(body, |cx| {
             if let Some(glyph) = glyph {
                 let hugged = !glyph.subscript.is_empty();
                 let image = cx.build(
@@ -177,6 +192,10 @@ fn set_margin_right(world: &mut World, node: Entity, margin: f32) {
 #[derive(Component)]
 pub struct ActionClip;
 
+/// The node under a [`timeline_action`] holding its glyph and name.
+#[derive(Component)]
+pub struct ActionBody;
+
 /// How much of its full size an action icon keeps on a bar `width`
 /// logical pixels wide: all of it on a wide bar, none on one too
 /// narrow to show it.
@@ -196,6 +215,7 @@ pub fn fit_action_icons(
         (&ComputedNode, &bevy::ecs::hierarchy::Children),
         With<ActionClip>,
     >,
+    bodies: Query<&bevy::ecs::hierarchy::Children, With<ActionBody>>,
     mut icons: Query<(&mut Node, &mut ImageNode)>,
 ) {
     for (computed, children) in &clips {
@@ -206,7 +226,11 @@ pub fn fit_action_icons(
             computed.size().x * computed.inverse_scale_factor(),
         );
 
-        for child in children {
+        let inside = children
+            .iter()
+            .filter_map(|child| bodies.get(*child).ok())
+            .flatten();
+        for child in inside {
             let Ok((mut node, mut image)) = icons.get_mut(*child)
             else {
                 continue;
@@ -247,6 +271,7 @@ mod tests {
         let mut world = World::new();
         let icon =
             world.spawn((Node::default(), ImageNode::default())).id();
+        let body = world.spawn(ActionBody).add_child(icon).id();
         world
             .spawn((
                 ActionClip,
@@ -256,7 +281,7 @@ mod tests {
                     ..Default::default()
                 },
             ))
-            .add_child(icon);
+            .add_child(body);
 
         world
             .run_system_cached(fit_action_icons)
@@ -304,9 +329,10 @@ mod tests {
                 ImageNode::default(),
             ))
             .id();
+        let body = world.spawn(ActionBody).add_child(icon).id();
         world
             .spawn((ActionClip, ComputedNode::default()))
-            .add_child(icon);
+            .add_child(body);
 
         world
             .run_system_cached(fit_action_icons)
@@ -352,8 +378,10 @@ mod tests {
         *app.world().get::<BorderColor>(node).unwrap()
     }
 
+    /// What the action's body holds.
     fn kids(app: &App, node: Entity) -> Vec<Entity> {
-        app.world().get::<Children>(node).unwrap().iter().collect()
+        let body = app.world().get::<Children>(node).unwrap()[0];
+        app.world().get::<Children>(body).unwrap().iter().collect()
     }
 
     fn name_of(app: &App, node: Entity) -> Entity {
