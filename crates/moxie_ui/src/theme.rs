@@ -90,6 +90,7 @@ pub struct EditorTheme {
     pub motion: Motion,
     pub layer: Layers,
     pub viewport: ViewportControls,
+    pub gizmo: GizmoStyle,
 }
 
 /// Semantic colour slots. A fill is translucent and layers over
@@ -190,9 +191,6 @@ pub struct Layers {
 pub struct ViewportControls {
     /// Radians a pixel of drag orbits by.
     pub orbit_speed: f32,
-    /// The share of the distance to the focus a pixel of drag pans
-    /// by.
-    pub pan_speed: f32,
     /// The share of the distance to the focus a scrolled line zooms
     /// by.
     pub zoom_per_line: f32,
@@ -206,6 +204,55 @@ pub struct ViewportControls {
     /// How far a pressed pointer moves, in logical pixels, before
     /// its release stops being a click.
     pub click_slop: f32,
+    /// How much farther than a tight fit the camera sits from what
+    /// it frames, as a factor.
+    pub frame_margin: f32,
+    /// The radius framed around a selection with no bounds.
+    pub frame_radius: f32,
+    /// The height of the viewport's toolbar.
+    pub toolbar: f32,
+}
+
+/// How a viewport's transform gizmo looks and answers the pointer.
+/// Lengths are logical pixels on screen.
+#[derive(Clone, Copy, Debug)]
+pub struct GizmoStyle {
+    /// A handle's length from the gizmo's origin.
+    pub size: f32,
+    /// The radius of the handle at the origin.
+    pub centre: f32,
+    /// The side of the box that tips a scale handle.
+    pub tip: f32,
+    /// How near the pointer has to be to a handle to grab it.
+    pub pick_radius: f32,
+    pub line_width: f32,
+    /// World units a snapped translation moves in.
+    pub translate_snap: f32,
+    /// Radians a snapped rotation turns in.
+    pub rotate_snap: f32,
+    /// The step of a snapped scale factor.
+    pub scale_snap: f32,
+    /// The handles of the x, y and z axes.
+    pub axes: [Color; 3],
+    /// The handle at the origin.
+    pub centre_color: Color,
+    /// The handle under the pointer, or being dragged.
+    pub hot: Color,
+    /// Handles of a field an action drives.
+    pub disabled: Color,
+    /// The bounds of the subject under the pointer.
+    pub hover: Color,
+    /// The frame a scene camera looks out through.
+    pub camera: Color,
+    /// How far ahead of a scene camera its frame is drawn, in world
+    /// units.
+    pub camera_depth: f32,
+    /// The disc and rays of a directional light.
+    pub light: Color,
+    /// The radius of a directional light's disc, in world units.
+    pub light_radius: f32,
+    /// The length of a directional light's rays, in world units.
+    pub light_ray: f32,
 }
 
 /// Font sizes, three steps.
@@ -293,12 +340,34 @@ impl Default for EditorTheme {
             },
             viewport: ViewportControls {
                 orbit_speed: 0.005,
-                pan_speed: 0.0015,
                 zoom_per_line: 0.1,
                 zoom_per_pixel: 0.002,
                 min_distance: 0.05,
                 max_distance: 10_000.0,
                 click_slop: 4.0,
+                frame_margin: 1.2,
+                frame_radius: 1.0,
+                toolbar: 32.0,
+            },
+            gizmo: GizmoStyle {
+                size: 90.0,
+                centre: 7.0,
+                tip: 8.0,
+                pick_radius: 8.0,
+                line_width: 3.0,
+                translate_snap: 0.5,
+                rotate_snap: core::f32::consts::PI / 12.0,
+                scale_snap: 0.1,
+                axes: [palette.red, palette.green, palette.blue],
+                centre_color: base[8],
+                hot: palette.yellow,
+                disabled: base[5],
+                hover: base[7],
+                camera: base[7],
+                camera_depth: 1.5,
+                light: palette.yellow,
+                light_radius: 0.4,
+                light_ray: 1.2,
             },
             palette,
         }

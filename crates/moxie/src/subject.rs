@@ -66,6 +66,41 @@ impl Target {
             Node::Draft { .. } => false,
         })
     }
+
+    /// Whether an action in `scene` drives it, a part of it, or
+    /// something it is a part of.
+    pub(crate) fn overlaps_action(
+        &self,
+        scene: &EditorScene,
+    ) -> bool {
+        self.overlapped_in(&scene.scene().0.animation)
+    }
+
+    fn overlapped_in(&self, block: &Block<Backend>) -> bool {
+        block.children.iter().any(|child| match child {
+            Node::Block { block, .. } => self.overlapped_in(block),
+            Node::Action { action, .. } => {
+                action.subject == self.subject
+                    && action.field.type_name()
+                        == self.field.type_name()
+                    && (within(
+                        action.field.path(),
+                        self.field.path(),
+                    ) || within(
+                        self.field.path(),
+                        action.field.path(),
+                    ))
+            }
+            Node::Draft { .. } => false,
+        })
+    }
+}
+
+/// Whether the field path `inner` is `outer` or a field inside it.
+fn within(inner: &str, outer: &str) -> bool {
+    inner.strip_prefix(outer).is_some_and(|rest| {
+        rest.is_empty() || rest.starts_with(['.', '['])
+    })
 }
 
 /// A subject as a row shows it, split so its id can render muted
@@ -116,6 +151,15 @@ impl Caption {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_path_is_within_itself_and_what_holds_it() {
+        assert!(within(".translation", ".translation"));
+        assert!(within(".translation.x", ".translation"));
+        assert!(within(".points[2]", ".points"));
+        assert!(!within(".translation", ".translation.x"));
+        assert!(!within(".scale_factor", ".scale"));
+    }
 
     #[test]
     fn a_blank_name_reads_as_the_id() {

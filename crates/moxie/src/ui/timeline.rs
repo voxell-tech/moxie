@@ -1032,7 +1032,7 @@ mod tests {
             let animation = &mut scene.edit().animation;
             animation.children.push(SceneNode::block(
                 motiongfx_scene::block::Block {
-                    name: Some("Camera".into()),
+                    name: Some("Titles".into()),
                     ..motiongfx_scene::block::Block::chain(Vec::new())
                 },
             ));
@@ -1047,7 +1047,7 @@ mod tests {
             vec![vec![0], vec![1], vec![2]]
         );
         editor.text("Track 1");
-        editor.text("Camera");
+        editor.text("Titles");
         editor.text("Track 3");
     }
 

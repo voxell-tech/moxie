@@ -68,7 +68,43 @@ impl Plugin for MoxiePlugin {
             materials::plugin,
             viewport::plugin,
         ))
+        .init_resource::<ProjectSettings>()
+        // Ahead of `Startup`, where an app opens the project it was
+        // asked for.
+        .add_systems(PreStartup, project::spawn_defaults)
         .add_systems(PreUpdate, ensure_scene_root);
+    }
+}
+
+/// The output of a project, saved with it.
+#[derive(Resource, Reflect, Clone, Debug, PartialEq)]
+#[reflect(Resource, Default, Clone)]
+pub struct ProjectSettings {
+    /// The resolution the project renders at, in pixels.
+    pub size: UVec2,
+    /// The colour behind everything the cameras draw.
+    pub background: Color,
+}
+
+impl Default for ProjectSettings {
+    fn default() -> Self {
+        Self {
+            size: UVec2::new(1920, 1080),
+            background: Color::srgb(0.02, 0.02, 0.04),
+        }
+    }
+}
+
+impl ProjectSettings {
+    /// The longest a side of the output is, in pixels.
+    const MAX_SIDE: u32 = 8192;
+
+    /// The resolution as it can be rendered: at least a pixel each
+    /// way, and no side past [`Self::MAX_SIDE`].
+    pub(crate) fn size(&self) -> UVec2 {
+        // An inspector can type any number, and neither a zero nor a
+        // texture larger than the GPU holds is survived.
+        self.size.clamp(UVec2::ONE, UVec2::splat(Self::MAX_SIDE))
     }
 }
 
@@ -203,11 +239,8 @@ impl TimelineView {
     }
 }
 
-/// The offscreen texture the composition's scene cameras render into.
-/// `bevy_ui` scales this image to fit the preview area above the
-/// timeline panel, so growing the panel shrinks the whole frame
-/// uniformly instead of distorting it. Sized from
-/// [`EditorSettings::physical_size`].
+/// The offscreen texture the scene cameras render into, and the
+/// preview shows. As large as [`ProjectSettings::size`].
 #[derive(Resource)]
 pub(crate) struct PreviewImage(pub(crate) Handle<Image>);
 
@@ -247,7 +280,6 @@ pub(crate) struct ProjectPath(pub(crate) Option<PathBuf>);
 #[reflect(Resource, SettingsGroup, Default)]
 pub struct EditorSettings {
     hdr: bool,
-    physical_size: UVec2,
     /// The shortest an action runs, and the step retiming moves in.
     min_duration: Duration,
 }
@@ -256,9 +288,6 @@ impl Default for EditorSettings {
     fn default() -> Self {
         Self {
             hdr: Default::default(),
-            // Portrait 9:16 to match the current compositions; the
-            // offscreen preview renders at this resolution.
-            physical_size: UVec2::new(1920, 1080),
             min_duration: Duration::from_millis(10),
         }
     }

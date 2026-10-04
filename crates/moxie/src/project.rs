@@ -22,8 +22,8 @@ use moxie_asset::project::{
 use moxie_asset::{AnyPath, InternalAssets, replace_internal_assets};
 
 use crate::{
-    EditorScene, ProjectBookmarks, ProjectPath, SceneRoot,
-    SelectedAction, SelectedEntity,
+    EditorScene, ProjectBookmarks, ProjectPath, ProjectSettings,
+    SceneRoot, SelectedAction, SelectedEntity,
 };
 
 /// Replaces whatever is loaded with a blank project.
@@ -32,6 +32,51 @@ pub(crate) fn new_scene(world: &mut World) {
     replace_internal_assets(world, Vec::new());
     world.insert_resource(EditorScene::default());
     world.insert_resource(ProjectPath(None));
+    spawn_defaults(world);
+}
+
+/// Spawns what a blank project starts with: a camera for each of 3D
+/// and 2D and a light, so there is something to see the first
+/// subject by.
+pub(crate) fn spawn_defaults(world: &mut World) {
+    let root = world
+        .spawn((
+            SceneRoot,
+            Transform::IDENTITY,
+            Visibility::Inherited,
+        ))
+        .id();
+    spawn_stage(world, root);
+}
+
+/// The cameras and the light of a blank project, under `root`.
+fn spawn_stage(world: &mut World, root: Entity) {
+    world.spawn((
+        EntityUid::new(),
+        Name::new("Camera"),
+        Camera3d::default(),
+        Transform::from_xyz(0.0, 2.0, 14.0)
+            .looking_at(Vec3::ZERO, Vec3::Y),
+        Visibility::default(),
+        ChildOf(root),
+    ));
+    world.spawn((
+        EntityUid::new(),
+        Name::new("Camera 2D"),
+        Camera2d,
+        Transform::IDENTITY,
+        Visibility::default(),
+        ChildOf(root),
+    ));
+    world.spawn((
+        EntityUid::new(),
+        Name::new("Light"),
+        DirectionalLight::default(),
+        Transform::from_xyz(3.0, 10.0, 5.0)
+            .looking_at(Vec3::ZERO, Vec3::Y),
+        Visibility::default(),
+        ChildOf(root),
+    ));
 }
 
 /// Prompts for a path and writes the whole project to it.
@@ -99,6 +144,7 @@ pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
         error!("could not spawn {}: {err}", path.display());
         return;
     }
+    stage_if_bare(world);
 
     // The recompile runs on `EditorScene` changing, so inserting it
     // is the whole of loading the animation.
@@ -107,6 +153,27 @@ pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
     )));
     world.insert_resource(ProjectBookmarks(project.bookmarks));
     world.insert_resource(ProjectPath(Some(path)));
+}
+
+/// Gives a project that came with no camera the cameras and the
+/// light of a blank one, as one saved while the editor supplied them
+/// does.
+fn stage_if_bare(world: &mut World) {
+    let filmed = world
+        .query_filtered::<(), (With<Camera>, With<EntityUid>)>()
+        .iter(world)
+        .next()
+        .is_some();
+    if filmed {
+        return;
+    }
+    let root = world
+        .query_filtered::<Entity, With<SceneRoot>>()
+        .iter(world)
+        .next();
+    if let Some(root) = root {
+        spawn_stage(world, root);
+    }
 }
 
 /// The folder a project file at `path` lives in.
@@ -138,6 +205,9 @@ pub(crate) fn serialize(
     let dynamic = DynamicWorldBuilder::from_world(world, &registry)
         .with_component_filter(subject_components())
         .extract_entities(subjects.into_iter())
+        .deny_all_resources()
+        .allow_resource::<ProjectSettings>()
+        .extract_resources()
         .build();
 
     let scene = world.resource::<EditorScene>();
@@ -205,6 +275,9 @@ fn clear(world: &mut World) {
     world.insert_resource(SelectedEntity(None));
     world.insert_resource(SelectedAction(None));
     world.insert_resource(ProjectBookmarks::default());
+    // A file saved without any keeps the defaults, not the last
+    // project's.
+    world.insert_resource(ProjectSettings::default());
 }
 
 /// What a subject is saved as. An allowlist: the rest is the running
@@ -220,6 +293,7 @@ fn subject_components() -> WorldFilter {
         .allow::<Children>()
         .allow::<ChildOf>()
         .allow::<Camera3d>()
+        .allow::<Projection>()
         .allow::<CascadeShadowConfig>()
         .allow::<DirectionalLight>()
         .allow::<PointLight>()

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use bevy::asset::uuid::Uuid;
+use bevy::camera::RenderTarget;
 use bevy::input::keyboard::Key;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
@@ -8,7 +9,9 @@ use bevy_motiongfx::scene::id::EntityUid;
 use moxie_asset::{ABSOLUTE_SOURCE, AssetRef, InternalAssets};
 
 use super::harness::{Editor, SETTLE};
-use crate::{SelectedEntity, presets, project};
+use crate::{
+    PreviewImage, ProjectSettings, SelectedEntity, presets, project,
+};
 
 /// Adds a cube from the hierarchy's add menu, and hands it back.
 fn add_cube(editor: &mut Editor) -> Entity {
@@ -180,11 +183,14 @@ fn a_field_built_later_has_the_editor_caret() {
 }
 
 #[test]
-fn the_shell_shows_the_menu_bar_and_an_empty_inspector() {
+fn the_shell_shows_the_menu_bar_and_the_project_in_the_inspector() {
     let mut editor = Editor::new();
     editor.text("File");
-    // The inspector and the action panel each say it.
-    assert_eq!(editor.texts("Nothing selected").len(), 2);
+    // With nothing selected the inspector is the project's.
+    editor.text("Project");
+    editor.text("background");
+    // The action panel says it.
+    editor.text("Nothing selected");
     assert_eq!(editor.texts("Timeline").len(), 1);
     editor.text("Action");
 }
@@ -193,16 +199,17 @@ fn the_shell_shows_the_menu_bar_and_an_empty_inspector() {
 fn the_inspector_follows_the_selection() {
     let mut editor = Editor::new();
     let cube = add_cube(&mut editor);
-    // The action panel keeps its own, whatever the hierarchy picks.
-    assert_eq!(editor.texts("Nothing selected").len(), 1);
+    assert!(editor.texts("Project").is_empty());
+    editor.text("translation");
 
     editor.world().insert_resource(SelectedEntity(None));
     editor.step(SETTLE);
-    assert_eq!(editor.texts("Nothing selected").len(), 2);
+    editor.text("Project");
+    assert!(editor.texts("translation").is_empty());
 
     editor.world().insert_resource(SelectedEntity(Some(cube)));
     editor.step(SETTLE);
-    assert_eq!(editor.texts("Nothing selected").len(), 1);
+    assert!(editor.texts("Project").is_empty());
 }
 
 #[test]
@@ -219,6 +226,36 @@ fn dragging_a_number_field_scrubs_its_value() {
         .expect("placed")
         .translation;
     assert_eq!(translation, Vec3::new(0.5, 0.0, 0.0));
+}
+
+#[test]
+fn a_cancelled_edit_puts_the_field_back() {
+    use moxie_ui::inspector::{Edit, Field};
+
+    let mut editor = Editor::new();
+    let cube = add_cube(&mut editor);
+    let translation = |editor: &mut Editor| {
+        editor
+            .world()
+            .get::<Transform>(cube)
+            .expect("placed")
+            .translation
+    };
+    let field = Field::of::<Transform>(cube).child("translation");
+
+    let edit = Edit::<Vec3>::begin(editor.world(), field.clone())
+        .expect("it reads as a Vec3");
+    edit.write(editor.world(), Vec3::new(1.0, 2.0, 3.0));
+    edit.write(editor.world(), Vec3::new(4.0, 5.0, 6.0));
+    assert_eq!(translation(&mut editor), Vec3::new(4.0, 5.0, 6.0));
+    edit.cancel(editor.world());
+    assert_eq!(translation(&mut editor), Vec3::ZERO);
+
+    let edit = Edit::<Vec3>::begin(editor.world(), field)
+        .expect("it reads as a Vec3");
+    edit.write(editor.world(), Vec3::X);
+    edit.commit();
+    assert_eq!(translation(&mut editor), Vec3::X);
 }
 
 #[test]
@@ -296,6 +333,113 @@ fn the_sample_project_opens() {
     let world = editor.world();
     let subjects = world.query::<&EntityUid>().iter(world).count();
     assert!(subjects > 0, "its subjects came back");
+    // Saved before a project had settings or cameras of its own.
+    assert_eq!(
+        *world.resource::<ProjectSettings>(),
+        ProjectSettings::default()
+    );
+    assert_eq!(scene_cameras::<With<Camera3d>>(&mut editor).len(), 1);
+    assert_eq!(scene_cameras::<With<Camera2d>>(&mut editor).len(), 1);
+}
+
+/// The cameras of the project that `F` picks out.
+fn scene_cameras<F: bevy::ecs::query::QueryFilter>(
+    editor: &mut Editor,
+) -> Vec<Entity> {
+    let world = editor.world();
+    world
+        .query_filtered::<Entity, (With<EntityUid>, F)>()
+        .iter(world)
+        .collect()
+}
+
+#[test]
+fn a_2d_camera_draws_over_the_3d_one_in_the_preview() {
+    let mut editor = Editor::new();
+    assert!(editor.texts("No camera").is_empty());
+    let [deep] = scene_cameras::<With<Camera3d>>(&mut editor)[..]
+    else {
+        panic!("a blank project has one 3D camera");
+    };
+    let [flat] = scene_cameras::<With<Camera2d>>(&mut editor)[..]
+    else {
+        panic!("a blank project has one 2D camera");
+    };
+
+    let preview = editor.world().resource::<PreviewImage>().0.clone();
+    let world = editor.world();
+    for camera in [deep, flat] {
+        assert!(matches!(
+            world.get::<RenderTarget>(camera),
+            Some(RenderTarget::Image(target))
+                if target.handle == preview
+        ));
+    }
+    let deep = world.get::<Camera>(deep).expect("a camera");
+    let flat = world.get::<Camera>(flat).expect("a camera");
+    assert!(flat.order > deep.order);
+    assert!(matches!(deep.clear_color, ClearColorConfig::Custom(_)));
+    assert!(matches!(flat.clear_color, ClearColorConfig::None));
+}
+
+#[test]
+fn a_project_keeps_its_settings_and_its_cameras() {
+    let mut editor = Editor::new();
+    let settings = ProjectSettings {
+        size: UVec2::new(1280, 720),
+        background: Color::srgb(0.5, 0.25, 0.0),
+    };
+    editor.world().insert_resource(settings.clone());
+    let [camera] = scene_cameras::<With<Camera3d>>(&mut editor)[..]
+    else {
+        panic!("a blank project has one 3D camera");
+    };
+    let lens = Projection::Perspective(PerspectiveProjection {
+        fov: 0.5,
+        ..default()
+    });
+    editor.world().entity_mut(camera).insert(lens);
+
+    let text =
+        project::serialize(editor.world(), Path::new("/project"))
+            .expect("it saves");
+    project::new_scene(editor.world());
+    editor.step(SETTLE);
+    assert_eq!(
+        *editor.world().resource::<ProjectSettings>(),
+        ProjectSettings::default()
+    );
+    project::open(editor.world(), &text, "/project/test.mox".into());
+    editor.step(SETTLE);
+
+    assert_eq!(
+        *editor.world().resource::<ProjectSettings>(),
+        settings
+    );
+    let [camera] = scene_cameras::<With<Camera3d>>(&mut editor)[..]
+    else {
+        panic!("the 3D camera came back, alone");
+    };
+    assert_eq!(scene_cameras::<With<Camera2d>>(&mut editor).len(), 1);
+    let world = editor.world();
+    let name = world.get::<Name>(camera).expect("it has its name");
+    assert_eq!(name.as_str(), "Camera");
+    let Some(Projection::Perspective(lens)) =
+        world.get::<Projection>(camera)
+    else {
+        panic!("its projection came back");
+    };
+    assert_eq!(lens.fov, 0.5);
+    let lights =
+        world.query::<&DirectionalLight>().iter(world).count();
+    assert_eq!(lights, 1);
+    // As large as the project renders.
+    let preview = world.resource::<PreviewImage>().0.clone();
+    let image = world
+        .resource::<Assets<Image>>()
+        .get(&preview)
+        .expect("the preview image is kept");
+    assert_eq!(image.size(), settings.size);
 }
 
 #[test]

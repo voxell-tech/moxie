@@ -2,6 +2,7 @@ mod action;
 mod assets;
 pub(crate) mod hierarchy;
 mod inspector;
+mod preview;
 mod settings;
 pub(crate) mod timeline;
 mod top_bar;
@@ -13,25 +14,24 @@ use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::text::EditableText;
-use bevy::ui::widget::ImageNode;
 use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
 use bevy_fynix::dock::{
     DockAreaStyle, DockLeaf, DockNode, DockRegistry, DockTree,
     DockWindowKind, Edge, dock,
 };
 use bevy_fynix::views::{FrameProps as _, column};
-use bevy_fynix::{AnyView, Bevy, View, mount};
+use bevy_fynix::{AnyView, Bevy, mount};
 use bevy_motiongfx::motiongfx::field_path::field;
 use moxie_ui::MoxieUiPlugin;
 use moxie_ui::field_icon::FieldIconAppExt as _;
-use moxie_ui::gaps::{anchored, changing_under};
+use moxie_ui::inspector::InspectAppExt as _;
 use moxie_ui::theme::{EditorTheme, Hue};
 
 use crate::subject::Target;
 use crate::{
     EditorSettings, EditorState, PreviewImage, ProjectBookmarks,
-    ProjectPath, SelectedAction, SelectedEntity, playback, scene,
-    view,
+    ProjectPath, ProjectSettings, SelectedAction, SelectedEntity,
+    playback, scene, view,
 };
 
 /// Wires the editor UI tree and the per-frame
@@ -76,6 +76,8 @@ impl Plugin for UiPlugin {
             .register_root_hue::<SpotLight>(Hue::Yellow)
             .register_root_hue::<RectLight>(Hue::Yellow)
             .init_resource::<EditorState>()
+            .init_resource::<preview::PreviewView>()
+            .init_resource::<view::Rendering>()
             .init_resource::<SelectedAction>()
             .init_resource::<SelectedEntity>()
             .init_resource::<ProjectBookmarks>()
@@ -97,11 +99,15 @@ impl Plugin for UiPlugin {
                         .run_if(not(text_field_focused)),
                     playback::stop_at_track_end,
                     playback::track_playing,
-                    view::retarget_scene_cameras,
+                    view::resize_preview,
+                    view::sync_scene_cameras,
                 )
                     .chain(),
             )
             .add_observer(playback::on_toggle_playback);
+
+        app.with_inspect_group("Cameras")
+            .register_inspectable::<Projection>();
     }
 }
 
@@ -115,11 +121,7 @@ pub(crate) fn text_field_focused(
         .is_some_and(|entity| q_editable.contains(entity))
 }
 
-/// Marks the UI camera (which owns the window). Every other (scene)
-/// camera is retargeted to the offscreen preview image; see
-/// [`retarget_scene_cameras`].
-///
-/// [`retarget_scene_cameras`]: crate::view::retarget_scene_cameras
+/// Marker component for the UI camera, which owns the window.
 #[derive(Component, Default, Clone)]
 pub(crate) struct TrackViewportCamera;
 
@@ -129,9 +131,10 @@ fn setup_editor_ui(
     mut registry: ResMut<DockRegistry<EditorTheme>>,
     mut tree: ResMut<DockTree>,
     settings: Res<EditorSettings>,
+    project: Res<ProjectSettings>,
     assets: Res<AssetServer>,
 ) {
-    let size = settings.physical_size.max(UVec2::ONE);
+    let size = project.size();
     let preview = images.add(Image::new_target_texture(
         size.x,
         size.y,
@@ -254,7 +257,7 @@ fn register_windows(
         )
         .register(
             "preview",
-            kind("Preview", crate::icons::PREVIEW, preview),
+            kind("Preview", crate::icons::PREVIEW, preview::panel),
         )
         .register(
             "timeline",
@@ -288,52 +291,4 @@ fn register_windows(
             "assets",
             kind("Assets", crate::icons::ASSETS, assets::panel),
         );
-}
-
-/// The composition's preview, letterboxed to the area it sits in.
-fn preview() -> AnyView<Bevy, EditorTheme> {
-    AnyView::<Bevy, EditorTheme>::new(|cx| {
-        let preview = cx.world.resource::<PreviewImage>().0.clone();
-        cx.build(
-            column((anchored::<EditorTheme, _>(move |area| {
-                preview_frame(preview, area)
-            }),))
-            .width(percent(100.0))
-            .height(percent(100.0))
-            .justify(JustifyContent::Center)
-            .align(AlignItems::Center),
-        )
-    })
-}
-
-/// The preview image, sized to fit `area`. Hidden until that area has
-/// a size: at a fresh `ComputedNode` it does not, and `Auto` would
-/// flash at the image's native size for a frame.
-fn preview_frame(
-    preview: Handle<Image>,
-    area: Option<Entity>,
-) -> impl View<Bevy, EditorTheme> {
-    let fit = move || {
-        changing_under(area, move |world: &World| {
-            area.and_then(|area| view::preview_fit(world, area))
-        })
-    };
-    column(())
-        .width(
-            fit()
-                .map(|fit| fit.map_or(Val::ZERO, |(width, _)| width)),
-        )
-        .height(
-            fit().map(|fit| {
-                fit.map_or(Val::ZERO, |(_, height)| height)
-            }),
-        )
-        .display(fit().map(|fit| {
-            if fit.is_some() {
-                Display::Flex
-            } else {
-                Display::None
-            }
-        }))
-        .with(ImageNode::new(preview))
 }

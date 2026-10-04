@@ -10,6 +10,7 @@
 //! an entity) is the one the walk uses, but anything else the editor
 //! keeps can serve the same editors through a [`Source`].
 
+mod edit;
 mod enums;
 mod field;
 mod field_drag;
@@ -30,6 +31,7 @@ use bevy::sprite::Anchor;
 use bevy::text::{LetterSpacing, LineHeight};
 use bevy_fynix::views::{FrameProps as _, column, row};
 use bevy_fynix::{AnyView, Bevy, Signal, View, ViewExt as _};
+pub use edit::Edit;
 pub use enums::variant_picker;
 pub use field::{Field, Owner};
 pub use field_drag::{

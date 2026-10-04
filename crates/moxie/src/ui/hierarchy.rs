@@ -197,7 +197,16 @@ fn add_menu() -> Vec<AnyView<Bevy, EditorTheme>> {
     rows.push(entry("Directional Light", |world, name| {
         spawn_named(world, name, DirectionalLight::default());
     }));
+    rows.push(entry("Camera", |world, _| spawn_camera(world)));
+    rows.push(entry("Camera 2D", |world, name| {
+        spawn_named(world, name, Camera2d);
+    }));
     rows
+}
+
+/// Spawns a 3D camera, selected.
+pub(crate) fn spawn_camera(world: &mut World) {
+    spawn_named(world, "Camera", Camera3d::default());
 }
 
 /// The seam on one side of a row, and the line a drop lights on it.

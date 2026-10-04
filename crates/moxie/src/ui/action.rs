@@ -1242,15 +1242,14 @@ mod tests {
     #[test]
     fn the_panel_starts_empty_and_follows_the_selection() {
         let mut editor = Editor::new();
-        // The inspector says it too.
-        assert_eq!(editor.texts("Nothing selected").len(), 2);
+        editor.text("Nothing selected");
 
         editor
             .world()
             .insert_resource(SelectedAction(Some(vec![3])));
         editor.step(SETTLE);
         editor.text("Selection is no longer in the scene");
-        assert_eq!(editor.texts("Nothing selected").len(), 1);
+        assert!(editor.texts("Nothing selected").is_empty());
 
         editor.world().insert_resource(SelectedAction(None));
         editor.step(SETTLE);
@@ -1259,7 +1258,7 @@ mod tests {
                 .texts("Selection is no longer in the scene")
                 .is_empty()
         );
-        assert_eq!(editor.texts("Nothing selected").len(), 2);
+        editor.text("Nothing selected");
     }
 
     #[test]
