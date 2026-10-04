@@ -217,15 +217,49 @@ pub struct ViewportControls {
 /// Lengths are logical pixels on screen.
 #[derive(Clone, Copy, Debug)]
 pub struct GizmoStyle {
-    /// A handle's length from the gizmo's origin.
+    /// A handle's length from the gizmo's origin, and the radius of
+    /// a rotation ring.
     pub size: f32,
-    /// The radius of the handle at the origin.
+    /// The radius of the handle at the origin, where the stem of an
+    /// axis starts.
     pub centre: f32,
+    /// The radius of the ring around a rotation or a scale.
+    pub outer_ring: f32,
+    /// The length of the cone that tips a translation handle.
+    pub cone_length: f32,
+    /// The radius of that cone's base.
+    pub cone_radius: f32,
     /// The side of the box that tips a scale handle.
     pub tip: f32,
+    /// How far along each of its two axes the middle of a plane
+    /// handle is.
+    pub plane_offset: f32,
+    /// The side of a plane handle.
+    pub plane_size: f32,
     /// How near the pointer has to be to a handle to grab it.
     pub pick_radius: f32,
     pub line_width: f32,
+    /// How far behind the gizmo's origin a rotation ring is still
+    /// drawn, as a share of its radius.
+    pub ring_overlap: f32,
+    /// How far off the line of sight an axis handle starts to show
+    /// and where it shows in full, as one less the cosine between
+    /// the two.
+    pub axis_fade: [f32; 2],
+    /// The same for a plane handle seen edge on, as the cosine
+    /// between its normal and the line of sight.
+    pub plane_fade: [f32; 2],
+    /// The opacity of a handle at rest.
+    pub rest_alpha: f32,
+    /// The opacity of the handle under the pointer, or being
+    /// dragged.
+    pub hot_alpha: f32,
+    /// The opacity of a plane handle's fill, as a share of its
+    /// outline's.
+    pub plane_fill: f32,
+    /// The opacity of the disc that turns the subject freely, shown
+    /// under the pointer.
+    pub ball_alpha: f32,
     /// World units a snapped translation moves in.
     pub translate_snap: f32,
     /// Radians a snapped rotation turns in.
@@ -234,10 +268,10 @@ pub struct GizmoStyle {
     pub scale_snap: f32,
     /// The handles of the x, y and z axes.
     pub axes: [Color; 3],
-    /// The handle at the origin.
+    /// The handles that face the view.
     pub centre_color: Color,
-    /// The handle under the pointer, or being dragged.
-    pub hot: Color,
+    /// The wedge a rotation has swept.
+    pub sweep: Color,
     /// The bounds of the subject under the pointer.
     pub hover: Color,
     /// The frame a scene camera looks out through.
@@ -349,16 +383,28 @@ impl Default for EditorTheme {
             },
             gizmo: GizmoStyle {
                 size: 90.0,
-                centre: 7.0,
-                tip: 8.0,
+                centre: 18.0,
+                outer_ring: 108.0,
+                cone_length: 22.0,
+                cone_radius: 5.5,
+                tip: 9.0,
+                plane_offset: 51.0,
+                plane_size: 13.0,
                 pick_radius: 8.0,
                 line_width: 3.0,
+                ring_overlap: 0.02,
+                axis_fade: [0.02, 0.1],
+                plane_fade: [0.175, 0.25],
+                rest_alpha: 0.6,
+                hot_alpha: 1.0,
+                plane_fill: 0.5,
+                ball_alpha: 0.05,
                 translate_snap: 0.5,
                 rotate_snap: core::f32::consts::PI / 12.0,
                 scale_snap: 0.1,
                 axes: [palette.red, palette.green, palette.blue],
                 centre_color: base[8],
-                hot: palette.yellow,
+                sweep: base[8].with_alpha(0.2),
                 hover: base[7],
                 camera: base[7],
                 camera_depth: 1.5,
