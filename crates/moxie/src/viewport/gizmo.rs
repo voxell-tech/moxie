@@ -16,9 +16,8 @@ use moxie_ui::inspector::{Edit, Field};
 use moxie_ui::theme::{EditorTheme, GizmoStyle};
 
 use super::{EDITOR_LAYER, EditorCamera};
-use crate::subject::Target;
+use crate::SelectedEntity;
 use crate::ui::text_field_focused;
-use crate::{EditorScene, SelectedEntity};
 
 /// Points a rotation ring is picked by.
 const RING_STEPS: usize = 48;
@@ -107,33 +106,18 @@ fn pick_mode(
     }
 }
 
-/// The subject the gizmo sits on.
-#[derive(Clone, Copy, PartialEq)]
-struct Aimed {
-    entity: Entity,
-    /// Whether an action drives what the gizmo would edit.
-    driven: bool,
-}
-
+/// The subject the gizmo sits on. One an action drives is moved all
+/// the same, until the timeline next writes it.
 #[derive(Resource, Default, PartialEq)]
-struct Aim(Option<Aimed>);
+struct Aim(Option<Entity>);
 
-fn aim(world: &mut World) {
-    let mode = world.resource::<GizmoSettings>().mode;
-    let aimed = world
-        .resource::<SelectedEntity>()
-        .0
-        .filter(|&entity| world.get::<Transform>(entity).is_some())
-        .map(|entity| {
-            let scene = world.get_resource::<EditorScene>();
-            let driven = Target::of(world, &mode.field(entity))
-                .zip(scene)
-                .is_some_and(|(target, scene)| {
-                    target.overlaps_action(scene)
-                });
-            Aimed { entity, driven }
-        });
-    world.resource_mut::<Aim>().set_if_neq(Aim(aimed));
+fn aim(
+    selected: Res<SelectedEntity>,
+    placed: Query<(), With<Transform>>,
+    mut aim: ResMut<Aim>,
+) {
+    let aimed = selected.0.filter(|&entity| placed.contains(entity));
+    aim.set_if_neq(Aim(aimed));
 }
 
 /// One handle of the gizmo.
@@ -495,16 +479,15 @@ fn pointing(
 fn grab(world: &World, node: Entity) -> Option<Drag> {
     let settings = *world.resource::<GizmoSettings>();
     let style = &world.resource::<Theme<EditorTheme>>().0.gizmo;
-    let aimed =
-        world.resource::<Aim>().0.filter(|aim| !aim.driven)?;
+    let aimed = world.resource::<Aim>().0?;
     let camera = world.get::<ViewportNode>(node)?.camera?;
     let handle = world.get::<Hot>(camera)?.0?;
     let view = world.get::<GlobalTransform>(camera)?;
     let lens = world.get::<Camera>(camera)?;
-    let target = world.get::<GlobalTransform>(aimed.entity)?;
+    let target = world.get::<GlobalTransform>(aimed)?;
     let frame = Frame::of(target, settings, lens, view, style)?;
 
-    let field = settings.mode.field(aimed.entity);
+    let field = settings.mode.field(aimed);
     let edit = match settings.mode {
         GizmoMode::Translate => {
             Pending::Translation(Edit::begin(world, field)?)
@@ -517,7 +500,7 @@ fn grab(world: &World, node: Entity) -> Option<Drag> {
         }
     };
     let parent = world
-        .get::<ChildOf>(aimed.entity)
+        .get::<ChildOf>(aimed)
         .and_then(|child| {
             world.get::<GlobalTransform>(child.parent())
         })
@@ -536,7 +519,7 @@ fn grab(world: &World, node: Entity) -> Option<Drag> {
             view: view.rotation() * Vec3::NEG_Z,
         },
         edit,
-        start: *world.get::<Transform>(aimed.entity)?,
+        start: *world.get::<Transform>(aimed)?,
         parent,
     })
 }
@@ -666,9 +649,7 @@ fn handles(
     mut drawn_in: Local<Option<Entity>>,
 ) {
     let style = &theme.0.gizmo;
-    let target = aim.0.and_then(|aimed| {
-        Some((aimed, targets.get(aimed.entity).ok()?))
-    });
+    let target = aim.0.and_then(|aimed| targets.get(aimed).ok());
 
     let mut shown = None::<(u8, Entity, Frame, Option<Handle>, Quat)>;
     for (node, viewport, pointer) in &nodes {
@@ -680,12 +661,10 @@ fn handles(
         };
         let frame = target
             .filter(|_| !orbit.follows_scene_camera())
-            .and_then(|(aimed, target)| {
-                let frame =
-                    Frame::of(target, *settings, lens, view, style)?;
-                Some((aimed, frame))
+            .and_then(|target| {
+                Frame::of(target, *settings, lens, view, style)
             });
-        let Some((aimed, frame)) = frame else {
+        let Some(frame) = frame else {
             hot.0 = None;
             continue;
         };
@@ -699,9 +678,7 @@ fn handles(
             .as_ref()
             .filter(|drag| drag.node == node)
             .map(|drag| drag.grab.handle);
-        if aimed.driven {
-            hot.0 = None;
-        } else if dragged.is_some() {
+        if dragged.is_some() {
             hot.0 = dragged;
         } else if !buttons.pressed(MouseButton::Left) {
             // Held through a press, so the drag that follows finds
@@ -728,12 +705,9 @@ fn handles(
     let Some((_, node, frame, hot, facing)) = shown else {
         return;
     };
-    let driven = aim.0.is_some_and(|aimed| aimed.driven);
     *drawn_in = Some(node);
     let color = |handle: Handle, plain: Color| {
-        if driven {
-            style.disabled
-        } else if hot == Some(handle) {
+        if hot == Some(handle) {
             style.hot
         } else {
             plain

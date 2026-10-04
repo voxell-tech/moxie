@@ -238,8 +238,6 @@ pub struct GizmoStyle {
     pub centre_color: Color,
     /// The handle under the pointer, or being dragged.
     pub hot: Color,
-    /// Handles of a field an action drives.
-    pub disabled: Color,
     /// The bounds of the subject under the pointer.
     pub hover: Color,
     /// The frame a scene camera looks out through.
@@ -361,7 +359,6 @@ impl Default for EditorTheme {
                 axes: [palette.red, palette.green, palette.blue],
                 centre_color: base[8],
                 hot: palette.yellow,
-                disabled: base[5],
                 hover: base[7],
                 camera: base[7],
                 camera_depth: 1.5,
