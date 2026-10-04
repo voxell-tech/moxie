@@ -5,14 +5,14 @@
 use bevy::camera::{ClearColorConfig, RenderTarget};
 use bevy::prelude::*;
 use bevy::render::render_resource::Extent3d;
+use moxie_viewport::{EditorCamera, OutputAspect, SceneCamera};
 
 use crate::thumbnails::ThumbnailCamera;
 use crate::ui::TrackViewportCamera;
-use crate::viewport::EditorCamera;
 use crate::{PreviewImage, ProjectSettings};
 
-/// A camera of the scene: every one but the editor's own.
-pub(crate) type SceneCamera = (
+/// A camera of the project: every one but the editor's own.
+type ProjectCamera = (
     With<Camera>,
     Without<TrackViewportCamera>,
     Without<ThumbnailCamera>,
@@ -35,16 +35,19 @@ pub(crate) fn sync_scene_cameras(
     preview: Res<PreviewImage>,
     settings: Res<ProjectSettings>,
     mut rendering: ResMut<Rendering>,
+    mut aspect: ResMut<OutputAspect>,
     panels: Query<&ComputedNode, With<PreviewPanel>>,
     mut cameras: Query<
         (Entity, &mut Camera, Option<&RenderTarget>, Has<Camera2d>),
-        SceneCamera,
+        ProjectCamera,
     >,
 ) {
     // A hidden tab is laid out with no size.
     let shown =
         panels.iter().any(|panel| panel.size().min_element() > 0.0);
     rendering.set_if_neq(Rendering(!cameras.is_empty()));
+    let output = settings.size().as_vec2();
+    aspect.set_if_neq(OutputAspect(output.x / output.y));
     let mut stack = cameras
         .iter()
         .map(|(entity, .., flat)| (flat, entity))
@@ -85,8 +88,11 @@ pub(crate) fn sync_scene_cameras(
                 if target.handle == preview.0,
         );
         if !targeted {
-            commands.entity(entity).insert(RenderTarget::Image(
-                preview.0.clone().into(),
+            // Marked as one of the scene's, which a viewport draws
+            // and looks through.
+            commands.entity(entity).insert((
+                RenderTarget::Image(preview.0.clone().into()),
+                SceneCamera,
             ));
         }
     }

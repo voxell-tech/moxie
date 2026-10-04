@@ -3791,6 +3791,7 @@ dependencies = [
  "motiongfx_scene",
  "moxie_asset",
  "moxie_ui",
+ "moxie_viewport",
  "rfd",
 ]
 
@@ -3813,6 +3814,16 @@ dependencies = [
  "fynix",
  "lenz",
  "moxie_asset",
+]
+
+[[package]]
+name = "moxie_viewport"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_fynix",
+ "bevy_motiongfx",
+ "moxie_ui",
 ]
 
 [[package]]

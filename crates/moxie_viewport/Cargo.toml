@@ -1,0 +1,19 @@
+[package]
+name = "moxie_viewport"
+description = "The scene viewport of the MotionGfx editor: a free camera, a ground grid and a transform gizmo."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bevy_fynix = { workspace = true }
+bevy_motiongfx = { workspace = true }
+moxie_ui = { workspace = true }
+bevy = { workspace = true, default-features = true, features = [
+    "bevy_dev_tools",
+    "bevy_ui_widgets",
+] }
+
+[lints]
+workspace = true

@@ -14,10 +14,9 @@ use bevy::ui::widget::ViewportNode;
 use bevy_fynix::Theme;
 use moxie_ui::inspector::{Edit, Field};
 use moxie_ui::theme::{EditorTheme, GizmoStyle};
+use moxie_ui::{SelectedEntity, text_field_focused};
 
 use super::{EDITOR_LAYER, EditorCamera};
-use crate::SelectedEntity;
-use crate::ui::text_field_focused;
 
 /// Points a rotation ring is picked by.
 const RING_STEPS: usize = 48;

@@ -2,6 +2,13 @@
 //! ground grid, with the selection's bounds outlined and a gizmo on
 //! it.
 
+#![allow(
+    clippy::type_complexity,
+    clippy::too_many_arguments,
+    reason = "Inherent to Bevy ECS: systems take many params and \
+              query tuples."
+)]
+
 mod gizmo;
 mod toolbar;
 
@@ -30,11 +37,9 @@ use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, Theme};
 use bevy_motiongfx::scene::id::EntityUid;
 use moxie_ui::theme::{EditorTheme, ViewportControls};
+use moxie_ui::{SelectedEntity, text_field_focused};
 
 use self::gizmo::Hot;
-use crate::ui::text_field_focused;
-use crate::view::SceneCamera;
-use crate::{ProjectSettings, SelectedEntity};
 
 /// The render layer of what only a viewport draws.
 const EDITOR_LAYER: usize = 2;
@@ -47,7 +52,24 @@ const LIGHT_RIM: usize = 32;
 /// Short of straight up or down, where the yaw would flip.
 const MAX_PITCH: f32 = FRAC_PI_2 - 0.01;
 
-pub(crate) fn plugin(app: &mut App) {
+/// Marker component for a camera of the scene, which a viewport
+/// draws as a frame and can look through. The app marks them.
+#[derive(Component, Default, Clone, Copy)]
+pub struct SceneCamera;
+
+/// How many times as wide as tall the scene cameras' output is,
+/// which the frame drawn for one is the shape of. The app keeps it.
+#[derive(Resource, Clone, Copy, PartialEq)]
+pub struct OutputAspect(pub f32);
+
+impl Default for OutputAspect {
+    fn default() -> Self {
+        Self(16.0 / 9.0)
+    }
+}
+
+/// Adds what a [`panel`] runs on.
+pub fn plugin(app: &mut App) {
     if !app.is_plugin_added::<MeshPickingPlugin>() {
         app.add_plugins(MeshPickingPlugin);
     }
@@ -55,6 +77,8 @@ pub(crate) fn plugin(app: &mut App) {
         app.add_plugins(InfiniteGridPlugin);
     }
     app.init_gizmo_group::<EditorGizmos>()
+        .init_resource::<OutputAspect>()
+        .init_resource::<SelectedEntity>()
         .add_plugins(gizmo::plugin)
         .add_systems(Startup, (keep_gizmos_to_viewports, spawn_grid))
         .add_systems(
@@ -98,7 +122,7 @@ fn keep_gizmos_to_viewports(mut store: ResMut<GizmoConfigStore>) {
 
 /// A viewport's camera, orbiting `focus`.
 #[derive(Component, Clone, Copy, PartialEq)]
-pub(crate) struct EditorCamera {
+pub struct EditorCamera {
     focus: Vec3,
     yaw: f32,
     pitch: f32,
@@ -126,7 +150,7 @@ impl Default for EditorCamera {
 
 /// The distance a camera with the vertical field of view `fov` sees
 /// the whole of a sphere of `radius` from.
-pub(crate) fn framing_distance(radius: f32, fov: f32) -> f32 {
+pub fn framing_distance(radius: f32, fov: f32) -> f32 {
     radius / (fov / 2.0).sin()
 }
 
@@ -365,7 +389,8 @@ impl ViewAction {
 }
 
 /// A 3D camera of the scene, which a viewport can look through.
-type Lens = (With<Camera3d>, SceneCamera);
+type Lens =
+    (With<Camera3d>, With<SceneCamera>, Without<EditorCamera>);
 
 /// The scene camera a viewport looks through: the selected one, or
 /// else the first there is.
@@ -460,7 +485,7 @@ impl Gesture {
 
 /// The viewport panel: its own camera, drawn across the panel under
 /// a toolbar.
-pub(crate) fn panel() -> AnyView<Bevy, EditorTheme> {
+pub fn panel() -> AnyView<Bevy, EditorTheme> {
     AnyView::<Bevy, EditorTheme>::new(|cx| {
         let ground = cx.theme().color.bg;
         // Sized to the node once it is laid out.
@@ -876,7 +901,7 @@ fn draw_cameras_and_lights(
 #[derive(SystemParam)]
 struct Markers<'w, 's> {
     theme: Res<'w, Theme<EditorTheme>>,
-    settings: Res<'w, ProjectSettings>,
+    aspect: Res<'w, OutputAspect>,
     cameras: Query<
         'w,
         's,
@@ -895,13 +920,13 @@ impl Markers<'_, '_> {
     /// Each one's subject, colour and lines, in the world.
     fn all(&self) -> Vec<(Entity, Color, Vec<[Vec3; 2]>)> {
         let style = &self.theme.0.gizmo;
-        let output = self.settings.size().as_vec2();
+        let aspect = self.aspect.0;
         let cameras =
             self.cameras.iter().map(|(entity, pose, projection)| {
                 let lines = camera_lines(
                     &pose.compute_transform(),
                     projection,
-                    output.x / output.y,
+                    aspect,
                     style.camera_depth,
                 );
                 (entity, style.camera, lines)

@@ -17,9 +17,9 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use moxie_asset::{AssetRef, AssetTypeAppExt as _};
+use moxie_viewport::framing_distance;
 
 use crate::presets;
-use crate::viewport::framing_distance;
 
 const SIZE: u32 = 128;
 /// Clear of the scene's own layer and the editor UI's.

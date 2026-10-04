@@ -10,10 +10,8 @@ mod top_bar;
 use bevy::camera::Hdr;
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::schedule::common_conditions::not;
-use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
-use bevy::text::EditableText;
 use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
 use bevy_fynix::dock::{
     DockAreaStyle, DockLeaf, DockNode, DockRegistry, DockTree,
@@ -22,10 +20,10 @@ use bevy_fynix::dock::{
 use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, mount};
 use bevy_motiongfx::motiongfx::field_path::field;
-use moxie_ui::MoxieUiPlugin;
 use moxie_ui::field_icon::FieldIconAppExt as _;
 use moxie_ui::inspector::InspectAppExt as _;
 use moxie_ui::theme::{EditorTheme, Hue};
+use moxie_ui::{MoxieUiPlugin, text_field_focused};
 
 use crate::subject::Target;
 use crate::{
@@ -109,16 +107,6 @@ impl Plugin for UiPlugin {
         app.with_inspect_group("Cameras")
             .register_inspectable::<Projection>();
     }
-}
-
-/// True while a text field holds focus.
-pub(crate) fn text_field_focused(
-    focus: Res<InputFocus>,
-    q_editable: Query<(), With<EditableText>>,
-) -> bool {
-    focus
-        .get()
-        .is_some_and(|entity| q_editable.contains(entity))
 }
 
 /// Marker component for the UI camera, which owns the window.
@@ -252,7 +240,7 @@ fn register_windows(
             kind(
                 "Viewport",
                 crate::icons::VIEWPORT,
-                crate::viewport::panel,
+                moxie_viewport::panel,
             ),
         )
         .register(

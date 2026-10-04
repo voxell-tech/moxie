@@ -24,7 +24,9 @@ pub mod theme;
 pub mod widgets;
 
 use asset::AssetDragging;
+use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
+use bevy::text::EditableText;
 use bevy_fynix::dock::{DockIcons, DockPlugin};
 use bevy_fynix::{FynixPlugin, Theme};
 use inspector::InspectPlugin;
@@ -52,8 +54,23 @@ impl Plugin for MoxieUiPlugin {
         .init_resource::<AssetTypes>()
         .init_resource::<FoundAssets>()
         .init_resource::<AssetDragging>()
+        .init_resource::<SelectedEntity>()
         .add_systems(PreStartup, dock_icons);
     }
+}
+
+/// The subject selected across the editor's panels, if any.
+#[derive(Resource, Default, Clone, Copy, PartialEq)]
+pub struct SelectedEntity(pub Option<Entity>);
+
+/// True while a text field holds focus.
+pub fn text_field_focused(
+    focus: Res<InputFocus>,
+    q_editable: Query<(), With<EditableText>>,
+) -> bool {
+    focus
+        .get()
+        .is_some_and(|entity| q_editable.contains(entity))
 }
 
 /// Gives the dock the editor's icons for its tab buttons, before

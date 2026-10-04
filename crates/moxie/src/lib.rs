@@ -19,7 +19,6 @@ mod tests;
 mod thumbnails;
 mod ui;
 mod view;
-mod viewport;
 
 use core::time::Duration;
 use std::path::PathBuf;
@@ -34,6 +33,7 @@ use bevy_motiongfx::BevyMotionGfxPlugin;
 use bevy_motiongfx::prelude::TimelineId;
 use bevy_motiongfx::scene::id::EntityUid;
 use moxie_asset::{MoxieAssetPlugin, register_absolute_source};
+pub(crate) use moxie_ui::SelectedEntity;
 pub use project::open_path;
 pub use scene::EditorScene;
 
@@ -66,7 +66,7 @@ impl Plugin for MoxiePlugin {
             thumbnails::plugin,
             catalog::plugin,
             materials::plugin,
-            viewport::plugin,
+            moxie_viewport::plugin,
         ))
         .init_resource::<ProjectSettings>()
         // Ahead of `Startup`, where an app opens the project it was
@@ -260,10 +260,6 @@ pub(crate) struct EditorState {
 /// selected in the timeline panel, if any. `None` selects nothing.
 #[derive(Resource, Default, Clone, PartialEq)]
 pub(crate) struct SelectedAction(pub(crate) Option<Vec<usize>>);
-
-/// The entity currently selected in the hierarchy panel, if any.
-#[derive(Resource, Default, Clone, Copy, PartialEq)]
-pub(crate) struct SelectedEntity(pub(crate) Option<Entity>);
 
 /// Folders bookmarked for browsing in the asset panel. Saved and
 /// loaded with the project: a bookmark only means something alongside
