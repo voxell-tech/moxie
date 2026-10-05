@@ -31,7 +31,10 @@ const RING_STEPS: usize = 48;
 
 pub(super) fn plugin(app: &mut App) {
     app.init_gizmo_group::<HandleGizmos>()
-        .add_plugins(MaterialPlugin::<FillMaterial>::default())
+        .add_plugins((
+            MaterialPlugin::<FillMaterial>::default(),
+            add_mode_commands,
+        ))
         .init_resource::<GizmoSettings>()
         .init_resource::<ActiveDrag>()
         .add_systems(Startup, (style_handles, spawn_fills))
@@ -42,7 +45,6 @@ pub(super) fn plugin(app: &mut App) {
                 .in_set(super::Overlay)
                 .before(VisibilitySystems::VisibilityPropagate),
         );
-    add_mode_commands(app);
 }
 
 /// The gizmo's handles, drawn over the scene.
