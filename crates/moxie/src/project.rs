@@ -154,9 +154,16 @@ pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
 /// Replaces whatever is loaded with the project `text` holds, whose
 /// files are beside `path`. Whether it could be read.
 fn load(world: &mut World, text: &str, path: &Path) -> bool {
-    let Some(project) = deserialize(world, text, path) else {
+    let Some(mut project) = deserialize(world, text, path) else {
         return false;
     };
+    // After the `Camera2d` or `Camera3d` that gives it a render
+    // graph: Bevy warns of a `Camera` added without one.
+    for entity in &mut project.world.entities {
+        entity.components.sort_by_key(|component| {
+            component.represents::<Camera>()
+        });
+    }
     // Before anything loaded is dropped: a file that cannot be
     // spawned leaves the project it was opened over as it was.
     if let Some(stranger) = unspawnable(world, &project.world) {
