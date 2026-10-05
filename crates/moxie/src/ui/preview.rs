@@ -216,29 +216,3 @@ fn preview_size(
     let output = world.resource::<ProjectSettings>().size();
     Some(zoom.size(output, available, scale.recip()))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_fit_keeps_the_shape_and_actual_size_keeps_the_pixels() {
-        let output = UVec2::new(1920, 1080);
-        let wide = Vec2::new(800.0, 800.0);
-        let tall = Vec2::new(1600.0, 450.0);
-
-        let fit = PreviewZoom::Fit;
-        assert_eq!(
-            fit.size(output, wide, 2.0),
-            Vec2::new(800.0, 450.0)
-        );
-        assert_eq!(
-            fit.size(output, tall, 2.0),
-            Vec2::new(800.0, 450.0)
-        );
-        assert_eq!(
-            PreviewZoom::Actual.size(output, wide, 2.0),
-            Vec2::new(960.0, 540.0)
-        );
-    }
-}

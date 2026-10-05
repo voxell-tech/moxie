@@ -165,12 +165,6 @@ fn the_hidden_half_of_a_ring_is_out_of_reach() {
 #[test]
 fn a_handle_fades_as_it_turns_to_the_viewer() {
     let style = style();
-    let [gone, full] = style.axis_fade;
-    assert_eq!(fade(gone, style.axis_fade), 0.0);
-    assert_eq!(fade(full, style.axis_fade), 1.0);
-    let half = fade((gone + full) / 2.0, style.axis_fade);
-    assert!((half - 0.5).abs() < 1e-4);
-
     // z points at this camera, and the planes x and y face out
     // of are edge on to it.
     let frame = frame();

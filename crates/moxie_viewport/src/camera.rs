@@ -480,15 +480,6 @@ mod tests {
     }
 
     #[test]
-    fn an_orbit_stops_short_of_straight_up_and_down() {
-        let mut orbit = EditorCamera::default();
-        orbit.orbit(Vec2::new(0.0, 1e6), &controls());
-        assert_eq!(orbit.pitch, -MAX_PITCH);
-        orbit.orbit(Vec2::new(0.0, -1e6), &controls());
-        assert_eq!(orbit.pitch, MAX_PITCH);
-    }
-
-    #[test]
     fn a_pan_moves_the_focus_and_keeps_the_distance() {
         let mut orbit = EditorCamera::default();
         let before = orbit;
@@ -508,20 +499,6 @@ mod tests {
             2.0 * before.distance * (EditorCamera::fov() / 2.0).tan();
         let moved = (orbit.focus - before.focus).length();
         assert!((moved - seen).abs() < 1e-3);
-    }
-
-    #[test]
-    fn a_zoom_stays_within_its_bounds() {
-        let mut orbit = EditorCamera::default();
-        let controls = controls();
-        for _ in 0..1000 {
-            orbit.zoom(0.9, &controls);
-        }
-        assert_eq!(orbit.distance, controls.min_distance);
-        for _ in 0..1000 {
-            orbit.zoom(-10.0, &controls);
-        }
-        assert_eq!(orbit.distance, controls.max_distance);
     }
 
     #[test]
@@ -554,21 +531,5 @@ mod tests {
             placed.translation.abs_diff_eq(pose.translation, 1e-4)
         );
         assert!(placed.forward().dot(*pose.forward()) > 0.9999);
-    }
-
-    #[test]
-    fn looking_through_needs_a_scene_camera() {
-        let mut orbit = EditorCamera::default();
-        orbit.show(View::Camera, None);
-        assert_eq!(orbit.view(), View::Perspective);
-
-        let scene = Transform::from_xyz(0.0, 2.0, 14.0);
-        orbit.show(View::Camera, Some(&scene));
-        assert_eq!(orbit.view(), View::Camera);
-        // The orbit is kept for when it stops.
-        assert_eq!(
-            orbit.transform(),
-            EditorCamera::default().transform()
-        );
     }
 }

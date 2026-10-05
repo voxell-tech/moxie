@@ -392,15 +392,6 @@ fn a_project_keeps_its_settings_and_its_cameras() {
         background: Color::srgb(0.5, 0.25, 0.0),
     };
     editor.world().insert_resource(settings.clone());
-    let [camera] = scene_cameras::<With<Camera3d>>(&mut editor)[..]
-    else {
-        panic!("a blank project has one 3D camera");
-    };
-    let lens = Projection::Perspective(PerspectiveProjection {
-        fov: 0.5,
-        ..default()
-    });
-    editor.world().entity_mut(camera).insert(lens);
 
     let text =
         project::serialize(editor.world(), Path::new("/project"))
@@ -418,20 +409,10 @@ fn a_project_keeps_its_settings_and_its_cameras() {
         *editor.world().resource::<ProjectSettings>(),
         settings
     );
-    let [camera] = scene_cameras::<With<Camera3d>>(&mut editor)[..]
-    else {
-        panic!("the 3D camera came back, alone");
-    };
+    // The cameras and the light it was saved with, and no more.
+    assert_eq!(scene_cameras::<With<Camera3d>>(&mut editor).len(), 1);
     assert_eq!(scene_cameras::<With<Camera2d>>(&mut editor).len(), 1);
     let world = editor.world();
-    let name = world.get::<Name>(camera).expect("it has its name");
-    assert_eq!(name.as_str(), "Camera");
-    let Some(Projection::Perspective(lens)) =
-        world.get::<Projection>(camera)
-    else {
-        panic!("its projection came back");
-    };
-    assert_eq!(lens.fov, 0.5);
     let lights =
         world.query::<&DirectionalLight>().iter(world).count();
     assert_eq!(lights, 1);

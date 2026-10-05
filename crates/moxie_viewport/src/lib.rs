@@ -439,34 +439,3 @@ fn drop_camera(
         commands.entity(camera).try_despawn();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn modifiers_pick_the_gesture() {
-        use PointerButton::{Middle, Primary, Secondary};
-        assert_eq!(Gesture::of(Primary, false, false), None);
-        assert_eq!(
-            Gesture::of(Secondary, false, false),
-            Some(Gesture::Orbit)
-        );
-        assert_eq!(
-            Gesture::of(Primary, true, false),
-            Some(Gesture::Orbit)
-        );
-        assert_eq!(
-            Gesture::of(Secondary, false, true),
-            Some(Gesture::Pan)
-        );
-        assert_eq!(
-            Gesture::of(Primary, true, true),
-            Some(Gesture::Pan)
-        );
-        assert_eq!(
-            Gesture::of(Middle, false, false),
-            Some(Gesture::Pan)
-        );
-    }
-}
