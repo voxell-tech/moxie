@@ -369,6 +369,18 @@ impl View {
         }
     }
 
+    /// The command that shows this view.
+    pub(crate) const fn command(self) -> CommandId {
+        CommandId(match self {
+            Self::Perspective => "viewport.view.perspective",
+            Self::Orthographic => "viewport.view.orthographic",
+            Self::Front => "viewport.view.front",
+            Self::Right => "viewport.view.right",
+            Self::Top => "viewport.view.top",
+            Self::Camera => "viewport.view.camera",
+        })
+    }
+
     /// The yaw and pitch a view down an axis looks from.
     fn direction(self) -> Option<(f32, f32)> {
         match self {
@@ -397,7 +409,15 @@ fn lens<'a>(
 }
 
 /// Shows `view` in the viewport camera `camera`.
-pub(crate) fn show(
+pub(crate) fn show(world: &mut World, camera: Entity, view: View) {
+    if let Err(err) =
+        world.run_system_cached_with(show_view, (camera, view))
+    {
+        error!("could not change the view: {err}");
+    }
+}
+
+fn show_view(
     In((camera, view)): In<(Entity, View)>,
     selected: Res<SelectedEntity>,
     scene: Query<(&GlobalTransform, &Projection), Lens>,
@@ -440,11 +460,7 @@ fn show_by_key(world: &mut World, invoke: Invoke, view: View) {
         View::Orthographic if orbit.orthographic => View::Perspective,
         _ => view,
     };
-    if let Err(err) =
-        world.run_system_cached_with(show, (camera, view))
-    {
-        error!("could not change the view: {err}");
-    }
+    show(world, camera, view);
 }
 
 /// Moves a viewport's camera to where the scene camera is, free.
@@ -464,21 +480,11 @@ fn snap(
     }
 }
 
-/// The commands that show a view and have a key, in the order a
-/// viewport lists its views.
-pub(crate) const VIEW_COMMANDS: [CommandId; 5] = [
-    CommandId("viewport.view.orthographic"),
-    CommandId("viewport.view.front"),
-    CommandId("viewport.view.right"),
-    CommandId("viewport.view.top"),
-    CommandId("viewport.view.camera"),
-];
-
 /// The commands that change a viewport's view, with a key on the
 /// numpad and one beside Alt for a keyboard with none.
 pub(crate) fn plugin(app: &mut App) {
     let command = |id, label, run| CommandSpec {
-        id: CommandId(id),
+        id,
         label,
         scope: VIEWPORT,
         run,
@@ -498,54 +504,49 @@ pub(crate) fn plugin(app: &mut App) {
         id: VIEWPORT,
         label: "Viewport",
         layer: Layer::Panel,
-    })
-    .add_command(
-        command(
-            "viewport.view.perspective",
-            "Perspective",
-            |w, i| {
-                show_by_key(w, i, View::Perspective);
-            },
+    });
+
+    let views: [(View, fn(&mut World, Invoke), &[Chord]); 6] = [
+        (
+            View::Perspective,
+            |w, i| show_by_key(w, i, View::Perspective),
+            &[],
         ),
-        &[],
-    )
-    .add_command(
-        command(
-            "viewport.view.orthographic",
-            "Orthographic",
-            |w, i| {
-                show_by_key(w, i, View::Orthographic);
-            },
+        (
+            View::Orthographic,
+            |w, i| show_by_key(w, i, View::Orthographic),
+            &keys(KeyCode::Numpad5, KeyCode::Digit5),
         ),
-        &keys(KeyCode::Numpad5, KeyCode::Digit5),
-    )
-    .add_command(
-        command("viewport.view.front", "Front", |w, i| {
-            show_by_key(w, i, View::Front);
-        }),
-        &keys(KeyCode::Numpad1, KeyCode::Digit1),
-    )
-    .add_command(
-        command("viewport.view.right", "Right", |w, i| {
-            show_by_key(w, i, View::Right);
-        }),
-        &keys(KeyCode::Numpad3, KeyCode::Digit3),
-    )
-    .add_command(
-        command("viewport.view.top", "Top", |w, i| {
-            show_by_key(w, i, View::Top);
-        }),
-        &keys(KeyCode::Numpad7, KeyCode::Digit7),
-    )
-    .add_command(
-        command("viewport.view.camera", "Camera", |w, i| {
-            show_by_key(w, i, View::Camera);
-        }),
-        &keys(KeyCode::Numpad0, KeyCode::Digit0),
-    )
-    .add_command(
+        (
+            View::Front,
+            |w, i| show_by_key(w, i, View::Front),
+            &keys(KeyCode::Numpad1, KeyCode::Digit1),
+        ),
+        (
+            View::Right,
+            |w, i| show_by_key(w, i, View::Right),
+            &keys(KeyCode::Numpad3, KeyCode::Digit3),
+        ),
+        (
+            View::Top,
+            |w, i| show_by_key(w, i, View::Top),
+            &keys(KeyCode::Numpad7, KeyCode::Digit7),
+        ),
+        (
+            View::Camera,
+            |w, i| show_by_key(w, i, View::Camera),
+            &keys(KeyCode::Numpad0, KeyCode::Digit0),
+        ),
+    ];
+    for (view, run, chords) in views {
+        app.add_command(
+            command(view.command(), view.label(), run),
+            chords,
+        );
+    }
+    app.add_command(
         command(
-            "viewport.snap_to_camera",
+            CommandId("viewport.snap_to_camera"),
             "Snap to camera",
             |w, i| {
                 let Some(camera) = aimed(w, i) else {

@@ -12,10 +12,8 @@ use bevy_fynix::{
 };
 use moxie_ui::theme::EditorTheme;
 
-use super::camera::{EditorCamera, VIEW_COMMANDS, View, show};
-use super::gizmo::{
-    GizmoMode, GizmoSettings, GizmoSpace, MODE_COMMANDS,
-};
+use super::camera::{EditorCamera, View, show};
+use super::gizmo::{GizmoMode, GizmoSettings, GizmoSpace};
 
 /// The toolbar of the viewport `camera` draws.
 pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
@@ -27,9 +25,11 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
         let control = theme.space.row;
         let lit = theme.color.selection;
 
-        let keys = MODE_COMMANDS
+        let keys = GizmoMode::ALL
             .iter()
-            .filter_map(|&command| shortcut_text(cx.world, command))
+            .filter_map(|mode| {
+                shortcut_text(cx.world, mode.command())
+            })
             .collect::<Vec<_>>()
             .join(", ");
         let mode = segmented(
@@ -81,9 +81,11 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
                     orbit.grid = !orbit.grid;
                 }
             });
-        let view_keys = VIEW_COMMANDS
+        let view_keys = View::ALL
             .iter()
-            .filter_map(|&command| shortcut_text(cx.world, command))
+            .filter_map(|view| {
+                shortcut_text(cx.world, view.command())
+            })
             .collect::<Vec<_>>()
             .join(", ");
         let chevron = cx
@@ -102,11 +104,7 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
             chevron,
             move |world, at| {
                 if let Some(&view) = View::ALL.get(at) {
-                    let ran = world
-                        .run_system_cached_with(show, (camera, view));
-                    if let Err(err) = ran {
-                        error!("could not change the view: {err}");
-                    }
+                    show(world, camera, view);
                 }
             },
         )

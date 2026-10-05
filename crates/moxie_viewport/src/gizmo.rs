@@ -73,6 +73,15 @@ impl GizmoMode {
     pub(crate) const ALL: [Self; 3] =
         [Self::Translate, Self::Rotate, Self::Scale];
 
+    /// The command that picks this mode.
+    pub(crate) const fn command(self) -> CommandId {
+        CommandId(match self {
+            Self::Translate => "gizmo.mode.translate",
+            Self::Rotate => "gizmo.mode.rotate",
+            Self::Scale => "gizmo.mode.scale",
+        })
+    }
+
     fn field(self, entity: Entity) -> Field {
         Field::of::<Transform>(entity).child(match self {
             Self::Translate => "translation",
@@ -101,19 +110,11 @@ pub(crate) struct GizmoSettings {
     pub(crate) space: GizmoSpace,
 }
 
-/// The commands that pick the gizmo's mode, in the order of
-/// [`GizmoMode::ALL`].
-pub(crate) const MODE_COMMANDS: [CommandId; 3] = [
-    CommandId("gizmo.mode.translate"),
-    CommandId("gizmo.mode.rotate"),
-    CommandId("gizmo.mode.scale"),
-];
-
 fn add_mode_commands(app: &mut App) {
-    let pick = |mode: usize, label, key, run| {
+    let pick = |mode: GizmoMode, label, key, run| {
         (
             CommandSpec {
-                id: MODE_COMMANDS[mode],
+                id: mode.command(),
                 label,
                 scope: VIEWPORT,
                 run,
@@ -131,13 +132,23 @@ fn add_mode_commands(app: &mut App) {
         world.resource_mut::<GizmoSettings>().mode = mode;
     }
     for (command, chord) in [
-        pick(0, "Move", KeyCode::KeyW, |world, _| {
-            set(world, GizmoMode::Translate);
-        }),
-        pick(1, "Rotate", KeyCode::KeyE, |world, _| {
-            set(world, GizmoMode::Rotate);
-        }),
-        pick(2, "Scale", KeyCode::KeyR, |world, _| {
+        pick(
+            GizmoMode::Translate,
+            "Move",
+            KeyCode::KeyW,
+            |world, _| {
+                set(world, GizmoMode::Translate);
+            },
+        ),
+        pick(
+            GizmoMode::Rotate,
+            "Rotate",
+            KeyCode::KeyE,
+            |world, _| {
+                set(world, GizmoMode::Rotate);
+            },
+        ),
+        pick(GizmoMode::Scale, "Scale", KeyCode::KeyR, |world, _| {
             set(world, GizmoMode::Scale);
         }),
     ] {
