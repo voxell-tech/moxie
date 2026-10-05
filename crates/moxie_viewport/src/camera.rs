@@ -61,6 +61,88 @@ impl Default for EditorCamera {
     }
 }
 
+/// Where a viewport looks from, as a project saves it.
+#[derive(Reflect, Clone, Copy, Debug, PartialEq)]
+#[reflect(Clone)]
+pub struct ViewportView {
+    pub focus: Vec3,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub distance: f32,
+    pub orthographic: bool,
+    pub grid: bool,
+}
+
+/// The views of a project's viewports, saved with it, in the order
+/// the viewports were opened.
+#[derive(Resource, Reflect, Clone, Debug, Default, PartialEq)]
+#[reflect(Resource, Default, Clone)]
+pub struct ViewportViews(pub Vec<ViewportView>);
+
+impl EditorCamera {
+    /// The view it is headed for.
+    fn saved(&self) -> ViewportView {
+        ViewportView {
+            focus: self.to_focus,
+            yaw: self.yaw,
+            pitch: self.pitch,
+            distance: self.to_distance,
+            orthographic: self.orthographic,
+            grid: self.grid,
+        }
+    }
+
+    /// Takes up `view` at once.
+    pub(crate) fn restore(&mut self, view: &ViewportView) {
+        self.focus = view.focus;
+        self.to_focus = view.focus;
+        self.yaw = view.yaw;
+        self.pitch = view.pitch;
+        self.distance = view.distance;
+        self.to_distance = view.distance;
+        self.orthographic = view.orthographic;
+        self.grid = view.grid;
+        self.through = false;
+    }
+}
+
+/// The viewports' cameras, in the order they were opened.
+fn opened(world: &mut World) -> Vec<Entity> {
+    let mut cameras = world
+        .query::<(Entity, &EditorCamera)>()
+        .iter(world)
+        .filter(|(_, camera)| !camera.orphaned)
+        .map(|(entity, _)| entity)
+        .collect::<Vec<_>>();
+    cameras.sort_unstable();
+    cameras
+}
+
+/// Saves where each viewport looks from into the [`ViewportViews`].
+pub fn capture_views(world: &mut World) {
+    let views = opened(world)
+        .into_iter()
+        .filter_map(|camera| world.get::<EditorCamera>(camera))
+        .map(EditorCamera::saved)
+        .collect::<Vec<_>>();
+    world.insert_resource(ViewportViews(views));
+}
+
+/// Has each viewport look from where the [`ViewportViews`] say.
+pub fn restore_views(world: &mut World) {
+    let Some(views) = world.get_resource::<ViewportViews>().cloned()
+    else {
+        return;
+    };
+    for (camera, view) in opened(world).into_iter().zip(&views.0) {
+        if let Some(mut camera) =
+            world.get_mut::<EditorCamera>(camera)
+        {
+            camera.restore(view);
+        }
+    }
+}
+
 /// The distance a camera with the vertical field of view `fov` sees
 /// the whole of a sphere of `radius` from.
 pub fn framing_distance(radius: f32, fov: f32) -> f32 {

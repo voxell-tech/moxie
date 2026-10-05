@@ -39,7 +39,10 @@ use bevy_motiongfx::scene::id::EntityUid;
 use moxie_ui::theme::EditorTheme;
 use moxie_ui::{SelectedEntity, text_field_focused};
 
-pub use self::camera::{EditorCamera, framing_distance};
+pub use self::camera::{
+    EditorCamera, ViewportView, ViewportViews, capture_views,
+    framing_distance, restore_views,
+};
 use self::camera::{
     ease_cameras, frame_selected, place_cameras, rest_hidden_cameras,
     view_keys,
@@ -76,6 +79,7 @@ pub fn plugin(app: &mut App) {
     }
     app.init_gizmo_group::<EditorGizmos>()
         .init_resource::<OutputAspect>()
+        .init_resource::<ViewportViews>()
         .init_resource::<SelectedEntity>()
         .add_plugins(gizmo::plugin)
         .add_systems(Startup, (keep_gizmos_to_viewports, spawn_grid))
@@ -234,7 +238,20 @@ fn spawn_camera(world: &mut World, ground: Color) -> Entity {
             Some(TextureFormat::Rgba8UnormSrgb),
         ),
     );
-    let orbit = EditorCamera::default();
+    // The view the project saved for a viewport opened this far
+    // along, when it saved one.
+    let opened = world
+        .query::<&EditorCamera>()
+        .iter(world)
+        .filter(|camera| !camera.orphaned)
+        .count();
+    let mut orbit = EditorCamera::default();
+    let saved = world
+        .get_resource::<ViewportViews>()
+        .and_then(|views| views.0.get(opened));
+    if let Some(view) = saved {
+        orbit.restore(view);
+    }
     world
         .spawn((
             Camera3d::default(),
