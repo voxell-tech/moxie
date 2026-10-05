@@ -30,6 +30,9 @@ pub struct EditorCamera {
     /// Whether it looks through the scene camera, leaving the orbit
     /// as it was for when it stops.
     through: bool,
+    /// Whether the panel it drew for is gone, and no other has taken
+    /// it up yet.
+    pub(crate) orphaned: bool,
 }
 
 impl Default for EditorCamera {
@@ -42,6 +45,7 @@ impl Default for EditorCamera {
             orthographic: false,
             grid: true,
             through: false,
+            orphaned: false,
         }
     }
 }

@@ -31,6 +31,7 @@ use bevy::picking::pointer::{
 };
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
+use bevy::ui::UiSystems;
 use bevy::ui::widget::ViewportNode;
 use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, Theme};
@@ -83,9 +84,15 @@ pub fn plugin(app: &mut App) {
                 (frame_selected, view_keys)
                     .run_if(not(text_field_focused)),
                 place_cameras,
-                rest_hidden_cameras,
             )
                 .chain(),
+        )
+        // After the layout: a panel built this frame has its size
+        // by then, and its camera draws at once.
+        .add_systems(
+            PostUpdate,
+            (reap_orphans, rest_hidden_cameras)
+                .after(UiSystems::Layout),
         )
         .configure_sets(
             PostUpdate,
@@ -98,7 +105,7 @@ pub fn plugin(app: &mut App) {
             (outline_selection, draw_cameras_and_lights)
                 .in_set(Overlay),
         )
-        .add_observer(drop_camera);
+        .add_observer(orphan_camera);
 }
 
 /// System set for a viewport's overlays, run once the frame's poses
@@ -148,33 +155,21 @@ impl Gesture {
 /// a toolbar.
 pub fn panel() -> AnyView<Bevy, EditorTheme> {
     AnyView::<Bevy, EditorTheme>::new(|cx| {
-        let ground = cx.theme().color.bg;
-        // Sized to the node once it is laid out.
-        let image = cx.world.resource_mut::<Assets<Image>>().add(
-            Image::new_target_texture(
-                1,
-                1,
-                TextureFormat::Rgba8Unorm,
-                Some(TextureFormat::Rgba8UnormSrgb),
-            ),
-        );
-        let orbit = EditorCamera::default();
-        let camera = cx
+        // The camera of a panel just dropped, as a dock laid out
+        // again drops and builds its panels: it keeps its pose, and
+        // its image what it last drew.
+        let kept = cx
             .world
-            .spawn((
-                Camera3d::default(),
-                Camera {
-                    clear_color: ground.into(),
-                    ..default()
-                },
-                RenderTarget::Image(image.into()),
-                orbit.layers(),
-                orbit.transform(),
-                orbit.projection(),
-                orbit,
-                Hot::default(),
-            ))
-            .id();
+            .query::<(Entity, &mut EditorCamera)>()
+            .iter_mut(cx.world)
+            .find(|(_, orbit)| orbit.orphaned)
+            .map(|(camera, mut orbit)| {
+                orbit.orphaned = false;
+                camera
+            });
+        let ground = cx.theme().color.bg;
+        let camera =
+            kept.unwrap_or_else(|| spawn_camera(cx.world, ground));
         cx.build(
             column((toolbar::toolbar(camera), surface(camera)))
                 .width(percent(100.0))
@@ -182,6 +177,36 @@ pub fn panel() -> AnyView<Bevy, EditorTheme> {
                 .gap(0.0),
         )
     })
+}
+
+/// Spawns a viewport's camera, drawing into an image of its own
+/// that it clears to `ground`.
+fn spawn_camera(world: &mut World, ground: Color) -> Entity {
+    // Sized to the node once it is laid out.
+    let image = world.resource_mut::<Assets<Image>>().add(
+        Image::new_target_texture(
+            1,
+            1,
+            TextureFormat::Rgba8Unorm,
+            Some(TextureFormat::Rgba8UnormSrgb),
+        ),
+    );
+    let orbit = EditorCamera::default();
+    world
+        .spawn((
+            Camera3d::default(),
+            Camera {
+                clear_color: ground.into(),
+                ..default()
+            },
+            RenderTarget::Image(image.into()),
+            orbit.layers(),
+            orbit.transform(),
+            orbit.projection(),
+            orbit,
+            Hot::default(),
+        ))
+        .id()
 }
 
 /// The node `camera` draws into, and the pointer acts on.
@@ -423,19 +448,30 @@ fn outline_selection(
     }
 }
 
-/// Despawns a viewport's camera along with its panel.
-fn drop_camera(
+/// Leaves a viewport's camera for the next panel built to take up.
+fn orphan_camera(
     removed: On<Remove, ViewportNode>,
     nodes: Query<&ViewportNode>,
-    cameras: Query<(), With<EditorCamera>>,
-    mut commands: Commands,
+    mut cameras: Query<&mut EditorCamera>,
 ) {
     let camera = nodes
         .get(removed.entity)
         .ok()
         .and_then(|node| node.camera)
-        .filter(|&camera| cameras.contains(camera));
-    if let Some(camera) = camera {
-        commands.entity(camera).try_despawn();
+        .and_then(|camera| cameras.get_mut(camera).ok());
+    if let Some(mut camera) = camera {
+        camera.orphaned = true;
+    }
+}
+
+/// Despawns the cameras no panel took up.
+fn reap_orphans(
+    cameras: Query<(Entity, &EditorCamera)>,
+    mut commands: Commands,
+) {
+    for (camera, orbit) in &cameras {
+        if orbit.orphaned {
+            commands.entity(camera).try_despawn();
+        }
     }
 }
