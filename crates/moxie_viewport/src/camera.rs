@@ -41,13 +41,18 @@ pub struct EditorCamera {
 
 impl Default for EditorCamera {
     fn default() -> Self {
+        // Far enough back, and looking far enough up and toward the
+        // viewer, to take in the camera and the light a blank project
+        // starts with as well as the origin.
+        let focus = Vec3::new(0.0, 3.0, 5.0);
+        let distance = 30.0;
         Self {
-            focus: Vec3::ZERO,
+            focus,
             yaw: 0.6,
             pitch: -0.4,
-            distance: 16.0,
-            to_focus: Vec3::ZERO,
-            to_distance: 16.0,
+            distance,
+            to_focus: focus,
+            to_distance: distance,
             orthographic: false,
             grid: true,
             through: false,
