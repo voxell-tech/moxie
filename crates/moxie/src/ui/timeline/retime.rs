@@ -89,6 +89,9 @@ struct Gesture {
     kind: Kind,
     /// `delay` or `duration` at drag start.
     base_secs: f32,
+    /// The time on the timeline at which that is zero: where the
+    /// delay begins, or the node does.
+    origin_secs: f32,
     /// The same, live: what a release commits.
     value_secs: f32,
 }
@@ -140,7 +143,9 @@ fn wire_edge(
         })
         .observe(
             move |mut start: On<Pointer<DragStart>>,
+                  theme: Res<Theme<EditorTheme>>,
                   editor_scene: Res<EditorScene>,
+                  folded: Res<BlockFoldState>,
                   mut dragging: ResMut<Dragging>| {
                 start.propagate(false);
                 if start.button != PointerButton::Primary {
@@ -151,11 +156,26 @@ fn wire_edge(
                 else {
                     return;
                 };
+                // A pixel to a second, so a box's place is its time.
+                let begins = block_layout::layout(
+                    &editor_scene.scene().0.animation,
+                    TimelineView::UNIT,
+                    folded.paths(),
+                    theme.0.space,
+                )
+                .into_iter()
+                .find(|placed| placed.path == path)
+                .map_or(0.0, |placed| placed.x);
+                let origin_secs = match kind {
+                    Kind::Delay => begins - base_secs,
+                    Kind::Resize => begins,
+                };
 
                 dragging.0 = Some(Gesture {
                     path: path.clone(),
                     kind,
                     base_secs,
+                    origin_secs,
                     value_secs: base_secs,
                 });
             },
@@ -183,19 +203,17 @@ fn wire_edge(
                     return;
                 };
                 let step = settings.timestep().as_secs_f32();
-                let dx_secs = (view
-                    .secs_from_dx(drag.distance.x / scale.0)
-                    / step)
-                    .round()
-                    * step;
+                // The edge lands on the nearest timestep of the
+                // timeline, wherever it started.
+                let edge = gesture.origin_secs
+                    + gesture.base_secs
+                    + view.secs_from_dx(drag.distance.x / scale.0);
+                let snapped = (edge / step).round() * step;
+                let value = snapped - gesture.origin_secs;
 
                 gesture.value_secs = match gesture.kind {
-                    Kind::Delay => {
-                        (gesture.base_secs + dx_secs).max(0.0)
-                    }
-                    Kind::Resize => {
-                        (gesture.base_secs + dx_secs).max(step)
-                    }
+                    Kind::Delay => value.max(0.0),
+                    Kind::Resize => value.max(step),
                 };
 
                 relayout(
