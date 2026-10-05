@@ -12,6 +12,9 @@ use moxie_ui::theme::{EditorTheme, GizmoStyle};
 
 use super::{Arc, Frame, GizmoMode, GizmoSettings, Handle, Hot};
 
+/// The least a scale drag scales by.
+const MIN_FACTOR: f32 = 1e-3;
+
 /// A pointer over a viewport: where it is and the ray it casts.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Pointing {
@@ -147,10 +150,13 @@ impl Grab {
         // No distance from the origin is a factor of another when
         // one is next to nothing, so each is measured in handle
         // lengths.
+        // Kept above nothing: a subject scaled to zero has no
+        // inverse, and no later drag scales it back.
+        let factor = |raw: f32| snapped(raw, snap).max(MIN_FACTOR);
         let spread = || {
             let from = self.pointing.cursor.distance(self.centre);
             let to = now.cursor.distance(self.centre);
-            snapped(1.0 + (to - from) / self.reach, snap)
+            factor(1.0 + (to - from) / self.reach)
         };
         match self.handle {
             Handle::Axis(axis) => {
@@ -162,8 +168,7 @@ impl Grab {
                 let to = axis_param(now.ray, origin, axes[axis])?;
                 let length = self.reach * self.frame.scale;
                 let mut scale = Vec3::ONE;
-                scale[axis] =
-                    snapped(1.0 + (to - from) / length, snap);
+                scale[axis] = factor(1.0 + (to - from) / length);
                 Some(scale)
             }
             Handle::Plane(axis) => {

@@ -175,8 +175,10 @@ fn stage_if_bare(world: &mut World) {
         .query_filtered::<Entity, With<SceneRoot>>()
         .iter(world)
         .next();
-    if let Some(root) = root {
-        spawn_stage(world, root);
+    match root {
+        Some(root) => spawn_stage(world, root),
+        // A file saved before subjects had a root.
+        None => spawn_defaults(world),
     }
 }
 

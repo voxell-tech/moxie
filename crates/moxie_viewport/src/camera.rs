@@ -347,7 +347,7 @@ pub(crate) fn view_keys(
 /// scene camera is while it looks through that.
 pub(crate) fn place_cameras(
     mut cameras: Query<(
-        Ref<EditorCamera>,
+        &mut EditorCamera,
         &mut Transform,
         &mut Projection,
         &mut RenderLayers,
@@ -356,7 +356,7 @@ pub(crate) fn place_cameras(
     scene: Query<(&GlobalTransform, &Projection), Lens>,
 ) {
     let scene = lens(&selected, &scene);
-    for (orbit, mut transform, mut projection, mut layers) in
+    for (mut orbit, mut transform, mut projection, mut layers) in
         &mut cameras
     {
         match scene.filter(|_| orbit.follows_scene_camera()) {
@@ -365,16 +365,17 @@ pub(crate) fn place_cameras(
                 *projection = lens.clone();
                 layers.set_if_neq(RenderLayers::layer(0));
             }
-            // Its own pose again once there is no scene camera to
-            // follow.
-            None if orbit.is_changed() || orbit.through => {
-                transform.set_if_neq(orbit.transform());
-                layers.set_if_neq(orbit.layers());
+            None => {
+                // The scene camera it looked through is gone.
+                if orbit.through {
+                    orbit.through = false;
+                }
                 if orbit.is_changed() {
+                    transform.set_if_neq(orbit.transform());
+                    layers.set_if_neq(orbit.layers());
                     *projection = orbit.projection();
                 }
             }
-            None => {}
         }
     }
 }

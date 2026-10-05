@@ -103,8 +103,14 @@ pub(crate) struct GizmoSettings {
 
 fn pick_mode(
     keys: Res<ButtonInput<KeyCode>>,
+    active: Res<ActiveDrag>,
     mut settings: ResMut<GizmoSettings>,
 ) {
+    // A drag keeps the mode it began in, or it would write one field
+    // under the handles of another.
+    if active.0.is_some() {
+        return;
+    }
     let picked = [KeyCode::KeyW, KeyCode::KeyE, KeyCode::KeyR]
         .into_iter()
         .zip(GizmoMode::ALL)
