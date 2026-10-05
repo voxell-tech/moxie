@@ -3,13 +3,13 @@
 
 use bevy::prelude::*;
 use bevy_fynix::shortcut::{
-    Chord, CommandId, CommandSpec, GLOBAL, Invoke, Mods,
+    Chord, CommandId, CommandSpec, GLOBAL, Invoke, Keymap, Mods,
     ShortcutAppExt as _, run_command,
 };
 use bevy_fynix::views::{
     FrameProps as _, MenuEntry, menu_button, row,
 };
-use bevy_fynix::{AnyView, Bevy, View};
+use bevy_fynix::{AnyView, Bevy, Keyed, View, keyed, resource};
 use moxie_ui::theme::EditorTheme;
 
 use crate::project;
@@ -67,8 +67,23 @@ pub(super) fn top_bar() -> impl View<Bevy, EditorTheme> {
 }
 
 /// One menu: its name in the bar, and a row for each of `commands`
-/// with the key it is bound to.
+/// with the key it is bound to, built again when one is rebound.
 fn menu(
+    name: &'static str,
+    commands: &'static [CommandId],
+) -> Keyed<EditorTheme, Vec<Option<Chord>>> {
+    keyed(
+        resource::<Keymap, _>(move |keymap| {
+            commands
+                .iter()
+                .map(|&command| keymap.chords(command).next())
+                .collect::<Vec<_>>()
+        }),
+        move |_| entries(name, commands),
+    )
+}
+
+fn entries(
     name: &'static str,
     commands: &'static [CommandId],
 ) -> AnyView<Bevy, EditorTheme> {
