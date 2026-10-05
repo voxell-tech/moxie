@@ -16,6 +16,9 @@ use bevy::picking::events::{Click, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::text::{EditableText, TextEditChange};
+use bevy_fynix::shortcut::{
+    Layer, Scope, ScopeId, ScopeSpec, ShortcutAppExt as _,
+};
 use bevy_fynix::tokens::Tone;
 use bevy_fynix::views::{
     BehaviorExt as _, FrameProps as _, TooltipExt as _, button,
@@ -39,7 +42,34 @@ const THUMBNAIL: f32 = 64.0;
 
 pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<Thumbnails>()
+        .add_scope(ScopeSpec {
+            id: PICKER,
+            label: "Asset picker",
+            layer: Layer::Modal,
+            active: None,
+        })
         .add_systems(Update, picker_keys);
+}
+
+/// The scope of an open picker. It has no commands, and shuts the
+/// rest out while the picker is open.
+const PICKER: ScopeId = ScopeId("asset_picker");
+
+/// Enter and Escape, read off the keys: the search field holds the
+/// focus, and keeps Escape from going any further.
+fn picker_keys(
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    roots: Query<Entity, With<AssetPickerRoot>>,
+    mut commands: Commands,
+) {
+    let (Some(keys), Ok(root)) = (keys, roots.single()) else {
+        return;
+    };
+    if keys.just_pressed(KeyCode::Escape) {
+        commands.trigger(Cancel { entity: root });
+    } else if keys.just_pressed(KeyCode::Enter) {
+        commands.entity(root).despawn();
+    }
 }
 
 /// Every thumbnail rendered so far.
@@ -189,21 +219,6 @@ fn despawn(world: &mut World, root: Entity) {
     }
 }
 
-fn picker_keys(
-    keys: Option<Res<ButtonInput<KeyCode>>>,
-    roots: Query<Entity, With<AssetPickerRoot>>,
-    mut commands: Commands,
-) {
-    let (Some(keys), Ok(root)) = (keys, roots.single()) else {
-        return;
-    };
-    if keys.just_pressed(KeyCode::Escape) {
-        commands.trigger(Cancel { entity: root });
-    } else if keys.just_pressed(KeyCode::Enter) {
-        commands.entity(root).despawn();
-    }
-}
-
 /// The asset `binding` holds, if it can be named at all.
 fn current<T: Asset + TypePath>(
     world: &World,
@@ -228,7 +243,11 @@ fn window<T: Asset + TypePath>(
         let revert = binding.clone();
         cx.world
             .entity_mut(root)
-            .insert((AssetPickerRoot, Search::default()))
+            .insert((
+                AssetPickerRoot,
+                Scope(PICKER),
+                Search::default(),
+            ))
             .observe(
                 move |cancel: On<Cancel>, mut commands: Commands| {
                     let (binding, original, root) = (
