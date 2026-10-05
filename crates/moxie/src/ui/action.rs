@@ -26,7 +26,7 @@ use moxie_ui::inspector::{
 };
 use moxie_ui::theme::EditorTheme;
 
-use crate::{EditorScene, EditorSettings, SelectedAction, subject};
+use crate::{EditorScene, ProjectSettings, SelectedAction, subject};
 
 /// The stagger a new `Flow` block starts with.
 pub(super) const DEFAULT_STAGGER: Duration =
@@ -490,9 +490,9 @@ impl Source for Property {
     }
 
     fn set(&self, world: &mut World, value: &dyn PartialReflect) {
-        let min_duration = world
-            .get_resource::<EditorSettings>()
-            .map(EditorSettings::min_duration)
+        let timestep = world
+            .get_resource::<ProjectSettings>()
+            .map(ProjectSettings::timestep)
             .unwrap_or_default();
         let Some(mut editor) =
             world.get_resource_mut::<EditorScene>()
@@ -543,7 +543,7 @@ impl Source for Property {
             }
             (edit, node) => {
                 if let Some(value) = f32::from_reflect(value) {
-                    set_seconds(node, edit, value, min_duration);
+                    set_seconds(node, edit, value, timestep);
                 }
             }
         }
@@ -607,7 +607,7 @@ fn set_seconds(
     node: &mut Node<Backend>,
     edit: Edit,
     value: f32,
-    min_duration: Duration,
+    timestep: Duration,
 ) {
     let seconds = clamp_seconds(value);
 
@@ -625,10 +625,10 @@ fn set_seconds(
             block.combinator = Combinator::Flow(seconds);
         }
         (Edit::Duration, Node::Action { action, .. }) => {
-            action.duration = seconds.max(min_duration);
+            action.duration = seconds.max(timestep);
         }
         (Edit::Duration, Node::Draft { duration, .. }) => {
-            *duration = seconds.max(min_duration);
+            *duration = seconds.max(timestep);
         }
         _ => {}
     }
@@ -984,8 +984,8 @@ mod tests {
     #[test]
     fn a_duration_never_falls_below_the_minimum() {
         let (mut world, _) = action_world();
-        world.init_resource::<EditorSettings>();
-        let min = world.resource::<EditorSettings>().min_duration();
+        world.init_resource::<ProjectSettings>();
+        let min = world.resource::<ProjectSettings>().timestep();
 
         let duration = property(&[0], Edit::Duration);
         duration.set(&mut world, &0.0f32);
@@ -1242,14 +1242,15 @@ mod tests {
     #[test]
     fn the_panel_starts_empty_and_follows_the_selection() {
         let mut editor = Editor::new();
-        editor.text("Nothing selected");
+        // The inspector says it too.
+        assert_eq!(editor.texts("Nothing selected").len(), 2);
 
         editor
             .world()
             .insert_resource(SelectedAction(Some(vec![3])));
         editor.step(SETTLE);
         editor.text("Selection is no longer in the scene");
-        assert!(editor.texts("Nothing selected").is_empty());
+        assert_eq!(editor.texts("Nothing selected").len(), 1);
 
         editor.world().insert_resource(SelectedAction(None));
         editor.step(SETTLE);
@@ -1258,7 +1259,7 @@ mod tests {
                 .texts("Selection is no longer in the scene")
                 .is_empty()
         );
-        editor.text("Nothing selected");
+        assert_eq!(editor.texts("Nothing selected").len(), 2);
     }
 
     #[test]

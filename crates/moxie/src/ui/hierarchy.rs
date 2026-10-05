@@ -199,7 +199,11 @@ fn add_menu() -> Vec<AnyView<Bevy, EditorTheme>> {
     }));
     rows.push(entry("Camera", |world, _| spawn_camera(world)));
     rows.push(entry("Camera 2D", |world, name| {
-        spawn_named(world, name, Camera2d);
+        spawn_named(
+            world,
+            name,
+            (Camera2d, crate::project::overlay_camera()),
+        );
     }));
     rows
 }

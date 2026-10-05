@@ -29,7 +29,7 @@ use moxie_ui::theme::{EditorTheme, Spacing};
 use super::super::action::{node_at, node_at_mut};
 use super::block_layout::{self, Placed};
 use super::{BlockFoldState, RebuildTick};
-use crate::{EditorScene, EditorSettings, TimelineView};
+use crate::{EditorScene, ProjectSettings, TimelineView};
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<Dragging>()
@@ -168,7 +168,7 @@ fn wire_edge(
                   editor_scene: Res<EditorScene>,
                   folded: Res<BlockFoldState>,
                   view: Res<TimelineView>,
-                  settings: Res<EditorSettings>,
+                  settings: Res<ProjectSettings>,
                   boxes: Query<(&BoxPath, &mut Node)>,
                   gaps: Query<
                 (&GapPath, &mut Node),
@@ -182,7 +182,7 @@ fn wire_edge(
                 let Some(gesture) = &mut dragging.0 else {
                     return;
                 };
-                let step = settings.min_duration().as_secs_f32();
+                let step = settings.timestep().as_secs_f32();
                 let dx_secs = (view
                     .secs_from_dx(drag.distance.x / scale.0)
                     / step)

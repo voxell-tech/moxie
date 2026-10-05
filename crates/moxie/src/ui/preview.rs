@@ -115,9 +115,9 @@ fn stage() -> AnyView<Bevy, EditorTheme> {
     })
 }
 
-/// The render, sized for `area` and the zoom. Hidden until that area
-/// has a size: at a fresh `ComputedNode` it does not, and `Auto`
-/// would flash at the image's native size for a frame.
+/// The render, sized for `area` and the zoom. Hidden while there is
+/// no size to give it: `Auto` would flash at the image's native size
+/// for a frame.
 fn picture(
     image: Handle<Image>,
     area: Option<Entity>,
@@ -125,7 +125,7 @@ fn picture(
     let size = move || {
         changing_under(area, move |world: &World| {
             let zoom = world.resource::<PreviewView>().zoom;
-            area.and_then(|area| preview_size(world, area, zoom))
+            preview_size(world, area, zoom)
         })
     };
     column(())
@@ -201,18 +201,39 @@ impl PreviewZoom {
 }
 
 /// The size the preview is shown at in `area`, for the `zoom` asked
-/// for. `None` until the area is laid out.
+/// for. An area not laid out yet, as one just built is, is taken to
+/// be as large as the last one was. `None` before any has been.
 fn preview_size(
     world: &World,
-    area: Entity,
+    area: Option<Entity>,
     zoom: PreviewZoom,
 ) -> Option<Vec2> {
-    let computed = world.get::<ComputedNode>(area)?;
-    let scale = computed.inverse_scale_factor();
-    let available = computed.size() * scale;
-    if available.min_element() <= 0.0 {
-        return None;
-    }
+    let laid_out = area
+        .and_then(|area| world.get::<ComputedNode>(area))
+        .and_then(room);
+    let (available, scale) =
+        laid_out.or(world.resource::<LastArea>().0)?;
     let output = world.resource::<ProjectSettings>().size();
     Some(zoom.size(output, available, scale.recip()))
+}
+
+/// The logical size of a laid out `node`, and the logical pixels to
+/// a physical one there. `None` for one with no size.
+fn room(node: &ComputedNode) -> Option<(Vec2, f32)> {
+    let scale = node.inverse_scale_factor();
+    let available = node.size() * scale;
+    (available.min_element() > 0.0).then_some((available, scale))
+}
+
+/// The [`room`] of the preview area last laid out.
+#[derive(Resource, Default, Clone, Copy, PartialEq)]
+pub(crate) struct LastArea(Option<(Vec2, f32)>);
+
+pub(crate) fn remember_area(
+    panels: Query<&ComputedNode, With<PreviewPanel>>,
+    mut last: ResMut<LastArea>,
+) {
+    if let Some(room) = panels.iter().find_map(room) {
+        last.set_if_neq(LastArea(Some(room)));
+    }
 }

@@ -1,6 +1,5 @@
 //! Inspects whatever is selected in the hierarchy: every reflectable
-//! component of one entity, each under a collapsible header. With
-//! nothing selected, the project's settings.
+//! component of one entity, each under a collapsible header.
 
 use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
@@ -11,14 +10,12 @@ use bevy_fynix::views::{
 };
 use bevy_fynix::{AnyView, Bevy, ViewExt as _, keyed, resource};
 use moxie_asset::InternalAssets;
-use moxie_ui::elements::{
-    asset_card, entity_inspector, resource_inspector_of,
-};
+use moxie_ui::elements::{asset_card, entity_inspector};
 use moxie_ui::gaps::{anchored, changing_under};
 use moxie_ui::inspector::{Binding, Source, reflect_changed};
 use moxie_ui::theme::EditorTheme;
 
-use crate::{ProjectSettings, SelectedEntity};
+use crate::SelectedEntity;
 
 /// The inspector panel.
 pub(super) fn panel() -> AnyView<Bevy, EditorTheme> {
@@ -29,7 +26,9 @@ pub(super) fn panel() -> AnyView<Bevy, EditorTheme> {
                 resource::<SelectedEntity, _>(|selected| selected.0),
                 |selected| match *selected {
                     Some(entity) => selection(entity),
-                    None => project(),
+                    None => label("Nothing selected")
+                        .tone(Tone::Dim)
+                        .boxed(),
                 },
             )
             .within(
@@ -41,16 +40,6 @@ pub(super) fn panel() -> AnyView<Bevy, EditorTheme> {
             ),
         )
     })
-}
-
-/// The project's own settings, shown while nothing is selected.
-fn project() -> AnyView<Bevy, EditorTheme> {
-    column((
-        label("Project").tone(Tone::Dim),
-        resource_inspector_of::<ProjectSettings>(),
-    ))
-    .width(percent(100.0))
-    .boxed()
 }
 
 /// The inspector of `entity`, and below it the card of its material.

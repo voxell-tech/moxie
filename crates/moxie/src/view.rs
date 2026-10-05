@@ -1,8 +1,7 @@
 //! The scene cameras' plumbing: pointing them at the offscreen
-//! preview image, one over another, and keeping that image the
-//! project's size.
+//! preview image, and keeping that image the project's size.
 
-use bevy::camera::{ClearColorConfig, RenderTarget};
+use bevy::camera::RenderTarget;
 use bevy::prelude::*;
 use bevy::render::render_resource::Extent3d;
 use moxie_viewport::{EditorCamera, OutputAspect, SceneCamera};
@@ -28,8 +27,8 @@ pub(crate) struct PreviewPanel;
 pub(crate) struct Rendering(pub(crate) bool);
 
 /// Renders every scene camera into the [`PreviewImage`] while a
-/// preview is on screen: the 3D ones first and the 2D ones over
-/// them, the first clearing to the project's background.
+/// preview is on screen. Which draws over which, and what each
+/// clears to, is each camera's own.
 pub(crate) fn sync_scene_cameras(
     mut commands: Commands,
     preview: Res<PreviewImage>,
@@ -38,7 +37,7 @@ pub(crate) fn sync_scene_cameras(
     mut aspect: ResMut<OutputAspect>,
     panels: Query<&ComputedNode, With<PreviewPanel>>,
     mut cameras: Query<
-        (Entity, &mut Camera, Option<&RenderTarget>, Has<Camera2d>),
+        (Entity, &mut Camera, Option<&RenderTarget>),
         ProjectCamera,
     >,
 ) {
@@ -48,39 +47,9 @@ pub(crate) fn sync_scene_cameras(
     rendering.set_if_neq(Rendering(!cameras.is_empty()));
     let output = settings.size().as_vec2();
     aspect.set_if_neq(OutputAspect(output.x / output.y));
-    let mut stack = cameras
-        .iter()
-        .map(|(entity, .., flat)| (flat, entity))
-        .collect::<Vec<_>>();
-    stack.sort_unstable();
-    for (order, (_, entity)) in stack.into_iter().enumerate() {
-        let Ok((entity, mut camera, target, _)) =
-            cameras.get_mut(entity)
-        else {
-            continue;
-        };
+    for (entity, mut camera, target) in &mut cameras {
         if camera.is_active != shown {
             camera.is_active = shown;
-        }
-        let order = order as isize;
-        if camera.order != order {
-            camera.order = order;
-        }
-        let clear = if order == 0 {
-            ClearColorConfig::Custom(settings.background)
-        } else {
-            ClearColorConfig::None
-        };
-        let cleared = match (&camera.clear_color, &clear) {
-            (
-                ClearColorConfig::Custom(now),
-                ClearColorConfig::Custom(wanted),
-            ) => now == wanted,
-            (ClearColorConfig::None, ClearColorConfig::None) => true,
-            _ => false,
-        };
-        if !cleared {
-            camera.clear_color = clear;
         }
         let targeted = matches!(
             target,

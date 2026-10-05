@@ -7,12 +7,11 @@ mod settings;
 pub(crate) mod timeline;
 mod top_bar;
 
-use bevy::camera::Hdr;
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::schedule::common_conditions::not;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
-use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
+use bevy::ui::{IsDefaultUiCamera, UiSystems, UiTargetCamera};
 use bevy_fynix::dock::{
     DockRegistry, DockTree, DockWindowKind, dock,
 };
@@ -26,9 +25,9 @@ use moxie_ui::{MoxieUiPlugin, text_field_focused};
 
 use crate::subject::Target;
 use crate::{
-    EditorSettings, EditorState, PreviewImage, ProjectBookmarks,
-    ProjectLayout, ProjectPath, ProjectSettings, SelectedAction,
-    SelectedEntity, playback, scene, view,
+    EditorState, PreviewImage, ProjectBookmarks, ProjectLayout,
+    ProjectPath, ProjectSettings, SelectedAction, SelectedEntity,
+    playback, scene, view,
 };
 
 /// Wires the editor UI tree and the per-frame
@@ -101,9 +100,15 @@ impl Plugin for UiPlugin {
                 )
                     .chain(),
             )
+            .init_resource::<preview::LastArea>()
+            .add_systems(
+                PostUpdate,
+                preview::remember_area.after(UiSystems::Layout),
+            )
             .add_observer(playback::on_toggle_playback);
 
         app.with_inspect_group("Cameras")
+            .register_inspectable::<Camera>()
             .register_inspectable::<Projection>();
     }
 }
@@ -117,7 +122,6 @@ fn setup_editor_ui(
     mut images: ResMut<Assets<Image>>,
     mut registry: ResMut<DockRegistry<EditorTheme>>,
     mut tree: ResMut<DockTree>,
-    settings: Res<EditorSettings>,
     project: Res<ProjectSettings>,
     assets: Res<AssetServer>,
 ) {
@@ -134,7 +138,7 @@ fn setup_editor_ui(
     // meshes (e.g. bevy_vello's composite quad, layer 0)
     // full-window. `IsDefaultUiCamera` catches dock UI spawned
     // without a target (drag ghosts, drop overlays).
-    let ui_camera = commands
+    commands
         .spawn_scene(bsn! [
             Camera2d
             Camera {
@@ -145,12 +149,7 @@ fn setup_editor_ui(
             }
             UiCamera
         ])
-        .insert((RenderLayers::layer(1), IsDefaultUiCamera))
-        .id();
-
-    if settings.hdr {
-        commands.entity(ui_camera).insert(Hdr);
-    }
+        .insert((RenderLayers::layer(1), IsDefaultUiCamera));
 
     register_windows(&mut registry, &assets);
 
@@ -233,8 +232,8 @@ fn register_windows(
             ),
         )
         .register(
-            "settings",
-            kind("Settings", crate::icons::SETTINGS, settings::panel),
+            "project",
+            kind("Project", crate::icons::PROJECT, settings::panel),
         )
         .register(
             "assets",

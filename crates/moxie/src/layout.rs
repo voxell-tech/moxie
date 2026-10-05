@@ -60,7 +60,7 @@ impl ProjectLayout {
                 split(false, 0.28, 2, 5),
                 split(true, 0.5, 3, 4),
                 tabs(&["preview"]),
-                tabs(&["inspector"]),
+                tabs(&["inspector", "project"]),
                 split(false, 0.76, 6, 7),
                 tabs(&["viewport"]),
                 tabs(&["hierarchy", "assets"]),

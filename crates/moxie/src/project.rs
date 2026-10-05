@@ -52,12 +52,26 @@ pub(crate) fn spawn_defaults(world: &mut World) {
     spawn_stage(world, root);
 }
 
+/// A [`Camera`] that draws over the ones before it and clears
+/// nothing.
+pub(crate) fn overlay_camera() -> Camera {
+    Camera {
+        order: 1,
+        clear_color: ClearColorConfig::None,
+        ..default()
+    }
+}
+
 /// The cameras and the light of a blank project, under `root`.
 fn spawn_stage(world: &mut World, root: Entity) {
     world.spawn((
         EntityUid::new(),
         Name::new("Camera"),
         Camera3d::default(),
+        Camera {
+            clear_color: Color::srgb(0.02, 0.02, 0.04).into(),
+            ..default()
+        },
         Transform::from_xyz(0.0, 2.0, 14.0)
             .looking_at(Vec3::ZERO, Vec3::Y),
         Visibility::default(),
@@ -67,6 +81,7 @@ fn spawn_stage(world: &mut World, root: Entity) {
         EntityUid::new(),
         Name::new("Camera 2D"),
         Camera2d,
+        overlay_camera(),
         Transform::IDENTITY,
         Visibility::default(),
         ChildOf(root),
@@ -301,6 +316,7 @@ fn subject_components() -> WorldFilter {
         .allow::<Visibility>()
         .allow::<Children>()
         .allow::<ChildOf>()
+        .allow::<Camera>()
         .allow::<Camera3d>()
         .allow::<Projection>()
         .allow::<CascadeShadowConfig>()

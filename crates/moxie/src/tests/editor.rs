@@ -183,14 +183,11 @@ fn a_field_built_later_has_the_editor_caret() {
 }
 
 #[test]
-fn the_shell_shows_the_menu_bar_and_the_project_in_the_inspector() {
+fn the_shell_shows_the_menu_bar_and_an_empty_inspector() {
     let mut editor = Editor::new();
     editor.text("File");
-    // With nothing selected the inspector is the project's.
-    editor.text("Project");
-    editor.text("background");
-    // The action panel says it.
-    editor.text("Nothing selected");
+    // The inspector and the action panel each say it.
+    assert_eq!(editor.texts("Nothing selected").len(), 2);
     assert_eq!(editor.texts("Timeline").len(), 1);
     editor.text("Action");
 }
@@ -199,17 +196,16 @@ fn the_shell_shows_the_menu_bar_and_the_project_in_the_inspector() {
 fn the_inspector_follows_the_selection() {
     let mut editor = Editor::new();
     let cube = add_cube(&mut editor);
-    assert!(editor.texts("Project").is_empty());
-    editor.text("translation");
+    // The action panel keeps its own, whatever the hierarchy picks.
+    assert_eq!(editor.texts("Nothing selected").len(), 1);
 
     editor.world().insert_resource(SelectedEntity(None));
     editor.step(SETTLE);
-    editor.text("Project");
-    assert!(editor.texts("translation").is_empty());
+    assert_eq!(editor.texts("Nothing selected").len(), 2);
 
     editor.world().insert_resource(SelectedEntity(Some(cube)));
     editor.step(SETTLE);
-    assert!(editor.texts("Project").is_empty());
+    assert_eq!(editor.texts("Nothing selected").len(), 1);
 }
 
 #[test]
@@ -389,7 +385,7 @@ fn a_project_keeps_its_settings_and_its_cameras() {
     let mut editor = Editor::new();
     let settings = ProjectSettings {
         size: UVec2::new(1280, 720),
-        background: Color::srgb(0.5, 0.25, 0.0),
+        ..default()
     };
     editor.world().insert_resource(settings.clone());
 
