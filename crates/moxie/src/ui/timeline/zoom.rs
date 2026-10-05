@@ -99,6 +99,17 @@ fn on_fit_timeline(
     view.fit(width, state.duration, settings.timestep());
 }
 
+/// How far a wheel event turned, in pixels.
+fn wheel_px(scroll: &Pointer<Scroll>) -> Vec2 {
+    Vec2::new(scroll.x, scroll.y)
+        * match scroll.unit {
+            MouseScrollUnit::Line => {
+                MouseScrollUnit::SCROLL_UNIT_CONVERSION_FACTOR
+            }
+            MouseScrollUnit::Pixel => 1.0,
+        }
+}
+
 /// Zoom on a wheel over the time axis, about the cursor. A sideways
 /// wheel still pans, and Shift+wheel is left to the track.
 pub(super) fn on_axis_scroll(
@@ -119,13 +130,7 @@ pub(super) fn on_axis_scroll(
     let Ok((computed, transform)) = q_axis.get(scroll.entity) else {
         return;
     };
-    let delta = Vec2::new(scroll.x, scroll.y)
-        * match scroll.unit {
-            MouseScrollUnit::Line => {
-                MouseScrollUnit::SCROLL_UNIT_CONVERSION_FACTOR
-            }
-            MouseScrollUnit::Pixel => 1.0,
-        };
+    let delta = wheel_px(&scroll);
 
     if delta.x != 0.0 {
         view.pan_by(delta.x);
@@ -159,12 +164,7 @@ pub(super) fn on_track_scroll(
         return;
     };
 
-    let px_per_notch = MouseScrollUnit::SCROLL_UNIT_CONVERSION_FACTOR;
-    let delta = Vec2::new(scroll.x, scroll.y)
-        * match scroll.unit {
-            MouseScrollUnit::Line => px_per_notch,
-            MouseScrollUnit::Pixel => 1.0,
-        };
+    let delta = wheel_px(&scroll);
 
     if keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]) {
         let cursor = scroll.logical(&ui_scale);

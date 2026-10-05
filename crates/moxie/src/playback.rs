@@ -11,6 +11,7 @@ use bevy::ui::UiGlobalTransform;
 use bevy_fynix::shortcut::{CommandId, CommandSpec, GLOBAL};
 use bevy_motiongfx::prelude::{TimelineId, *};
 use moxie_ui::cursor::PointerEventExt as _;
+use moxie_ui::layout::logical_rect;
 
 use crate::{EditorState, TimelineView};
 
@@ -102,14 +103,7 @@ pub(crate) fn x_from_cursor(
     computed: &ComputedNode,
     transform: &UiGlobalTransform,
 ) -> f32 {
-    let inv = computed.inverse_scale_factor();
-    let (_scale, _angle, center) =
-        transform.to_scale_angle_translation();
-    let rect = Rect::from_center_size(
-        center.trunc() * inv,
-        computed.size() * inv,
-    );
-    cursor.x - rect.min.x
+    cursor.x - logical_rect(computed, transform).min.x
 }
 
 /// Move the timeline to `time` and stop playback so the scrub isn't
