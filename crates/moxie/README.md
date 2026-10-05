@@ -28,6 +28,7 @@ main focuses.
 | [`moxie`](https://github.com/voxell-tech/moxie/tree/main/crates/moxie) | The editor app. |
 | [`moxie_ui`](https://github.com/voxell-tech/moxie/tree/main/crates/moxie_ui) | Reusable `bevy_ui` widgets, docking, and theming, built on `fynix`. |
 | [`moxie_asset`](https://github.com/voxell-tech/moxie/tree/main/crates/moxie_asset) | Asset-kind registry, absolute asset source, and the `.mat` loader. |
+| [`moxie_viewport`](https://github.com/voxell-tech/moxie/tree/main/crates/moxie_viewport) | The 3D viewport: a free camera, a ground grid, and a transform gizmo. |
 
 ## Running
 

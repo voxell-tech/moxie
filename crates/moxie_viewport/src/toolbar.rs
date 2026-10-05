@@ -11,8 +11,8 @@ use bevy_fynix::{
 };
 use moxie_ui::theme::EditorTheme;
 
+use super::camera::{EditorCamera, View, show};
 use super::gizmo::{GizmoMode, GizmoSettings, GizmoSpace};
-use super::{EditorCamera, ViewAction};
 
 /// The toolbar of the viewport `camera` draws.
 pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
@@ -78,21 +78,19 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
             .resource::<AssetServer>()
             .load(moxie_ui::icons::CHEVRON);
         let view = dropdown(
-            ViewAction::VIEWS.map(ViewAction::label),
+            View::ALL.map(View::label),
             component::<EditorCamera, _>(camera, |orbit| {
                 let view = orbit.map(EditorCamera::view);
-                ViewAction::VIEWS
+                View::ALL
                     .iter()
                     .position(|&listed| Some(listed) == view)
                     .unwrap_or(0)
             }),
             chevron,
             move |world, at| {
-                if let Some(&action) = ViewAction::VIEWS.get(at) {
-                    let ran = world.run_system_cached_with(
-                        super::view,
-                        (camera, action),
-                    );
+                if let Some(&view) = View::ALL.get(at) {
+                    let ran = world
+                        .run_system_cached_with(show, (camera, view));
                     if let Err(err) = ran {
                         error!("could not change the view: {err}");
                     }
