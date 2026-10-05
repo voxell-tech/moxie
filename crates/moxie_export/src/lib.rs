@@ -1,4 +1,4 @@
-//! Renders a timeline frame by frame into image files.
+//! Renders a timeline frame by frame into image files or a video.
 //!
 //! An [`Export`] steps its timeline one frame at a time, captures
 //! what the cameras draw into its target, and hands the frames to its
@@ -6,6 +6,7 @@
 //! the result is the same however fast the frames render.
 
 mod images;
+mod video;
 
 use core::fmt::Display;
 use core::ops::Range;
@@ -21,6 +22,7 @@ use bevy::render::view::screenshot::{
 use bevy_motiongfx::prelude::{
     MotionGfxManager, RealtimePlayer, TimelineId,
 };
+pub use video::{Codec, find_ffmpeg};
 
 /// Frames rendered and not yet written, at most.
 const MAX_IN_FLIGHT: u32 = 4;
@@ -39,6 +41,13 @@ pub fn plugin(app: &mut App) {
 pub enum Output {
     /// A PNG a frame, `<stem>_<frame>.png` in `dir`.
     Images { dir: PathBuf, stem: String },
+    /// One video file at `path`, encoded by the `ffmpeg` executable
+    /// given.
+    Video {
+        ffmpeg: PathBuf,
+        codec: Codec,
+        path: PathBuf,
+    },
 }
 
 /// A render of a timeline to files. Lives on an entity of its own
@@ -81,6 +90,13 @@ impl Export {
             Output::Images { dir, stem } => {
                 Sink::Images(images::Images::new(dir, stem))
             }
+            Output::Video {
+                ffmpeg,
+                codec,
+                path,
+            } => Sink::Video(video::Video::new(
+                ffmpeg, codec, path, step,
+            )),
         };
         Self {
             target,
@@ -179,6 +195,7 @@ struct Frame {
 
 enum Sink {
     Images(images::Images),
+    Video(video::Video),
 }
 
 impl Sink {
@@ -186,6 +203,7 @@ impl Sink {
     fn ready(&self) -> bool {
         match self {
             Self::Images(images) => images.ready(),
+            Self::Video(video) => video.ready(),
         }
     }
 
@@ -196,6 +214,7 @@ impl Sink {
     ) -> Result<(), String> {
         match self {
             Self::Images(images) => images.write(index, frame),
+            Self::Video(video) => video.write(frame),
         }
     }
 
@@ -203,6 +222,7 @@ impl Sink {
     fn finished(&mut self) -> Result<u32, String> {
         match self {
             Self::Images(images) => images.finished(),
+            Self::Video(video) => video.finished(),
         }
     }
 
@@ -211,6 +231,7 @@ impl Sink {
     fn close(&mut self) -> Result<bool, String> {
         match self {
             Self::Images(_) => Ok(true),
+            Self::Video(video) => video.close(),
         }
     }
 }
