@@ -8,6 +8,7 @@ use bevy::picking::events::{
 };
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
+use bevy_fynix::shortcut::{CommandId, CommandSpec, GLOBAL};
 use bevy_motiongfx::prelude::{TimelineId, *};
 use moxie_ui::cursor::PointerEventExt as _;
 
@@ -19,15 +20,15 @@ use crate::{EditorState, TimelineView};
 #[derive(Event)]
 pub(crate) struct TogglePlayback;
 
-/// Request a toggle when the spacebar is pressed.
-pub(crate) fn play_pause_hotkey(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut commands: Commands,
-) {
-    if keys.just_pressed(KeyCode::Space) {
-        commands.trigger(TogglePlayback);
-    }
-}
+/// The command that flips playback.
+pub(crate) const TOGGLE_PLAYBACK: CommandSpec = CommandSpec {
+    id: CommandId("playback.toggle"),
+    label: "Play or pause",
+    scope: GLOBAL,
+    run: |world| world.trigger(TogglePlayback),
+    enabled: |_| true,
+    repeat: false,
+};
 
 /// Flip `is_playing` for all players, rewinding to the start first if
 /// playback is starting from the end of the track.

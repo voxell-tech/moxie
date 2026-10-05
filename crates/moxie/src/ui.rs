@@ -8,20 +8,20 @@ pub(crate) mod timeline;
 mod top_bar;
 
 use bevy::camera::visibility::RenderLayers;
-use bevy::ecs::schedule::common_conditions::not;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::ui::{IsDefaultUiCamera, UiSystems, UiTargetCamera};
 use bevy_fynix::dock::{
     DockRegistry, DockTree, DockWindowKind, dock,
 };
+use bevy_fynix::shortcut::{Chord, ShortcutAppExt as _};
 use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, mount};
 use bevy_motiongfx::motiongfx::field_path::field;
+use moxie_ui::MoxieUiPlugin;
 use moxie_ui::field_icon::FieldIconAppExt as _;
 use moxie_ui::inspector::InspectAppExt as _;
 use moxie_ui::theme::{EditorTheme, Hue};
-use moxie_ui::{MoxieUiPlugin, text_field_focused};
 
 use crate::subject::Target;
 use crate::{
@@ -91,8 +91,6 @@ impl Plugin for UiPlugin {
                     scene::recompile_dirty_scene
                         .run_if(scene::scene_dirty),
                     playback::track_first_timeline,
-                    playback::play_pause_hotkey
-                        .run_if(not(text_field_focused)),
                     playback::stop_at_track_end,
                     playback::track_playing,
                     view::resize_preview,
@@ -104,6 +102,10 @@ impl Plugin for UiPlugin {
             .add_systems(
                 PostUpdate,
                 preview::remember_area.after(UiSystems::Layout),
+            )
+            .add_command(
+                playback::TOGGLE_PLAYBACK,
+                &[Chord::key(KeyCode::Space)],
             )
             .add_observer(playback::on_toggle_playback);
 
