@@ -3805,6 +3805,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "moxie_export"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_motiongfx",
+ "image",
+]
+
+[[package]]
 name = "moxie_ui"
 version = "0.1.0"
 dependencies = [
