@@ -44,7 +44,7 @@ use moxie_ui::gaps::{changing, changing_under};
 use moxie_ui::icons as ui_icons;
 use moxie_ui::theme::{EditorTheme, Spacing};
 use pattern::DelayPattern;
-use zoom::{FitTimeline, on_track_scroll};
+use zoom::{FitTimeline, on_axis_scroll, on_track_scroll};
 
 use crate::playback::{
     SeekTo, TogglePlayback, on_seek, on_track_cancel,
@@ -220,6 +220,7 @@ fn time_axis() -> AnyView<Bevy, EditorTheme> {
         )
         .within(frame().width(percent(100.0)).height(percent(100.0)));
         cx.under(axis, |cx| cx.build(marks));
+        cx.world.entity_mut(axis).observe(on_axis_scroll);
         axis
     })
 }

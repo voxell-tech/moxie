@@ -27,6 +27,27 @@ pub(super) fn plugin(app: &mut App) {
 #[derive(Resource, Default)]
 pub(super) struct ZoomGoal(Option<(f32, f32)>);
 
+impl ZoomGoal {
+    /// Sets the goal `wheel` pixels of wheel on from where the zoom
+    /// is already headed, so quick notches add up.
+    fn aim(
+        &mut self,
+        view: &TimelineView,
+        settings: &ProjectSettings,
+        wheel: f32,
+        anchor_x: f32,
+    ) {
+        let notches =
+            wheel / MouseScrollUnit::SCROLL_UNIT_CONVERSION_FACTOR;
+        let from = self.0.map_or(view.px_per_second, |(to, _)| to);
+        let (coarsest, finest) =
+            TimelineView::range(settings.timestep());
+        let to =
+            (from * WHEEL_STEP.powf(notches)).clamp(coarsest, finest);
+        self.0 = Some((to, anchor_x));
+    }
+}
+
 /// Eases the zoom on to its [`ZoomGoal`].
 fn ease_zoom(
     time: Res<Time>,
@@ -78,6 +99,44 @@ fn on_fit_timeline(
     view.fit(width, state.duration, settings.timestep());
 }
 
+/// Zoom on a wheel over the time axis, about the cursor. A sideways
+/// wheel still pans, and Shift+wheel is left to the track.
+pub(super) fn on_axis_scroll(
+    mut scroll: On<Pointer<Scroll>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    ui_scale: Res<UiScale>,
+    settings: Res<ProjectSettings>,
+    mut goal: ResMut<ZoomGoal>,
+    mut view: ResMut<TimelineView>,
+    q_axis: Query<(&ComputedNode, &UiGlobalTransform)>,
+) {
+    if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
+        return;
+    }
+    // Or the track scrolls its rows with the same wheel.
+    scroll.propagate(false);
+
+    let Ok((computed, transform)) = q_axis.get(scroll.entity) else {
+        return;
+    };
+    let delta = Vec2::new(scroll.x, scroll.y)
+        * match scroll.unit {
+            MouseScrollUnit::Line => {
+                MouseScrollUnit::SCROLL_UNIT_CONVERSION_FACTOR
+            }
+            MouseScrollUnit::Pixel => 1.0,
+        };
+
+    if delta.x != 0.0 {
+        view.pan_by(delta.x);
+    }
+    if delta.y != 0.0 {
+        let cursor = scroll.logical(&ui_scale);
+        let anchor_x = x_from_cursor(cursor, computed, transform);
+        goal.aim(&view, &settings, delta.y, anchor_x);
+    }
+}
+
 /// Zoom on Alt+wheel, pan sideways on Shift+wheel or a
 /// horizontal wheel, and scroll the tracks otherwise.
 pub(super) fn on_track_scroll(
@@ -108,17 +167,9 @@ pub(super) fn on_track_scroll(
         };
 
     if keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]) {
-        let notches = delta.y / px_per_notch;
         let cursor = scroll.logical(&ui_scale);
         let anchor_x = x_from_cursor(cursor, computed, transform);
-        // On from where it is already headed, so quick notches add
-        // up.
-        let from = goal.0.map_or(view.px_per_second, |(to, _)| to);
-        let (coarsest, finest) =
-            TimelineView::range(settings.timestep());
-        let to =
-            (from * WHEEL_STEP.powf(notches)).clamp(coarsest, finest);
-        goal.0 = Some((to, anchor_x));
+        goal.aim(&view, &settings, delta.y, anchor_x);
         return;
     }
 
