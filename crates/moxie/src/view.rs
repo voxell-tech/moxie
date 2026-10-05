@@ -8,13 +8,13 @@ use bevy::render::render_resource::Extent3d;
 use moxie_viewport::{EditorCamera, OutputAspect, SceneCamera};
 
 use crate::thumbnails::ThumbnailCamera;
-use crate::ui::TrackViewportCamera;
+use crate::ui::UiCamera;
 use crate::{PreviewImage, ProjectSettings};
 
 /// A camera of the project: every one but the editor's own.
 type ProjectCamera = (
     With<Camera>,
-    Without<TrackViewportCamera>,
+    Without<UiCamera>,
     Without<ThumbnailCamera>,
     Without<EditorCamera>,
 );
@@ -117,79 +117,5 @@ pub(crate) fn resize_preview(
             height: size.y,
             depth_or_array_layers: 1,
         });
-    }
-}
-
-/// How large the preview is shown.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum PreviewZoom {
-    /// As large as fits its panel.
-    #[default]
-    Fit,
-    /// One pixel of the image to one of the screen.
-    Actual,
-}
-
-impl PreviewZoom {
-    pub(crate) const ALL: [Self; 2] = [Self::Fit, Self::Actual];
-
-    /// The logical size an image of `output` pixels is shown at in
-    /// an area of `available` logical pixels, on a screen of `scale`
-    /// physical pixels to a logical one.
-    pub(crate) fn size(
-        self,
-        output: UVec2,
-        available: Vec2,
-        scale: f32,
-    ) -> Vec2 {
-        let output = output.as_vec2();
-        match self {
-            // The largest of the image's shape the area holds.
-            Self::Fit => output * (available / output).min_element(),
-            Self::Actual => output / scale,
-        }
-    }
-}
-
-/// The size the preview is shown at in `area`, for the `zoom` asked
-/// for. `None` until the area is laid out.
-pub(crate) fn preview_size(
-    world: &World,
-    area: Entity,
-    zoom: PreviewZoom,
-) -> Option<Vec2> {
-    let computed = world.get::<ComputedNode>(area)?;
-    let scale = computed.inverse_scale_factor();
-    let available = computed.size() * scale;
-    if available.min_element() <= 0.0 {
-        return None;
-    }
-    let output = world.resource::<ProjectSettings>().size();
-    Some(zoom.size(output, available, scale.recip()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_fit_keeps_the_shape_and_actual_size_keeps_the_pixels() {
-        let output = UVec2::new(1920, 1080);
-        let wide = Vec2::new(800.0, 800.0);
-        let tall = Vec2::new(1600.0, 450.0);
-
-        let fit = PreviewZoom::Fit;
-        assert_eq!(
-            fit.size(output, wide, 2.0),
-            Vec2::new(800.0, 450.0)
-        );
-        assert_eq!(
-            fit.size(output, tall, 2.0),
-            Vec2::new(800.0, 450.0)
-        );
-        assert_eq!(
-            PreviewZoom::Actual.size(output, wide, 2.0),
-            Vec2::new(960.0, 540.0)
-        );
     }
 }

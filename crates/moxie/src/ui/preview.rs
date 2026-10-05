@@ -16,7 +16,7 @@ use moxie_ui::gaps::{anchored, changing_under};
 use moxie_ui::theme::EditorTheme;
 
 use super::hierarchy;
-use crate::view::{self, PreviewPanel, PreviewZoom, Rendering};
+use crate::view::{PreviewPanel, Rendering};
 use crate::{PreviewImage, ProjectSettings};
 
 /// How the preview shows the render.
@@ -125,9 +125,7 @@ fn picture(
     let size = move || {
         changing_under(area, move |world: &World| {
             let zoom = world.resource::<PreviewView>().zoom;
-            area.and_then(|area| {
-                view::preview_size(world, area, zoom)
-            })
+            area.and_then(|area| preview_size(world, area, zoom))
         })
     };
     column(())
@@ -168,5 +166,79 @@ fn no_camera() -> AnyView<Bevy, EditorTheme> {
 fn on_drag(drag: On<Pointer<Drag>>, mut view: ResMut<PreviewView>) {
     if view.zoom == PreviewZoom::Actual {
         view.pan += drag.delta;
+    }
+}
+
+/// How large the preview is shown.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum PreviewZoom {
+    /// As large as fits its panel.
+    #[default]
+    Fit,
+    /// One pixel of the image to one of the screen.
+    Actual,
+}
+
+impl PreviewZoom {
+    const ALL: [Self; 2] = [Self::Fit, Self::Actual];
+
+    /// The logical size an image of `output` pixels is shown at in
+    /// an area of `available` logical pixels, on a screen of `scale`
+    /// physical pixels to a logical one.
+    fn size(
+        self,
+        output: UVec2,
+        available: Vec2,
+        scale: f32,
+    ) -> Vec2 {
+        let output = output.as_vec2();
+        match self {
+            // The largest of the image's shape the area holds.
+            Self::Fit => output * (available / output).min_element(),
+            Self::Actual => output / scale,
+        }
+    }
+}
+
+/// The size the preview is shown at in `area`, for the `zoom` asked
+/// for. `None` until the area is laid out.
+fn preview_size(
+    world: &World,
+    area: Entity,
+    zoom: PreviewZoom,
+) -> Option<Vec2> {
+    let computed = world.get::<ComputedNode>(area)?;
+    let scale = computed.inverse_scale_factor();
+    let available = computed.size() * scale;
+    if available.min_element() <= 0.0 {
+        return None;
+    }
+    let output = world.resource::<ProjectSettings>().size();
+    Some(zoom.size(output, available, scale.recip()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_fit_keeps_the_shape_and_actual_size_keeps_the_pixels() {
+        let output = UVec2::new(1920, 1080);
+        let wide = Vec2::new(800.0, 800.0);
+        let tall = Vec2::new(1600.0, 450.0);
+
+        let fit = PreviewZoom::Fit;
+        assert_eq!(
+            fit.size(output, wide, 2.0),
+            Vec2::new(800.0, 450.0)
+        );
+        assert_eq!(
+            fit.size(output, tall, 2.0),
+            Vec2::new(800.0, 450.0)
+        );
+        assert_eq!(
+            PreviewZoom::Actual.size(output, wide, 2.0),
+            Vec2::new(960.0, 540.0)
+        );
     }
 }

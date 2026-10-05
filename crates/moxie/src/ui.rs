@@ -14,8 +14,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
 use bevy_fynix::dock::{
-    DockAreaStyle, DockLeaf, DockNode, DockRegistry, DockTree,
-    DockWindowKind, Edge, dock,
+    DockRegistry, DockTree, DockWindowKind, dock,
 };
 use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, mount};
@@ -28,8 +27,8 @@ use moxie_ui::{MoxieUiPlugin, text_field_focused};
 use crate::subject::Target;
 use crate::{
     EditorSettings, EditorState, PreviewImage, ProjectBookmarks,
-    ProjectPath, ProjectSettings, SelectedAction, SelectedEntity,
-    playback, scene, view,
+    ProjectLayout, ProjectPath, ProjectSettings, SelectedAction,
+    SelectedEntity, playback, scene, view,
 };
 
 /// Wires the editor UI tree and the per-frame
@@ -111,7 +110,7 @@ impl Plugin for UiPlugin {
 
 /// Marker component for the UI camera, which owns the window.
 #[derive(Component, Default, Clone)]
-pub(crate) struct TrackViewportCamera;
+pub(crate) struct UiCamera;
 
 fn setup_editor_ui(
     mut commands: Commands,
@@ -144,7 +143,7 @@ fn setup_editor_ui(
                 // holds one.
                 clear_color: { moxie_ui::theme::BG },
             }
-            TrackViewportCamera
+            UiCamera
         ])
         .insert((RenderLayers::layer(1), IsDefaultUiCamera))
         .id();
@@ -155,47 +154,9 @@ fn setup_editor_ui(
 
     register_windows(&mut registry, &assets);
 
-    //
-    // The dock layout.
-    //
-    let viewport = tree.set_root_leaf(
-        DockLeaf::new("viewport", DockAreaStyle::TabBar)
-            .with_windows(vec!["viewport".into()]),
-    );
-
-    tree.split(viewport, Edge::Bottom, "timeline".into());
-    let vsplit = tree.root.expect("root split exists");
-    tree.set_fraction(vsplit, 0.7);
-    let timeline = tree
-        .find_leaf_with_window("timeline")
-        .expect("just split in a timeline leaf");
-    if let Some(DockNode::Leaf(leaf)) = tree.get_mut(timeline) {
-        leaf.area_id = "timeline".into();
+    if let Some(standard) = ProjectLayout::standard().tree() {
+        *tree = standard;
     }
-
-    tree.split(timeline, Edge::Right, "action".into());
-    if let Some(hsplit) = tree.parent_of(timeline) {
-        tree.set_fraction(hsplit, 0.8);
-    }
-
-    tree.split(viewport, Edge::Right, "inspector".into());
-    if let Some(hsplit) = tree.parent_of(viewport) {
-        tree.set_fraction(hsplit, 0.8);
-    }
-
-    if let Some((sidebar, hierarchy_tab)) =
-        tree.split(viewport, Edge::Left, "hierarchy".into())
-    {
-        // `add_tab` activates what it just added; Hierarchy stays the
-        // one shown on a fresh layout.
-        tree.add_tab(sidebar, "assets");
-        tree.set_active(sidebar, hierarchy_tab);
-    }
-    if let Some(hsplit) = tree.parent_of(viewport) {
-        tree.set_fraction(hsplit, 0.2);
-    }
-
-    tree.split(viewport, Edge::Right, "preview".into());
 }
 
 /// Mounts the top bar over the dock, on the UI camera. Runs after
@@ -203,7 +164,7 @@ fn setup_editor_ui(
 /// and the camera exist.
 fn mount_editor_ui(world: &mut World) {
     let camera = world
-        .query_filtered::<Entity, With<TrackViewportCamera>>()
+        .query_filtered::<Entity, With<UiCamera>>()
         .single(world)
         .expect("the UI camera was just spawned");
     let root = mount::<EditorTheme>(

@@ -340,6 +340,8 @@ fn the_sample_project_opens() {
     );
     assert_eq!(scene_cameras::<With<Camera3d>>(&mut editor).len(), 1);
     assert_eq!(scene_cameras::<With<Camera2d>>(&mut editor).len(), 1);
+    let layout = editor.world().resource::<crate::ProjectLayout>();
+    assert!(layout.tree().is_some(), "its layout came back");
 }
 
 /// The cameras of the project that `F` picks out.

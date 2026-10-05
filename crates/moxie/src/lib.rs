@@ -8,6 +8,7 @@
 
 mod catalog;
 mod icons;
+mod layout;
 mod materials;
 mod playback;
 mod presets;
@@ -32,6 +33,7 @@ use bevy::settings::{
 use bevy_motiongfx::BevyMotionGfxPlugin;
 use bevy_motiongfx::prelude::TimelineId;
 use bevy_motiongfx::scene::id::EntityUid;
+pub use layout::{LayoutNode, ProjectLayout};
 use moxie_asset::{MoxieAssetPlugin, register_absolute_source};
 pub(crate) use moxie_ui::SelectedEntity;
 pub use project::open_path;
@@ -69,6 +71,7 @@ impl Plugin for MoxiePlugin {
             moxie_viewport::plugin,
         ))
         .init_resource::<ProjectSettings>()
+        .init_resource::<ProjectLayout>()
         // Ahead of `Startup`, where an app opens the project it was
         // asked for.
         .add_systems(PreStartup, project::spawn_defaults)

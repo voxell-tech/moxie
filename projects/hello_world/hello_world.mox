@@ -1,6 +1,22 @@
 (
   world: (
-    resources: {},
+    resources: {
+      "moxie::layout::ProjectLayout": (
+        nodes: [
+          Split(stacked: true, fraction: 0.7, a: 1, b: 8),
+          Split(stacked: false, fraction: 0.28, a: 2, b: 5),
+          Split(stacked: true, fraction: 0.5, a: 3, b: 4),
+          Tabs(windows: ["preview"], active: 0),
+          Tabs(windows: ["inspector"], active: 0),
+          Split(stacked: false, fraction: 0.76, a: 6, b: 7),
+          Tabs(windows: ["viewport"], active: 0),
+          Tabs(windows: ["hierarchy", "assets"], active: 0),
+          Split(stacked: false, fraction: 0.8, a: 9, b: 10),
+          Tabs(windows: ["timeline"], active: 0),
+          Tabs(windows: ["action"], active: 0),
+        ],
+      ),
+    },
     entities: {
       4294966390: (
         components: {

@@ -22,8 +22,9 @@ use moxie_asset::project::{
 use moxie_asset::{AnyPath, InternalAssets, replace_internal_assets};
 
 use crate::{
-    EditorScene, ProjectBookmarks, ProjectPath, ProjectSettings,
-    SceneRoot, SelectedAction, SelectedEntity,
+    EditorScene, ProjectBookmarks, ProjectLayout, ProjectPath,
+    ProjectSettings, SceneRoot, SelectedAction, SelectedEntity,
+    layout,
 };
 
 /// Replaces whatever is loaded with a blank project.
@@ -33,6 +34,8 @@ pub(crate) fn new_scene(world: &mut World) {
     world.insert_resource(EditorScene::default());
     world.insert_resource(ProjectPath(None));
     spawn_defaults(world);
+    world.insert_resource(ProjectLayout::standard());
+    layout::apply(world);
 }
 
 /// Spawns what a blank project starts with: a camera for each of 3D
@@ -145,6 +148,7 @@ pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
         return;
     }
     stage_if_bare(world);
+    layout::apply(world);
 
     // The recompile runs on `EditorScene` changing, so inserting it
     // is the whole of loading the animation.
@@ -186,6 +190,7 @@ pub(crate) fn serialize(
     world: &mut World,
     folder: &Path,
 ) -> Option<String> {
+    layout::capture(world);
     // The root comes too, or the `ChildOf` on everything below it
     // would name an entity the file never held.
     let subjects: Vec<Entity> = world
@@ -207,6 +212,7 @@ pub(crate) fn serialize(
         .extract_entities(subjects.into_iter())
         .deny_all_resources()
         .allow_resource::<ProjectSettings>()
+        .allow_resource::<ProjectLayout>()
         .extract_resources()
         .build();
 
@@ -278,6 +284,7 @@ fn clear(world: &mut World) {
     // A file saved without any keeps the defaults, not the last
     // project's.
     world.insert_resource(ProjectSettings::default());
+    world.insert_resource(ProjectLayout::default());
 }
 
 /// What a subject is saved as. An allowlist: the rest is the running
