@@ -157,6 +157,16 @@ fn load(world: &mut World, text: &str, path: &Path) -> bool {
     let Some(project) = deserialize(world, text, path) else {
         return false;
     };
+    // Before anything loaded is dropped: a file that cannot be
+    // spawned leaves the project it was opened over as it was.
+    if let Some(stranger) = unspawnable(world, &project.world) {
+        error!(
+            "could not spawn {}: {stranger} is no component or \
+             resource",
+            path.display()
+        );
+        return false;
+    }
 
     clear(world);
     // Before the entities: nothing breaks if a handle outruns its
@@ -183,6 +193,44 @@ fn load(world: &mut World, text: &str, path: &Path) -> bool {
     )));
     world.insert_resource(ProjectBookmarks(project.bookmarks));
     true
+}
+
+/// The first thing `project` holds that the world cannot take: a
+/// component or a resource of a type not registered as one.
+fn unspawnable(
+    world: &World,
+    project: &DynamicWorld,
+) -> Option<String> {
+    let registry = world.resource::<AppTypeRegistry>().read();
+    let registered = |value: &dyn PartialReflect, resource: bool| {
+        let info = value.get_represented_type_info()?;
+        let registration = registry.get(info.type_id())?;
+        let known = if resource {
+            registration.data::<ReflectResource>().is_some()
+        } else {
+            registration.data::<ReflectComponent>().is_some()
+        };
+        known.then_some(())
+    };
+    let name = |value: &dyn PartialReflect| {
+        value.reflect_type_path().to_string()
+    };
+    let resources = project
+        .resources
+        .iter()
+        .filter(|resource| {
+            registered(resource.as_ref(), true).is_none()
+        })
+        .map(|resource| name(resource.as_ref()));
+    let components = project
+        .entities
+        .iter()
+        .flat_map(|entity| &entity.components)
+        .filter(|component| {
+            registered(component.as_ref(), false).is_none()
+        })
+        .map(|component| name(component.as_ref()));
+    resources.chain(components).next()
 }
 
 /// Gives a project that came with no camera the cameras and the

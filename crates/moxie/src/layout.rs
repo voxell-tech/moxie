@@ -119,7 +119,9 @@ fn read(
             a,
             b,
         } => {
-            if a <= at || b <= at || a == b {
+            // A file can hold any number, and one that is none would
+            // lay everything under it out at no size.
+            if a <= at || b <= at || a == b || !fraction.is_finite() {
                 return None;
             }
             let a = read(nodes, a, tree)?;
