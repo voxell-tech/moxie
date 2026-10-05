@@ -22,6 +22,8 @@ pub(super) fn top_bar() -> impl View<Bevy, EditorTheme> {
     ),))
     .width(percent(100.0))
     .height(px(BAR_HEIGHT))
+    // Or a dock with much in it squeezes the bar.
+    .shrink(0.0)
     .align(AlignItems::Center)
 }
 
