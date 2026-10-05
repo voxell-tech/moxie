@@ -11,6 +11,10 @@ use bevy::picking::events::{DragEnd, DragStart, Pointer};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::{UiGlobalTransform, UiScale};
+use bevy_fynix::shortcut::{
+    Chord, CommandId, CommandSpec, Layer, ScopeId, ScopeSpec,
+    ShortcutAppExt as _,
+};
 use bevy_fynix::{AnyView, Bevy, OverrideCursor, Theme, View};
 use bevy_motiongfx::scene::backend::Backend;
 use motiongfx_scene::block::{Block, Combinator, Node as SceneNode};
@@ -30,10 +34,38 @@ use crate::{EditorScene, SelectedAction, TimelineView};
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<Dragging>()
-        .add_systems(Update, cancel_on_escape)
         .add_systems(Update, preview.run_if(Dragging::active))
-        .add_observer(on_drag_end);
+        .add_observer(on_drag_end)
+        .add_scope(DRAG)
+        .add_command(
+            CommandSpec {
+                id: CommandId("timeline.cancel_reorder"),
+                label: "Cancel the move",
+                scope: DRAG.id,
+                run: |world, _| {
+                    if let Err(err) = world.run_system_cached(cancel)
+                    {
+                        error!("could not cancel the move: {err}");
+                    }
+                },
+                enabled: |_| true,
+                repeat: false,
+            },
+            &[Chord::key(KeyCode::Escape)],
+        );
 }
+
+/// The scope of a node being dragged elsewhere.
+const DRAG: ScopeSpec = ScopeSpec {
+    id: ScopeId("timeline.reorder"),
+    label: "Moving a node",
+    layer: Layer::Gesture,
+    active: Some(|world| {
+        world
+            .get_resource::<Dragging>()
+            .is_some_and(|dragging| dragging.0.is_some())
+    }),
+};
 
 /// The node being dragged, if any.
 #[derive(Resource, Default)]
@@ -299,16 +331,12 @@ fn on_drag_end(
 }
 
 /// Drops whatever's being dragged without committing it.
-fn cancel_on_escape(
-    keys: Res<ButtonInput<KeyCode>>,
+fn cancel(
     hint: HintNode,
     mut dragging: ResMut<Dragging>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut commands: Commands,
 ) {
-    if !keys.just_pressed(KeyCode::Escape) {
-        return;
-    }
     if dragging.0.take().is_none() {
         return;
     }
