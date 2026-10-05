@@ -28,6 +28,7 @@ use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy::text::EditableText;
 use bevy_fynix::dock::{DockIcons, DockPlugin};
+use bevy_fynix::scroll::ScrollMotion;
 use bevy_fynix::{FynixPlugin, Theme};
 use inspector::InspectPlugin;
 use moxie_asset::{AssetTypes, FoundAssets};
@@ -50,6 +51,9 @@ impl Plugin for MoxieUiPlugin {
             asset_picker::plugin,
         ))
         .insert_resource(Theme(EditorTheme::default()))
+        .insert_resource(ScrollMotion {
+            follow: EditorTheme::default().motion.follow,
+        })
         .add_systems(Update, elements::fit_action_icons)
         .init_resource::<AssetTypes>()
         .init_resource::<FoundAssets>()
