@@ -18,6 +18,8 @@ fn main() {
                 ..default()
             }),
             MoxiePlugin,
+            // After what it keeps is registered.
+            moxie::settings_plugin(),
         ))
         .add_systems(Startup, open_argument)
         .run();

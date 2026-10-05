@@ -8,6 +8,7 @@
 
 mod catalog;
 mod icons;
+mod keymap;
 mod layout;
 mod materials;
 mod playback;
@@ -30,6 +31,7 @@ use bevy::prelude::*;
 use bevy_motiongfx::BevyMotionGfxPlugin;
 use bevy_motiongfx::prelude::TimelineId;
 use bevy_motiongfx::scene::id::EntityUid;
+pub use keymap::{KeyOverride, KeymapSettings, settings_plugin};
 pub use layout::{LayoutNode, ProjectLayout};
 use moxie_asset::{MoxieAssetPlugin, register_absolute_source};
 pub(crate) use moxie_ui::SelectedEntity;
@@ -65,6 +67,7 @@ impl Plugin for MoxiePlugin {
             catalog::plugin,
             materials::plugin,
             moxie_viewport::plugin,
+            keymap::plugin,
         ))
         .init_resource::<ProjectSettings>()
         .init_resource::<ProjectLayout>()

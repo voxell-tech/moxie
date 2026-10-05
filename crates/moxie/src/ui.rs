@@ -4,6 +4,7 @@ pub(crate) mod hierarchy;
 mod inspector;
 mod preview;
 mod settings;
+mod shortcuts;
 pub(crate) mod timeline;
 mod top_bar;
 
@@ -39,6 +40,7 @@ impl Plugin for UiPlugin {
         app.add_plugins((
             MoxieUiPlugin,
             timeline::TimelinePlugin,
+            shortcuts::plugin,
             top_bar::plugin,
         ))
         .insert_resource(moxie_ui::inspector::FieldAnimatable(Some(
@@ -239,6 +241,14 @@ fn register_windows(
         .register(
             "project",
             kind("Project", crate::icons::PROJECT, settings::panel),
+        )
+        .register(
+            shortcuts::WINDOW,
+            kind(
+                "Shortcuts",
+                crate::icons::SHORTCUTS,
+                shortcuts::panel,
+            ),
         )
         .register(
             "assets",
