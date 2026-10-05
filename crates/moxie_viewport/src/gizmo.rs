@@ -47,7 +47,7 @@ pub(super) fn plugin(app: &mut App) {
 
 /// The gizmo's handles, drawn over the scene.
 #[derive(Default, Reflect, GizmoConfigGroup)]
-struct HandleGizmos;
+pub(super) struct HandleGizmos;
 
 fn style_handles(
     mut store: ResMut<GizmoConfigStore>,

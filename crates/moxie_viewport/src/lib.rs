@@ -43,7 +43,7 @@ pub use self::camera::{EditorCamera, framing_distance};
 use self::camera::{
     frame_selected, place_cameras, rest_hidden_cameras, view_keys,
 };
-use self::gizmo::Hot;
+use self::gizmo::{HandleGizmos, Hot};
 use self::markers::{Markers, draw_cameras_and_lights};
 
 /// The render layer of what only a viewport draws.
@@ -91,7 +91,8 @@ pub fn plugin(app: &mut App) {
         // by then, and its camera draws at once.
         .add_systems(
             PostUpdate,
-            (reap_orphans, rest_hidden_cameras)
+            (reap_orphans, rest_hidden_cameras, follow_screen_scale)
+                .chain()
                 .after(UiSystems::Layout),
         )
         .configure_sets(
@@ -120,6 +121,46 @@ struct EditorGizmos;
 fn keep_gizmos_to_viewports(mut store: ResMut<GizmoConfigStore>) {
     let (config, _) = store.config_mut::<EditorGizmos>();
     config.render_layers = RenderLayers::layer(EDITOR_LAYER);
+}
+
+/// Draws what is sized in pixels as large on one screen as on
+/// another: each viewport's camera counts in logical pixels, and
+/// its lines, whose width is in physical ones, are widened to match.
+fn follow_screen_scale(
+    nodes: Query<(&ViewportNode, &ComputedNode)>,
+    mut targets: Query<&mut RenderTarget, With<EditorCamera>>,
+    theme: Res<Theme<EditorTheme>>,
+    mut store: ResMut<GizmoConfigStore>,
+) {
+    for (node, computed) in &nodes {
+        if computed.size().min_element() <= 0.0 {
+            continue;
+        }
+        let factor = computed.inverse_scale_factor().recip();
+        let target = node
+            .camera
+            .and_then(|camera| targets.get_mut(camera).ok());
+        if let Some(mut target) = target {
+            let stale = matches!(
+                &*target,
+                RenderTarget::Image(image)
+                    if image.scale_factor != factor
+            );
+            if stale && let RenderTarget::Image(image) = &mut *target
+            {
+                image.scale_factor = factor;
+            }
+        }
+
+        let outline = GizmoLineConfig::default().width * factor;
+        if store.config::<EditorGizmos>().0.line.width != outline {
+            store.config_mut::<EditorGizmos>().0.line.width = outline;
+        }
+        let handle = theme.0.gizmo.line_width * factor;
+        if store.config::<HandleGizmos>().0.line.width != handle {
+            store.config_mut::<HandleGizmos>().0.line.width = handle;
+        }
+    }
 }
 
 /// What a drag in a viewport does.
