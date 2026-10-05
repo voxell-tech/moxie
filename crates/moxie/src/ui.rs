@@ -36,78 +36,80 @@ pub(crate) struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((MoxieUiPlugin, timeline::TimelinePlugin))
-            .insert_resource(moxie_ui::inspector::FieldAnimatable(
-                Some(|world, field| {
-                    Target::of(world, field).is_some_and(|target| {
-                        target.is_animatable(world)
-                    })
-                }),
-            ))
-            .insert_resource(moxie_ui::inspector::FieldHasAction(
-                Some(|world, field| {
-                    Target::of(world, field).is_some_and(|target| {
-                        target.has_action(world)
-                    })
-                }),
-            ))
-            .register_field_icon(
-                field!(Transform.translation),
-                crate::icons::TRANSLATE,
+        app.add_plugins((
+            MoxieUiPlugin,
+            timeline::TimelinePlugin,
+            top_bar::plugin,
+        ))
+        .insert_resource(moxie_ui::inspector::FieldAnimatable(Some(
+            |world, field| {
+                Target::of(world, field)
+                    .is_some_and(|target| target.is_animatable(world))
+            },
+        )))
+        .insert_resource(moxie_ui::inspector::FieldHasAction(Some(
+            |world, field| {
+                Target::of(world, field)
+                    .is_some_and(|target| target.has_action(world))
+            },
+        )))
+        .register_field_icon(
+            field!(Transform.translation),
+            crate::icons::TRANSLATE,
+        )
+        .register_field_icon(
+            field!(Transform.rotation),
+            crate::icons::ROTATE,
+        )
+        .register_field_icon(
+            field!(Transform.scale),
+            crate::icons::SCALE,
+        )
+        .register_root_hue::<Transform>(Hue::Blue)
+        .register_root_hue::<Visibility>(Hue::Purple)
+        .register_root_hue::<StandardMaterial>(Hue::Orange)
+        .register_root_hue::<Projection>(Hue::Green)
+        .register_root_hue::<PointLight>(Hue::Yellow)
+        .register_root_hue::<DirectionalLight>(Hue::Yellow)
+        .register_root_hue::<SpotLight>(Hue::Yellow)
+        .register_root_hue::<RectLight>(Hue::Yellow)
+        .init_resource::<EditorState>()
+        .init_resource::<preview::PreviewView>()
+        .init_resource::<view::Rendering>()
+        .init_resource::<SelectedAction>()
+        .init_resource::<SelectedEntity>()
+        .init_resource::<ProjectBookmarks>()
+        .init_resource::<ProjectPath>()
+        .init_resource::<assets::AssetFoldState>()
+        .init_resource::<hierarchy::Dragging>()
+        .init_resource::<scene::EditorScene>()
+        .add_systems(
+            Startup,
+            (setup_editor_ui, mount_editor_ui).chain(),
+        )
+        .add_systems(
+            Update,
+            (
+                scene::recompile_dirty_scene
+                    .run_if(scene::scene_dirty),
+                playback::track_first_timeline,
+                playback::stop_at_track_end,
+                playback::track_playing,
+                view::resize_preview,
+                view::sync_scene_cameras,
             )
-            .register_field_icon(
-                field!(Transform.rotation),
-                crate::icons::ROTATE,
-            )
-            .register_field_icon(
-                field!(Transform.scale),
-                crate::icons::SCALE,
-            )
-            .register_root_hue::<Transform>(Hue::Blue)
-            .register_root_hue::<Visibility>(Hue::Purple)
-            .register_root_hue::<StandardMaterial>(Hue::Orange)
-            .register_root_hue::<Projection>(Hue::Green)
-            .register_root_hue::<PointLight>(Hue::Yellow)
-            .register_root_hue::<DirectionalLight>(Hue::Yellow)
-            .register_root_hue::<SpotLight>(Hue::Yellow)
-            .register_root_hue::<RectLight>(Hue::Yellow)
-            .init_resource::<EditorState>()
-            .init_resource::<preview::PreviewView>()
-            .init_resource::<view::Rendering>()
-            .init_resource::<SelectedAction>()
-            .init_resource::<SelectedEntity>()
-            .init_resource::<ProjectBookmarks>()
-            .init_resource::<ProjectPath>()
-            .init_resource::<assets::AssetFoldState>()
-            .init_resource::<hierarchy::Dragging>()
-            .init_resource::<scene::EditorScene>()
-            .add_systems(
-                Startup,
-                (setup_editor_ui, mount_editor_ui).chain(),
-            )
-            .add_systems(
-                Update,
-                (
-                    scene::recompile_dirty_scene
-                        .run_if(scene::scene_dirty),
-                    playback::track_first_timeline,
-                    playback::stop_at_track_end,
-                    playback::track_playing,
-                    view::resize_preview,
-                    view::sync_scene_cameras,
-                )
-                    .chain(),
-            )
-            .init_resource::<preview::LastArea>()
-            .add_systems(
-                PostUpdate,
-                preview::remember_area.after(UiSystems::Layout),
-            )
-            .add_command(
-                playback::TOGGLE_PLAYBACK,
-                &[Chord::key(KeyCode::Space)],
-            )
-            .add_observer(playback::on_toggle_playback);
+                .chain(),
+        )
+        .init_resource::<preview::LastArea>()
+        .add_systems(
+            PostUpdate,
+            preview::remember_area.after(UiSystems::Layout),
+        )
+        .add_command(
+            playback::TOGGLE_PLAYBACK,
+            &[Chord::key(KeyCode::Space)],
+        )
+        .add_observer(playback::on_toggle_playback);
 
         app.with_inspect_group("Cameras")
             .register_inspectable::<Camera>()

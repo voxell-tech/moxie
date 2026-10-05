@@ -2,43 +2,86 @@
 //! whole rather than on anything a panel is showing.
 
 use bevy::prelude::*;
-use bevy_fynix::views::{FrameProps as _, menu_button, row};
-use bevy_fynix::{Bevy, View};
+use bevy_fynix::shortcut::{
+    Chord, CommandId, CommandSpec, GLOBAL, Invoke, Mods,
+    ShortcutAppExt as _, run_command,
+};
+use bevy_fynix::views::{
+    FrameProps as _, MenuEntry, menu_button, row,
+};
+use bevy_fynix::{AnyView, Bevy, View};
 use moxie_ui::theme::EditorTheme;
 
 use crate::project;
 
 const BAR_HEIGHT: f32 = 26.0;
 
-/// The bar: one menu per heading.
-pub(super) fn top_bar() -> impl View<Bevy, EditorTheme> {
-    row((menu(
-        "File",
-        vec![
-            ("New", project::new_scene),
-            ("Open", project::load_scene),
-            ("Save", project::save_scene),
-        ],
-    ),))
-    .width(percent(100.0))
-    .height(px(BAR_HEIGHT))
-    // Or a dock with much in it squeezes the bar.
-    .shrink(0.0)
-    .align(AlignItems::Center)
+/// The commands of the File menu, in its order.
+const FILE: [CommandId; 3] = [
+    CommandId("file.new"),
+    CommandId("file.open"),
+    CommandId("file.save"),
+];
+
+/// Registers the commands the bar's menus run.
+pub(super) fn plugin(app: &mut App) {
+    let command = |id, label, run| CommandSpec {
+        id,
+        label,
+        scope: GLOBAL,
+        run,
+        enabled: |_| true,
+        repeat: false,
+    };
+    let primary = |key| Chord {
+        key,
+        mods: Mods::PRIMARY,
+    };
+    app.add_command(
+        command(FILE[0], "New", |world, _| project::new_scene(world)),
+        &[primary(KeyCode::KeyN)],
+    )
+    .add_command(
+        command(FILE[1], "Open", |world, _| {
+            project::load_scene(world);
+        }),
+        &[primary(KeyCode::KeyO)],
+    )
+    .add_command(
+        command(FILE[2], "Save", |world, _| {
+            project::save_scene(world);
+        }),
+        &[primary(KeyCode::KeyS)],
+    );
 }
 
-/// One menu: its name in the bar, and what picking an entry runs.
+/// The bar: one menu per heading.
+pub(super) fn top_bar() -> impl View<Bevy, EditorTheme> {
+    row((menu("File", &FILE),))
+        .width(percent(100.0))
+        .height(px(BAR_HEIGHT))
+        // Or a dock with much in it squeezes the bar.
+        .shrink(0.0)
+        .align(AlignItems::Center)
+}
+
+/// One menu: its name in the bar, and a row for each of `commands`
+/// with the key it is bound to.
 fn menu(
     name: &'static str,
-    entries: Vec<(&'static str, fn(&mut World))>,
-) -> impl View<Bevy, EditorTheme> {
-    menu_button(
-        name,
-        entries.iter().map(|(entry, _)| *entry).collect::<Vec<_>>(),
-        move |world, at| {
-            if let Some((_, run)) = entries.get(at) {
-                run(world);
+    commands: &'static [CommandId],
+) -> AnyView<Bevy, EditorTheme> {
+    AnyView::<Bevy, EditorTheme>::new(move |cx| {
+        let entries = commands
+            .iter()
+            .filter_map(|&command| {
+                MenuEntry::command(cx.world, command)
+            })
+            .collect::<Vec<_>>();
+        cx.build(menu_button(name, entries, move |world, at| {
+            if let Some(&command) = commands.get(at) {
+                run_command(world, command, Invoke::default());
             }
-        },
-    )
+        }))
+    })
 }
