@@ -5,6 +5,7 @@ use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
 use bevy_fynix::Theme;
+use bevy_fynix::shortcut::Mods;
 use moxie_ui::cursor::PointerEventExt as _;
 use moxie_ui::theme::EditorTheme;
 
@@ -121,7 +122,7 @@ pub(super) fn on_axis_scroll(
     mut view: ResMut<TimelineView>,
     q_axis: Query<(&ComputedNode, &UiGlobalTransform)>,
 ) {
-    if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
+    if Mods::held(&keys).has(Mods::SHIFT) {
         return;
     }
     // Or the track scrolls its rows with the same wheel.
@@ -166,7 +167,8 @@ pub(super) fn on_track_scroll(
 
     let delta = wheel_px(&scroll);
 
-    if keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]) {
+    let mods = Mods::held(&keys);
+    if mods.has(Mods::ALT) {
         let cursor = scroll.logical(&ui_scale);
         let anchor_x = x_from_cursor(cursor, computed, transform);
         goal.aim(&view, &settings, delta.y, anchor_x);
@@ -175,9 +177,7 @@ pub(super) fn on_track_scroll(
 
     // Normalize Shift+wheel into horizontal scrolling across
     // platforms.
-    let sideways =
-        keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    let (pan_x, scroll_y) = if sideways {
+    let (pan_x, scroll_y) = if mods.has(Mods::SHIFT) {
         (if delta.x != 0.0 { delta.x } else { delta.y }, 0.0)
     } else {
         (delta.x, delta.y)
