@@ -190,9 +190,10 @@ pub(crate) fn ensure_scene_root(
 #[reflect(Component, Default, Clone)]
 pub struct SceneRoot;
 
-/// Zoom range, spanning the scales the time axis is exercised at.
+/// The coarsest zoom.
 const MIN_PX_PER_SECOND: f32 = 1.0;
-const MAX_PX_PER_SECOND: f32 = 20_000.0;
+/// The width of one timestep at the finest zoom.
+const FINEST_STEP_PX: f32 = 48.0;
 
 /// Maps animation time to timeline pixels.
 #[derive(Resource, Clone, Copy, PartialEq)]
@@ -253,19 +254,29 @@ impl TimelineView {
         }
     }
 
+    /// The zoom range of a project that moves in steps of `timestep`:
+    /// at the finest, one step is [`FINEST_STEP_PX`] wide.
+    pub(crate) fn range(timestep: Duration) -> (f32, f32) {
+        let finest = FINEST_STEP_PX / timestep.as_secs_f32();
+        (MIN_PX_PER_SECOND, finest.max(MIN_PX_PER_SECOND))
+    }
+
     /// Scale the zoom by `factor` and leave `anchor_time` sitting at
-    /// `anchor_x`, saturating at the ends of the range.
+    /// `anchor_x`, saturating at the ends of the range for a project
+    /// that moves in steps of `timestep`.
     pub(crate) fn zoom_to(
         &mut self,
         anchor_x: f32,
         anchor_time: Duration,
         factor: f32,
+        timestep: Duration,
     ) {
         if !(factor.is_finite() && factor > 0.0) {
             return;
         }
-        self.px_per_second = (self.px_per_second * factor)
-            .clamp(MIN_PX_PER_SECOND, MAX_PX_PER_SECOND);
+        let (coarsest, finest) = Self::range(timestep);
+        self.px_per_second =
+            (self.px_per_second * factor).clamp(coarsest, finest);
         // Put the anchor at the left edge, then push it back to
         // `anchor_x`.
         self.offset = anchor_time;
@@ -279,14 +290,21 @@ impl TimelineView {
     }
 
     /// Scale the view so a `duration` long animation spans a `width`
-    /// px panel, leaving a little room after it.
-    pub(crate) fn fit(&mut self, width: f32, duration: Duration) {
+    /// px panel, leaving a little room after it, within the range
+    /// for a project that moves in steps of `timestep`.
+    pub(crate) fn fit(
+        &mut self,
+        width: f32,
+        duration: Duration,
+        timestep: Duration,
+    ) {
         let secs = duration.as_secs_f32();
         if secs <= 0.0 {
             return;
         }
-        self.px_per_second = (width / (secs * 1.02))
-            .clamp(MIN_PX_PER_SECOND, MAX_PX_PER_SECOND);
+        let (coarsest, finest) = Self::range(timestep);
+        self.px_per_second =
+            (width / (secs * 1.02)).clamp(coarsest, finest);
         self.offset = Duration::ZERO;
     }
 }

@@ -16,7 +16,6 @@ use bevy_fynix::{
     AnyView, Bevy, Cx, Hovered, Prop, ScopedExt as _, Signal, View,
     ViewExt as _, component, keyed,
 };
-use fynix::Transition;
 
 /// Upstream: a signal that re-reads at every update and fires when
 /// the value differs from the last one.
@@ -231,26 +230,24 @@ pub enum FoldOn {
     Chevron,
 }
 
-/// Upstream: the icon that turns with a [`Fold`]'s state.
+/// Upstream: the icon that follows a [`Fold`]'s state.
 ///
 /// Handed to the header closure, which may place [`icon`](Self::icon)
 /// in the header it builds.
 #[derive(Clone)]
 pub struct Chevron {
-    image: Handle<Image>,
     size: Option<f32>,
     tone: Tone,
-    shut: f32,
-    open: f32,
+    shut: Handle<Image>,
+    open: Handle<Image>,
     state: Option<Entity>,
 }
 
 impl Chevron {
-    /// A chevron drawn from `image`, at `shut` degrees while the fold
-    /// is shut and `open` while it is open.
-    pub fn new(image: Handle<Image>, shut: f32, open: f32) -> Self {
+    /// A chevron drawn from `shut` while the fold is shut and from
+    /// `open` while it is open.
+    pub fn new(shut: Handle<Image>, open: Handle<Image>) -> Self {
         Self {
-            image,
             size: None,
             tone: Tone::Dim,
             shut,
@@ -271,24 +268,27 @@ impl Chevron {
         self
     }
 
-    /// The icon, turning over the theme's interact transition with
-    /// the fold's state. Fixed at the shut angle while the fold has
-    /// nothing to fold.
-    pub fn icon(&self) -> Transition<Icon> {
-        let mut icon = icon(self.image.clone())
-            .tone(self.tone)
-            .rotation(self.rotation());
+    /// The icon, following the fold's state. The shut one while the
+    /// fold has nothing to fold.
+    pub fn icon(&self) -> Icon {
+        // An image for each state, as a node that is turned cannot
+        // be clipped by the scroll area it is in.
+        let mut icon = icon(self.image()).tone(self.tone);
         if let Some(size) = self.size {
             icon = icon.size(size);
         }
-        icon.transition(Motion::Interact)
+        icon
     }
 
-    fn rotation(&self) -> Prop<f32> {
-        let (shut, open) = (self.shut, self.open);
+    fn image(&self) -> Prop<Handle<Image>> {
+        let (shut, open) = (self.shut.clone(), self.open.clone());
         match self.state {
             Some(state) => component::<Open, _>(state, move |on| {
-                if on.is_some() { open } else { shut }
+                if on.is_some() {
+                    open.clone()
+                } else {
+                    shut.clone()
+                }
             })
             .into(),
             None => shut.into(),
@@ -389,10 +389,15 @@ impl<H, B, F> Fold<H, B, F> {
         self
     }
 
-    /// The chevron's image, for a caller that has none at hand when
+    /// The chevron's images, for a caller that has none at hand when
     /// it makes the fold.
-    pub fn image(mut self, image: Handle<Image>) -> Self {
-        self.chevron.image = image;
+    pub fn images(
+        mut self,
+        shut: Handle<Image>,
+        open: Handle<Image>,
+    ) -> Self {
+        self.chevron.shut = shut;
+        self.chevron.open = open;
         self
     }
 

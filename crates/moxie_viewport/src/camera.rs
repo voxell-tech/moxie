@@ -25,6 +25,10 @@ pub struct EditorCamera {
     yaw: f32,
     pitch: f32,
     distance: f32,
+    /// The focus it is easing to.
+    to_focus: Vec3,
+    /// The distance it is easing to.
+    to_distance: f32,
     orthographic: bool,
     pub(crate) grid: bool,
     /// Whether it looks through the scene camera, leaving the orbit
@@ -42,6 +46,8 @@ impl Default for EditorCamera {
             yaw: 0.6,
             pitch: -0.4,
             distance: 16.0,
+            to_focus: Vec3::ZERO,
+            to_distance: 16.0,
             orthographic: false,
             grid: true,
             through: false,
@@ -114,6 +120,8 @@ impl EditorCamera {
         self.pitch = pitch.clamp(-MAX_PITCH, MAX_PITCH);
         self.focus = pose.translation
             - self.rotation() * Vec3::Z * self.distance;
+        self.to_focus = self.focus;
+        self.to_distance = self.distance;
     }
 
     /// Stops looking through the scene camera, staying at `pose`,
@@ -125,18 +133,38 @@ impl EditorCamera {
         }
     }
 
-    /// Looks at a sphere of `radius` around `centre`, from far
-    /// enough to see the whole of it.
+    /// Heads for a look at a sphere of `radius` around `centre`,
+    /// from far enough to see the whole of it.
     fn frame(
         &mut self,
         centre: Vec3,
         radius: f32,
         controls: &ViewportControls,
     ) {
-        self.focus = centre;
-        self.distance = (framing_distance(radius, Self::fov())
+        self.to_focus = centre;
+        self.to_distance = (framing_distance(radius, Self::fov())
             * controls.frame_margin)
             .clamp(controls.min_distance, controls.max_distance);
+    }
+
+    /// Closes `share` of the way to the focus and the distance it is
+    /// headed for, and the rest once that is next to nothing.
+    fn ease(&mut self, share: f32) {
+        let near = self.to_distance * 1e-4;
+        if self.focus.distance(self.to_focus) <= near
+            && (self.distance - self.to_distance).abs() <= near
+        {
+            self.focus = self.to_focus;
+            self.distance = self.to_distance;
+            return;
+        }
+        self.focus = self.focus.lerp(self.to_focus, share);
+        self.distance += (self.to_distance - self.distance) * share;
+    }
+
+    fn eased(&self) -> bool {
+        self.focus == self.to_focus
+            && self.distance == self.to_distance
     }
 
     /// Shows `view`. `scene` is where the scene camera is, when
@@ -197,18 +225,21 @@ impl EditorCamera {
         // How tall the view is at the focus, in either projection.
         let seen = 2.0 * self.distance * (Self::fov() / 2.0).tan();
         let step = seen / height.max(1.0);
-        self.focus += rotation * Vec3::X * -delta.x * step
+        let moved = rotation * Vec3::X * -delta.x * step
             + rotation * Vec3::Y * delta.y * step;
+        // At once: a drag holds what it is on.
+        self.focus += moved;
+        self.to_focus += moved;
     }
 
-    /// Moves toward the focus for a positive `amount`, a share of
+    /// Heads toward the focus for a positive `amount`, a share of
     /// the distance.
     pub(crate) fn zoom(
         &mut self,
         amount: f32,
         controls: &ViewportControls,
     ) {
-        self.distance = (self.distance * (1.0 - amount))
+        self.to_distance = (self.to_distance * (1.0 - amount))
             .clamp(controls.min_distance, controls.max_distance);
     }
 }
@@ -343,6 +374,20 @@ pub(crate) fn view_keys(
         if let Some(scene) = scene.as_ref().filter(|_| snap) {
             camera.snap_to(scene);
             camera.through = false;
+        }
+    }
+}
+
+/// Eases each viewport's camera on to where it is headed.
+pub(crate) fn ease_cameras(
+    time: Res<Time>,
+    theme: Res<Theme<EditorTheme>>,
+    mut cameras: Query<&mut EditorCamera>,
+) {
+    let share = theme.0.motion.follow_share(time.delta());
+    for mut camera in &mut cameras {
+        if !camera.eased() {
+            camera.ease(share);
         }
     }
 }
@@ -512,6 +557,9 @@ mod tests {
         let centre = Vec3::new(4.0, 1.0, -2.0);
         for radius in [0.1, 3.0, 250.0] {
             orbit.frame(centre, radius, &controls());
+            // All the way there.
+            orbit.ease(1.0);
+            orbit.ease(1.0);
 
             assert_eq!(orbit.focus, centre);
             // The sphere's edge is inside the half angle of the view.

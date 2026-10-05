@@ -20,11 +20,6 @@ use crate::gaps::{Fold, fold, rail};
 use crate::icons;
 use crate::theme::EditorTheme;
 
-/// The chevron's rotation, clockwise from the asset's resting
-/// up-pointing orientation. Right when shut, down when open.
-pub const CHEVRON_SHUT: f32 = 90.0;
-pub const CHEVRON_OPEN: f32 = 180.0;
-
 /// The rail and indent a [`Foldable`]'s body sits under, for other
 /// nested-but-unfoldable content to share.
 pub fn indent<B>(body: B) -> impl View<Bevy, EditorTheme>
@@ -58,12 +53,9 @@ impl<H, B> Foldable<H, B> {
     /// A fold of `header` over `body`, open and folded by its header
     /// (see [`FoldsOn`]).
     pub fn new(header: H, body: B) -> Self {
-        let chevron = Chevron::new(
-            Default::default(),
-            CHEVRON_SHUT,
-            CHEVRON_OPEN,
-        )
-        .size(8.0);
+        let chevron =
+            Chevron::new(Default::default(), Default::default())
+                .size(8.0);
         Self(fold(chevron, header, body))
     }
 }
@@ -114,12 +106,13 @@ where
     F: Fn(&mut World, bool) + Send + Sync + 'static,
 {
     fn build(self, cx: &mut Cx<'_, Bevy, EditorTheme>) -> Entity {
-        let image =
-            cx.world.resource::<AssetServer>().load(icons::CHEVRON);
+        let assets = cx.world.resource::<AssetServer>();
+        let shut = assets.load(icons::CHEVRON_RIGHT);
+        let open = assets.load(icons::CHEVRON_DOWN);
         let theme = cx.theme();
         let fold = self
             .0
-            .image(image)
+            .images(shut, open)
             .layout(theme.space.fold_toggle, theme.space.fold_indent)
             .rail_color(theme.palette.base[2]);
         cx.build(fold)
@@ -134,7 +127,6 @@ mod tests {
     use bevy::app::TaskPoolPlugin;
     use bevy::asset::AssetPlugin;
     use bevy::image::Image;
-    use bevy::math::Rot2;
     use bevy::prelude::*;
     use bevy::time::{TimePlugin, TimeUpdateStrategy};
     use bevy::ui::widget::ImageNode;
@@ -226,8 +218,11 @@ mod tests {
         }
     }
 
-    fn rotation(app: &App, icon: Entity) -> Rot2 {
-        app.world().get::<UiTransform>(icon).unwrap().rotation
+    /// The path of the image `icon` draws.
+    fn drawn(app: &App, icon: Entity) -> String {
+        let image =
+            &app.world().get::<ImageNode>(icon).unwrap().image;
+        image.path().unwrap().to_string()
     }
 
     fn shown(app: &App, root: Entity) -> bool {
@@ -381,22 +376,19 @@ mod tests {
     }
 
     #[test]
-    fn the_chevron_turns_with_the_state() {
+    fn the_chevron_follows_the_state() {
         let mut app = app();
         let (_, header) = fold_of(&mut app, FoldsOn::Header, false);
         let icon = chevrons(&mut app)[0];
-        assert_eq!(rotation(&app, icon), Rot2::degrees(CHEVRON_SHUT));
-
-        click(&mut app, header);
-        // It travels rather than jumping.
-        assert_ne!(rotation(&app, icon), Rot2::degrees(CHEVRON_SHUT));
-        assert_ne!(rotation(&app, icon), Rot2::degrees(CHEVRON_OPEN));
-        settle(&mut app);
-        assert_eq!(rotation(&app, icon), Rot2::degrees(CHEVRON_OPEN));
+        assert_eq!(drawn(&app, icon), icons::CHEVRON_RIGHT);
 
         click(&mut app, header);
         settle(&mut app);
-        assert_eq!(rotation(&app, icon), Rot2::degrees(CHEVRON_SHUT));
+        assert_eq!(drawn(&app, icon), icons::CHEVRON_DOWN);
+
+        click(&mut app, header);
+        settle(&mut app);
+        assert_eq!(drawn(&app, icon), icons::CHEVRON_RIGHT);
     }
 
     #[test]
@@ -420,6 +412,6 @@ mod tests {
         assert!(!shown(&app, root));
         settle(&mut app);
         let icon = chevrons(&mut app)[0];
-        assert_eq!(rotation(&app, icon), Rot2::degrees(CHEVRON_SHUT));
+        assert_eq!(drawn(&app, icon), icons::CHEVRON_RIGHT);
     }
 }

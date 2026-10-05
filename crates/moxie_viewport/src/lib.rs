@@ -41,7 +41,8 @@ use moxie_ui::{SelectedEntity, text_field_focused};
 
 pub use self::camera::{EditorCamera, framing_distance};
 use self::camera::{
-    frame_selected, place_cameras, rest_hidden_cameras, view_keys,
+    ease_cameras, frame_selected, place_cameras, rest_hidden_cameras,
+    view_keys,
 };
 use self::gizmo::{HandleGizmos, Hot};
 use self::markers::{Markers, draw_cameras_and_lights};
@@ -83,6 +84,7 @@ pub fn plugin(app: &mut App) {
             (
                 (frame_selected, view_keys)
                     .run_if(not(text_field_focused)),
+                ease_cameras,
                 place_cameras,
             )
                 .chain(),

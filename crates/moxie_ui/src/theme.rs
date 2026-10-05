@@ -306,6 +306,21 @@ pub struct Motion {
     pub expand: Duration,
     /// The curve an expansion follows.
     pub expand_ease: EaseFn,
+    /// The time a zoom or a camera takes to close most of the way to
+    /// where it is headed.
+    pub follow: Duration,
+}
+
+impl Motion {
+    /// The share of the way to where it is headed that a value
+    /// following at [`Self::follow`] closes in `delta`.
+    pub fn follow_share(&self, delta: Duration) -> f32 {
+        let follow = self.follow.as_secs_f32();
+        if follow <= 0.0 {
+            return 1.0;
+        }
+        1.0 - (-delta.as_secs_f32() / follow).exp()
+    }
 }
 
 impl Default for EditorTheme {
@@ -363,6 +378,7 @@ impl Default for EditorTheme {
                 ease: ease::cubic::ease_out,
                 expand: Duration::from_millis(240),
                 expand_ease: ease::cubic::ease_in_out,
+                follow: Duration::from_millis(60),
             },
             layer: Layers {
                 drop_hint: 150,
