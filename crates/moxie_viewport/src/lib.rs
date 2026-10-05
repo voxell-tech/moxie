@@ -32,7 +32,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::ui::UiSystems;
 use bevy::ui::widget::ViewportNode;
-use bevy_fynix::shortcut::{Chord, Scope, ShortcutAppExt as _};
+use bevy_fynix::shortcut::{Chord, Mods, Scope, ShortcutAppExt as _};
 use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, Theme};
 use bevy_motiongfx::scene::id::EntityUid;
@@ -47,7 +47,7 @@ use self::camera::{
     FRAME_SELECTED, VIEWPORT, ViewportCamera, ease_cameras,
     place_cameras, rest_hidden_cameras,
 };
-use self::gizmo::{HandleGizmos, Hot};
+use self::gizmo::{ActiveDrag, HandleGizmos, Hot};
 use self::markers::{Markers, draw_cameras_and_lights};
 
 /// The render layer of what only a viewport draws.
@@ -283,14 +283,6 @@ fn surface(camera: Entity) -> AnyView<Bevy, EditorTheme> {
     })
 }
 
-fn alt(keys: &ButtonInput<KeyCode>) -> bool {
-    keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight])
-}
-
-fn shift(keys: &ButtonInput<KeyCode>) -> bool {
-    keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight])
-}
-
 /// On a viewport whose pointer has moved past the theme's click slop
 /// since its press, until the press ends.
 #[derive(Component)]
@@ -302,8 +294,13 @@ fn on_drag(
     mut cameras: Query<(&mut EditorCamera, &Transform)>,
     keys: Res<ButtonInput<KeyCode>>,
     theme: Res<Theme<EditorTheme>>,
+    gizmo: Res<ActiveDrag>,
     mut commands: Commands,
 ) {
+    // A gizmo handle has the pointer, whatever is held with it.
+    if gizmo.under_way() {
+        return;
+    }
     let controls = &theme.0.viewport;
     let node = drag.event_target();
     let Ok((viewport, computed)) = nodes.get(node) else {
@@ -320,9 +317,12 @@ fn on_drag(
     if drag.distance.length() > controls.click_slop {
         commands.entity(node).insert(Swept);
     }
-    let Some(gesture) =
-        Gesture::of(drag.button, alt(&keys), shift(&keys))
-    else {
+    let mods = Mods::held(&keys);
+    let Some(gesture) = Gesture::of(
+        drag.button,
+        mods.has(Mods::ALT),
+        mods.has(Mods::SHIFT),
+    ) else {
         return;
     };
     camera.free(pose);

@@ -504,6 +504,7 @@ pub(crate) fn plugin(app: &mut App) {
         id: VIEWPORT,
         label: "Viewport",
         layer: Layer::Panel,
+        active: None,
     });
 
     let views: [(View, fn(&mut World, Invoke), &[Chord]); 6] = [

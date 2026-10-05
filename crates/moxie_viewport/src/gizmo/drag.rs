@@ -6,6 +6,7 @@ use bevy::picking::pointer::{PointerButton, PointerLocation};
 use bevy::prelude::*;
 use bevy::ui::widget::ViewportNode;
 use bevy_fynix::Theme;
+use bevy_fynix::shortcut::Mods;
 use moxie_ui::SelectedEntity;
 use moxie_ui::inspector::Edit;
 use moxie_ui::theme::{EditorTheme, GizmoStyle};
@@ -273,7 +274,13 @@ pub(super) struct Drag {
 
 /// The gizmo drag under way, of which there is one at most.
 #[derive(Resource, Default)]
-pub(super) struct ActiveDrag(pub(super) Option<Drag>);
+pub(crate) struct ActiveDrag(pub(super) Option<Drag>);
+
+impl ActiveDrag {
+    pub(crate) fn under_way(&self) -> bool {
+        self.0.is_some()
+    }
+}
 
 /// The pointer over the viewport `node`, through its `camera`.
 fn pointing(
@@ -362,7 +369,7 @@ fn on_drag_start(
     let node = start.event_target();
     // With alt held the drag is the camera's.
     let grabs = start.button == PointerButton::Primary
-        && !crate::alt(&keys)
+        && !Mods::held(&keys).has(Mods::ALT)
         && nodes
             .get(node)
             .ok()
@@ -396,20 +403,22 @@ fn on_drag_end(
     }
 }
 
-/// Writes the drag under way, or on Escape puts the subject back.
+/// Ends the drag under way and puts the subject back.
+pub(super) fn cancel(world: &mut World) {
+    if let Some(drag) = world.resource_mut::<ActiveDrag>().0.take() {
+        drag.edit.cancel(world);
+    }
+}
+
+/// Writes the drag under way.
 pub(super) fn drive(world: &mut World) {
     let Some(mut drag) = world.resource_mut::<ActiveDrag>().0.take()
     else {
         return;
     };
-    let keys = world.resource::<ButtonInput<KeyCode>>();
-    let cancels = keys.just_pressed(KeyCode::Escape);
-    let snaps = keys
+    let snaps = world
+        .resource::<ButtonInput<KeyCode>>()
         .any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
-    if cancels {
-        drag.edit.cancel(world);
-        return;
-    }
     let style = world.resource::<Theme<EditorTheme>>().0.gizmo;
     let Some(camera) = world
         .get::<ViewportNode>(drag.node)

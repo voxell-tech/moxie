@@ -13,14 +13,16 @@ use bevy::prelude::*;
 use bevy::ui::widget::ViewportNode;
 use bevy_fynix::Theme;
 use bevy_fynix::shortcut::{
-    Chord, CommandId, CommandSpec, ShortcutAppExt as _,
+    Chord, CommandId, CommandSpec, Layer, ScopeId, ScopeSpec,
+    ShortcutAppExt as _,
 };
 use moxie_ui::SelectedEntity;
 use moxie_ui::inspector::Field;
 use moxie_ui::theme::{EditorTheme, GizmoStyle};
 
+pub(crate) use self::drag::ActiveDrag;
 pub(super) use self::drag::watch;
-use self::drag::{ActiveDrag, Pending, drive};
+use self::drag::{Pending, drive};
 use self::fills::{FillMaterial, Fills, HandleFills, spawn_fills};
 use self::paint::{Shown, paint};
 use super::camera::VIEWPORT;
@@ -42,7 +44,7 @@ pub(super) fn plugin(app: &mut App) {
                 .in_set(super::Overlay)
                 .before(VisibilitySystems::VisibilityPropagate),
         );
-    add_mode_commands(app);
+    add_commands(app);
 }
 
 /// The gizmo's handles, drawn over the scene.
@@ -110,7 +112,34 @@ pub(crate) struct GizmoSettings {
     pub(crate) space: GizmoSpace,
 }
 
-fn add_mode_commands(app: &mut App) {
+/// The scope of a gizmo handle being dragged.
+const DRAG: ScopeSpec = ScopeSpec {
+    id: ScopeId("gizmo.drag"),
+    label: "Dragging the gizmo",
+    layer: Layer::Gesture,
+    active: Some(dragging),
+};
+
+/// Whether a gizmo handle is being dragged.
+fn dragging(world: &World) -> bool {
+    world
+        .get_resource::<ActiveDrag>()
+        .is_some_and(ActiveDrag::under_way)
+}
+
+fn add_commands(app: &mut App) {
+    app.add_scope(DRAG).add_command(
+        CommandSpec {
+            id: CommandId("gizmo.cancel_drag"),
+            label: "Cancel the drag",
+            scope: DRAG.id,
+            run: |world, _| drag::cancel(world),
+            enabled: |_| true,
+            repeat: false,
+        },
+        &[Chord::key(KeyCode::Escape)],
+    );
+
     let pick = |mode: GizmoMode, label, key, run| {
         (
             CommandSpec {
@@ -120,9 +149,7 @@ fn add_mode_commands(app: &mut App) {
                 run,
                 // A drag keeps the mode it began in, or it would
                 // write one field under the handles of another.
-                enabled: |world| {
-                    world.resource::<ActiveDrag>().0.is_none()
-                },
+                enabled: |world| !dragging(world),
                 repeat: false,
             },
             Chord::key(key),
