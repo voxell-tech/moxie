@@ -2,6 +2,7 @@
 //! where the camera looks from.
 
 use bevy::prelude::*;
+use bevy_fynix::shortcut::shortcut_text;
 use bevy_fynix::views::{
     BehaviorExt as _, FrameProps as _, TooltipExt as _, button,
     dropdown, frame, ghost, label, row, segmented,
@@ -12,7 +13,9 @@ use bevy_fynix::{
 use moxie_ui::theme::EditorTheme;
 
 use super::camera::{EditorCamera, View, show};
-use super::gizmo::{GizmoMode, GizmoSettings, GizmoSpace};
+use super::gizmo::{
+    GizmoMode, GizmoSettings, GizmoSpace, MODE_COMMANDS,
+};
 
 /// The toolbar of the viewport `camera` draws.
 pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
@@ -24,6 +27,11 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
         let control = theme.space.row;
         let lit = theme.color.selection;
 
+        let keys = MODE_COMMANDS
+            .iter()
+            .filter_map(|&command| shortcut_text(cx.world, command))
+            .collect::<Vec<_>>()
+            .join(", ");
         let mode = segmented(
             ["Move", "Rotate", "Scale"],
             resource::<GizmoSettings, _>(|settings| {
@@ -37,7 +45,7 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
         )
         .width(px(168.0))
         .height(px(control))
-        .tooltip(|| label("Gizmo mode (W, E, R)"));
+        .tooltip(move || label(format!("Gizmo mode ({keys})")));
         let space = segmented(
             ["World", "Local"],
             resource::<GizmoSettings, _>(|settings| {

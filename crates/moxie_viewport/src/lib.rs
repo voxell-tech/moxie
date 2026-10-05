@@ -33,6 +33,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::ui::UiSystems;
 use bevy::ui::widget::ViewportNode;
+use bevy_fynix::shortcut::{Chord, ShortcutAppExt as _};
 use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, Theme};
 use bevy_motiongfx::scene::id::EntityUid;
@@ -44,7 +45,7 @@ pub use self::camera::{
     framing_distance, restore_views,
 };
 use self::camera::{
-    ease_cameras, frame_selected, place_cameras, rest_hidden_cameras,
+    FRAME_SELECTED, ease_cameras, place_cameras, rest_hidden_cameras,
     view_keys,
 };
 use self::gizmo::{HandleGizmos, Hot};
@@ -82,12 +83,12 @@ pub fn plugin(app: &mut App) {
         .init_resource::<ViewportViews>()
         .init_resource::<SelectedEntity>()
         .add_plugins(gizmo::plugin)
+        .add_command(FRAME_SELECTED, &[Chord::key(KeyCode::KeyF)])
         .add_systems(Startup, (keep_gizmos_to_viewports, spawn_grid))
         .add_systems(
             Update,
             (
-                (frame_selected, view_keys)
-                    .run_if(not(text_field_focused)),
+                view_keys.run_if(not(text_field_focused)),
                 ease_cameras,
                 place_cameras,
             )

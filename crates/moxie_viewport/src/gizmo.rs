@@ -12,9 +12,12 @@ use bevy::picking::pointer::PointerLocation;
 use bevy::prelude::*;
 use bevy::ui::widget::ViewportNode;
 use bevy_fynix::Theme;
+use bevy_fynix::shortcut::{
+    Chord, CommandId, CommandSpec, GLOBAL, ShortcutAppExt as _,
+};
+use moxie_ui::SelectedEntity;
 use moxie_ui::inspector::Field;
 use moxie_ui::theme::{EditorTheme, GizmoStyle};
-use moxie_ui::{SelectedEntity, text_field_focused};
 
 pub(super) use self::drag::watch;
 use self::drag::{ActiveDrag, Pending, drive};
@@ -31,18 +34,14 @@ pub(super) fn plugin(app: &mut App) {
         .init_resource::<GizmoSettings>()
         .init_resource::<ActiveDrag>()
         .add_systems(Startup, (style_handles, spawn_fills))
-        .add_systems(
-            Update,
-            (pick_mode.run_if(not(text_field_focused)), drive)
-                .chain()
-                .after(super::place_cameras),
-        )
+        .add_systems(Update, drive.after(super::place_cameras))
         .add_systems(
             PostUpdate,
             handles
                 .in_set(super::Overlay)
                 .before(VisibilitySystems::VisibilityPropagate),
         );
+    add_mode_commands(app);
 }
 
 /// The gizmo's handles, drawn over the scene.
@@ -101,22 +100,47 @@ pub(crate) struct GizmoSettings {
     pub(crate) space: GizmoSpace,
 }
 
-fn pick_mode(
-    keys: Res<ButtonInput<KeyCode>>,
-    active: Res<ActiveDrag>,
-    mut settings: ResMut<GizmoSettings>,
-) {
-    // A drag keeps the mode it began in, or it would write one field
-    // under the handles of another.
-    if active.0.is_some() {
-        return;
+/// The commands that pick the gizmo's mode, in the order of
+/// [`GizmoMode::ALL`].
+pub(crate) const MODE_COMMANDS: [CommandId; 3] = [
+    CommandId("gizmo.mode.translate"),
+    CommandId("gizmo.mode.rotate"),
+    CommandId("gizmo.mode.scale"),
+];
+
+fn add_mode_commands(app: &mut App) {
+    let pick = |mode: usize, label, key, run| {
+        (
+            CommandSpec {
+                id: MODE_COMMANDS[mode],
+                label,
+                scope: GLOBAL,
+                run,
+                // A drag keeps the mode it began in, or it would
+                // write one field under the handles of another.
+                enabled: |world| {
+                    world.resource::<ActiveDrag>().0.is_none()
+                },
+                repeat: false,
+            },
+            Chord::key(key),
+        )
+    };
+    fn set(world: &mut World, mode: GizmoMode) {
+        world.resource_mut::<GizmoSettings>().mode = mode;
     }
-    let picked = [KeyCode::KeyW, KeyCode::KeyE, KeyCode::KeyR]
-        .into_iter()
-        .zip(GizmoMode::ALL)
-        .find(|(key, _)| keys.just_pressed(*key));
-    if let Some((_, mode)) = picked {
-        settings.mode = mode;
+    for (command, chord) in [
+        pick(0, "Move", KeyCode::KeyW, |world| {
+            set(world, GizmoMode::Translate);
+        }),
+        pick(1, "Rotate", KeyCode::KeyE, |world| {
+            set(world, GizmoMode::Rotate);
+        }),
+        pick(2, "Scale", KeyCode::KeyR, |world| {
+            set(world, GizmoMode::Scale);
+        }),
+    ] {
+        app.add_command(command, &[chord]);
     }
 }
 

@@ -10,6 +10,7 @@ use bevy::picking::pointer::PointerLocation;
 use bevy::prelude::*;
 use bevy::ui::widget::ViewportNode;
 use bevy_fynix::Theme;
+use bevy_fynix::shortcut::{CommandId, CommandSpec, GLOBAL};
 use moxie_ui::SelectedEntity;
 use moxie_ui::theme::{EditorTheme, ViewportControls};
 
@@ -566,9 +567,22 @@ fn bounding_sphere(
     Some(((min + max) / 2.0, (max - min).length() / 2.0))
 }
 
-/// Frames the selection in every viewport when F is pressed.
-pub(crate) fn frame_selected(
-    keys: Res<ButtonInput<KeyCode>>,
+/// The command that frames the selection.
+pub(crate) const FRAME_SELECTED: CommandSpec = CommandSpec {
+    id: CommandId("viewport.frame_selected"),
+    label: "Frame selected",
+    scope: GLOBAL,
+    run: |world| {
+        if let Err(err) = world.run_system_cached(frame_selected) {
+            error!("could not frame the selection: {err}");
+        }
+    },
+    enabled: |world| world.resource::<SelectedEntity>().0.is_some(),
+    repeat: false,
+};
+
+/// Frames the selection in every viewport.
+fn frame_selected(
     selected: Res<SelectedEntity>,
     theme: Res<Theme<EditorTheme>>,
     children: Query<&Children>,
@@ -576,9 +590,6 @@ pub(crate) fn frame_selected(
     transforms: Query<&GlobalTransform>,
     mut cameras: Query<&mut EditorCamera>,
 ) {
-    if !keys.just_pressed(KeyCode::KeyF) {
-        return;
-    }
     let controls = &theme.0.viewport;
     let Some((centre, radius)) = selected.0.and_then(|root| {
         bounding_sphere(root, &children, &bounds).or_else(|| {
