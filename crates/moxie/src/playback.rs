@@ -25,7 +25,7 @@ pub(crate) const TOGGLE_PLAYBACK: CommandSpec = CommandSpec {
     id: CommandId("playback.toggle"),
     label: "Play or pause",
     scope: GLOBAL,
-    run: |world| world.trigger(TogglePlayback),
+    run: |world, _| world.trigger(TogglePlayback),
     enabled: |_| true,
     repeat: false,
 };

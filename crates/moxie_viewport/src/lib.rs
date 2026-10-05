@@ -20,7 +20,6 @@ use bevy::camera::{CameraUpdateSystems, RenderTarget};
 use bevy::dev_tools::infinite_grid::{
     InfiniteGrid, InfiniteGridPlugin, InfiniteGridSettings,
 };
-use bevy::ecs::schedule::common_conditions::not;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::math::bounding::Aabb3d;
 use bevy::picking::events::{Click, Drag, DragEnd, Pointer, Scroll};
@@ -33,20 +32,20 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::ui::UiSystems;
 use bevy::ui::widget::ViewportNode;
-use bevy_fynix::shortcut::{Chord, ShortcutAppExt as _};
+use bevy_fynix::shortcut::{Chord, Scope, ShortcutAppExt as _};
 use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, Theme};
 use bevy_motiongfx::scene::id::EntityUid;
+use moxie_ui::SelectedEntity;
 use moxie_ui::theme::EditorTheme;
-use moxie_ui::{SelectedEntity, text_field_focused};
 
 pub use self::camera::{
     EditorCamera, ViewportView, ViewportViews, capture_views,
     framing_distance, restore_views,
 };
 use self::camera::{
-    FRAME_SELECTED, ease_cameras, place_cameras, rest_hidden_cameras,
-    view_keys,
+    FRAME_SELECTED, VIEWPORT, ViewportCamera, ease_cameras,
+    place_cameras, rest_hidden_cameras,
 };
 use self::gizmo::{HandleGizmos, Hot};
 use self::markers::{Markers, draw_cameras_and_lights};
@@ -82,18 +81,10 @@ pub fn plugin(app: &mut App) {
         .init_resource::<OutputAspect>()
         .init_resource::<ViewportViews>()
         .init_resource::<SelectedEntity>()
-        .add_plugins(gizmo::plugin)
+        .add_plugins((camera::add_view_commands, gizmo::plugin))
         .add_command(FRAME_SELECTED, &[Chord::key(KeyCode::KeyF)])
         .add_systems(Startup, (keep_gizmos_to_viewports, spawn_grid))
-        .add_systems(
-            Update,
-            (
-                view_keys.run_if(not(text_field_focused)),
-                ease_cameras,
-                place_cameras,
-            )
-                .chain(),
-        )
+        .add_systems(Update, (ease_cameras, place_cameras).chain())
         // After the layout: a panel built this frame has its size
         // by then, and its camera draws at once.
         .add_systems(
@@ -222,7 +213,8 @@ pub fn panel() -> AnyView<Bevy, EditorTheme> {
             column((toolbar::toolbar(camera), surface(camera)))
                 .width(percent(100.0))
                 .height(percent(100.0))
-                .gap(0.0),
+                .gap(0.0)
+                .with((Scope(VIEWPORT), ViewportCamera(camera))),
         )
     })
 }

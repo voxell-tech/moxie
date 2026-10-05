@@ -12,7 +12,7 @@ use bevy_fynix::{
 };
 use moxie_ui::theme::EditorTheme;
 
-use super::camera::{EditorCamera, View, show};
+use super::camera::{EditorCamera, VIEW_COMMANDS, View, show};
 use super::gizmo::{
     GizmoMode, GizmoSettings, GizmoSpace, MODE_COMMANDS,
 };
@@ -81,6 +81,11 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
                     orbit.grid = !orbit.grid;
                 }
             });
+        let view_keys = VIEW_COMMANDS
+            .iter()
+            .filter_map(|&command| shortcut_text(cx.world, command))
+            .collect::<Vec<_>>()
+            .join(", ");
         let chevron = cx
             .world
             .resource::<AssetServer>()
@@ -108,7 +113,7 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
         .width(px(132.0))
         .max_width(px(132.0))
         .height(px(control))
-        .tooltip(|| label("View (numpad 5, 1, 3, 7, 0)"));
+        .tooltip(move || label(format!("View ({view_keys})")));
 
         cx.build(
             row((mode, space, frame().grow(1.0), grid, view))

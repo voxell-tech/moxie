@@ -13,7 +13,7 @@ use bevy::prelude::*;
 use bevy::ui::widget::ViewportNode;
 use bevy_fynix::Theme;
 use bevy_fynix::shortcut::{
-    Chord, CommandId, CommandSpec, GLOBAL, ShortcutAppExt as _,
+    Chord, CommandId, CommandSpec, ShortcutAppExt as _,
 };
 use moxie_ui::SelectedEntity;
 use moxie_ui::inspector::Field;
@@ -23,6 +23,7 @@ pub(super) use self::drag::watch;
 use self::drag::{ActiveDrag, Pending, drive};
 use self::fills::{FillMaterial, Fills, HandleFills, spawn_fills};
 use self::paint::{Shown, paint};
+use super::camera::VIEWPORT;
 use super::{EDITOR_LAYER, EditorCamera};
 
 /// Segments a rotation ring is drawn and picked by.
@@ -114,7 +115,7 @@ fn add_mode_commands(app: &mut App) {
             CommandSpec {
                 id: MODE_COMMANDS[mode],
                 label,
-                scope: GLOBAL,
+                scope: VIEWPORT,
                 run,
                 // A drag keeps the mode it began in, or it would
                 // write one field under the handles of another.
@@ -130,13 +131,13 @@ fn add_mode_commands(app: &mut App) {
         world.resource_mut::<GizmoSettings>().mode = mode;
     }
     for (command, chord) in [
-        pick(0, "Move", KeyCode::KeyW, |world| {
+        pick(0, "Move", KeyCode::KeyW, |world, _| {
             set(world, GizmoMode::Translate);
         }),
-        pick(1, "Rotate", KeyCode::KeyE, |world| {
+        pick(1, "Rotate", KeyCode::KeyE, |world, _| {
             set(world, GizmoMode::Rotate);
         }),
-        pick(2, "Scale", KeyCode::KeyR, |world| {
+        pick(2, "Scale", KeyCode::KeyR, |world, _| {
             set(world, GizmoMode::Scale);
         }),
     ] {

@@ -6,11 +6,13 @@ use core::f32::consts::FRAC_PI_2;
 use bevy::camera::ScalingMode;
 use bevy::camera::primitives::Aabb;
 use bevy::camera::visibility::RenderLayers;
-use bevy::picking::pointer::PointerLocation;
 use bevy::prelude::*;
 use bevy::ui::widget::ViewportNode;
 use bevy_fynix::Theme;
-use bevy_fynix::shortcut::{CommandId, CommandSpec, GLOBAL};
+use bevy_fynix::shortcut::{
+    Chord, CommandId, CommandSpec, Invoke, Layer, Mods, ScopeId,
+    ScopeSpec, ShortcutAppExt as _,
+};
 use moxie_ui::SelectedEntity;
 use moxie_ui::theme::{EditorTheme, ViewportControls};
 
@@ -346,9 +348,6 @@ pub(crate) enum View {
     Camera,
 }
 
-/// The key that moves a viewport to where the scene camera is.
-const SNAP_KEY: KeyCode = KeyCode::NumpadDecimal;
-
 impl View {
     pub(crate) const ALL: [Self; 6] = [
         Self::Perspective,
@@ -377,17 +376,6 @@ impl View {
             Self::Right => Some((FRAC_PI_2, 0.0)),
             Self::Top => Some((0.0, -FRAC_PI_2)),
             _ => None,
-        }
-    }
-
-    fn key(self) -> Option<KeyCode> {
-        match self {
-            Self::Perspective => None,
-            Self::Orthographic => Some(KeyCode::Numpad5),
-            Self::Front => Some(KeyCode::Numpad1),
-            Self::Right => Some(KeyCode::Numpad3),
-            Self::Top => Some(KeyCode::Numpad7),
-            Self::Camera => Some(KeyCode::Numpad0),
         }
     }
 }
@@ -422,48 +410,156 @@ pub(crate) fn show(
     }
 }
 
-/// Shows the [`View`] whose key is pressed, or snaps to the scene
-/// camera, in the viewport the pointer is in. A key pressed in the
-/// view it leads to leaves it.
-pub(crate) fn view_keys(
-    keys: Res<ButtonInput<KeyCode>>,
-    nodes: Query<(&ViewportNode, &PointerLocation)>,
+/// The scope of a viewport's panel.
+pub(crate) const VIEWPORT: ScopeId = ScopeId("viewport");
+
+/// On a viewport's panel: the camera it shows through.
+#[derive(Component, Clone, Copy)]
+pub(crate) struct ViewportCamera(pub(crate) Entity);
+
+/// The camera of the viewport a command was run in.
+pub(crate) fn aimed(world: &World, invoke: Invoke) -> Option<Entity> {
+    Some(world.get::<ViewportCamera>(invoke.target?)?.0)
+}
+
+/// Shows `view` in the viewport a key was pressed in. A key pressed
+/// in the view it leads to leaves it.
+fn show_by_key(world: &mut World, invoke: Invoke, view: View) {
+    let Some(camera) = aimed(world, invoke) else {
+        return;
+    };
+    let Some(mut orbit) = world.get_mut::<EditorCamera>(camera)
+    else {
+        return;
+    };
+    let view = match view {
+        View::Camera if orbit.through => {
+            orbit.through = false;
+            return;
+        }
+        View::Orthographic if orbit.orthographic => View::Perspective,
+        _ => view,
+    };
+    if let Err(err) =
+        world.run_system_cached_with(show, (camera, view))
+    {
+        error!("could not change the view: {err}");
+    }
+}
+
+/// Moves a viewport's camera to where the scene camera is, free.
+fn snap(
+    In(camera): In<Entity>,
     selected: Res<SelectedEntity>,
     scene: Query<(&GlobalTransform, &Projection), Lens>,
     mut cameras: Query<&mut EditorCamera>,
 ) {
-    let view = View::ALL.into_iter().find(|view| {
-        view.key().is_some_and(|key| keys.just_pressed(key))
-    });
-    let snap = keys.just_pressed(SNAP_KEY);
-    if view.is_none() && !snap {
-        return;
-    }
     let scene = lens(&selected, &scene)
         .map(|(pose, _)| pose.compute_transform());
-    for (node, pointer) in &nodes {
-        let camera = node
-            .camera
-            .filter(|_| pointer.location.is_some())
-            .and_then(|camera| cameras.get_mut(camera).ok());
-        let Some(mut camera) = camera else {
-            continue;
-        };
-        match view {
-            Some(View::Orthographic) if camera.orthographic => {
-                camera.show(View::Perspective, None);
-            }
-            Some(View::Camera) if camera.through => {
-                camera.through = false;
-            }
-            Some(view) => camera.show(view, scene.as_ref()),
-            None => {}
-        }
-        if let Some(scene) = scene.as_ref().filter(|_| snap) {
-            camera.snap_to(scene);
-            camera.through = false;
-        }
+    if let (Some(scene), Ok(mut camera)) =
+        (scene, cameras.get_mut(camera))
+    {
+        camera.snap_to(&scene);
+        camera.through = false;
     }
+}
+
+/// The commands that show a view and have a key, in the order a
+/// viewport lists its views.
+pub(crate) const VIEW_COMMANDS: [CommandId; 5] = [
+    CommandId("viewport.view.orthographic"),
+    CommandId("viewport.view.front"),
+    CommandId("viewport.view.right"),
+    CommandId("viewport.view.top"),
+    CommandId("viewport.view.camera"),
+];
+
+/// The commands that change a viewport's view, with a key on the
+/// numpad and one beside Alt for a keyboard with none.
+pub(crate) fn add_view_commands(app: &mut App) {
+    let command = |id, label, run| CommandSpec {
+        id: CommandId(id),
+        label,
+        scope: VIEWPORT,
+        run,
+        enabled: |_| true,
+        repeat: false,
+    };
+    let keys = |numpad, digit| {
+        [
+            Chord::key(numpad),
+            Chord {
+                key: digit,
+                mods: Mods::ALT,
+            },
+        ]
+    };
+    app.add_scope(ScopeSpec {
+        id: VIEWPORT,
+        label: "Viewport",
+        layer: Layer::Panel,
+    })
+    .add_command(
+        command(
+            "viewport.view.perspective",
+            "Perspective",
+            |w, i| {
+                show_by_key(w, i, View::Perspective);
+            },
+        ),
+        &[],
+    )
+    .add_command(
+        command(
+            "viewport.view.orthographic",
+            "Orthographic",
+            |w, i| {
+                show_by_key(w, i, View::Orthographic);
+            },
+        ),
+        &keys(KeyCode::Numpad5, KeyCode::Digit5),
+    )
+    .add_command(
+        command("viewport.view.front", "Front", |w, i| {
+            show_by_key(w, i, View::Front);
+        }),
+        &keys(KeyCode::Numpad1, KeyCode::Digit1),
+    )
+    .add_command(
+        command("viewport.view.right", "Right", |w, i| {
+            show_by_key(w, i, View::Right);
+        }),
+        &keys(KeyCode::Numpad3, KeyCode::Digit3),
+    )
+    .add_command(
+        command("viewport.view.top", "Top", |w, i| {
+            show_by_key(w, i, View::Top);
+        }),
+        &keys(KeyCode::Numpad7, KeyCode::Digit7),
+    )
+    .add_command(
+        command("viewport.view.camera", "Camera", |w, i| {
+            show_by_key(w, i, View::Camera);
+        }),
+        &keys(KeyCode::Numpad0, KeyCode::Digit0),
+    )
+    .add_command(
+        command(
+            "viewport.snap_to_camera",
+            "Snap to camera",
+            |w, i| {
+                let Some(camera) = aimed(w, i) else {
+                    return;
+                };
+                if let Err(err) =
+                    w.run_system_cached_with(snap, camera)
+                {
+                    error!("could not snap to the camera: {err}");
+                }
+            },
+        ),
+        &keys(KeyCode::NumpadDecimal, KeyCode::Period),
+    );
 }
 
 /// Eases each viewport's camera on to where it is headed.
@@ -571,9 +667,14 @@ fn bounding_sphere(
 pub(crate) const FRAME_SELECTED: CommandSpec = CommandSpec {
     id: CommandId("viewport.frame_selected"),
     label: "Frame selected",
-    scope: GLOBAL,
-    run: |world| {
-        if let Err(err) = world.run_system_cached(frame_selected) {
+    scope: VIEWPORT,
+    run: |world, invoke| {
+        let Some(camera) = aimed(world, invoke) else {
+            return;
+        };
+        let framed =
+            world.run_system_cached_with(frame_selected, camera);
+        if let Err(err) = framed {
             error!("could not frame the selection: {err}");
         }
     },
@@ -581,8 +682,9 @@ pub(crate) const FRAME_SELECTED: CommandSpec = CommandSpec {
     repeat: false,
 };
 
-/// Frames the selection in every viewport.
+/// Frames the selection in the viewport of `camera`.
 fn frame_selected(
+    In(camera): In<Entity>,
     selected: Res<SelectedEntity>,
     theme: Res<Theme<EditorTheme>>,
     children: Query<&Children>,
@@ -599,7 +701,7 @@ fn frame_selected(
     }) else {
         return;
     };
-    for mut camera in &mut cameras {
+    if let Ok(mut camera) = cameras.get_mut(camera) {
         camera.frame(centre, radius, controls);
     }
 }
