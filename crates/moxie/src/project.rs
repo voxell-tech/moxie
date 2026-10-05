@@ -20,6 +20,7 @@ use moxie_asset::project::{
     EXTENSION, ProjectFile, ProjectRef, read_project, write_project,
 };
 use moxie_asset::{AnyPath, InternalAssets, replace_internal_assets};
+use moxie_viewport::ViewportViews;
 
 use crate::{
     EditorScene, ProjectBookmarks, ProjectLayout, ProjectPath,
@@ -27,15 +28,16 @@ use crate::{
     layout,
 };
 
+/// The project a blank one is: what it holds, how its dock is laid
+/// out and where its viewport looks from. Saved from the editor.
+const DEFAULT: &str = include_str!("../default.mox");
+
 /// Replaces whatever is loaded with a blank project.
 pub(crate) fn new_scene(world: &mut World) {
-    clear(world);
-    replace_internal_assets(world, Vec::new());
-    world.insert_resource(EditorScene::default());
+    if !load(world, DEFAULT, Path::new("default.mox")) {
+        error!("the default project could not be read");
+    }
     world.insert_resource(ProjectPath(None));
-    spawn_defaults(world);
-    world.insert_resource(ProjectLayout::standard());
-    layout::apply(world);
 }
 
 /// Spawns what a blank project starts with: a camera for each of 3D
@@ -144,8 +146,16 @@ pub fn open_path(world: &mut World, path: PathBuf) {
 /// Replaces whatever is loaded with the project `text` holds, read
 /// from `path`.
 pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
-    let Some(project) = deserialize(world, text, &path) else {
-        return;
+    if load(world, text, &path) {
+        world.insert_resource(ProjectPath(Some(path)));
+    }
+}
+
+/// Replaces whatever is loaded with the project `text` holds, whose
+/// files are beside `path`. Whether it could be read.
+fn load(world: &mut World, text: &str, path: &Path) -> bool {
+    let Some(project) = deserialize(world, text, path) else {
+        return false;
     };
 
     clear(world);
@@ -160,10 +170,11 @@ pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
         &registry.read(),
     ) {
         error!("could not spawn {}: {err}", path.display());
-        return;
+        return false;
     }
     stage_if_bare(world);
     layout::apply(world);
+    moxie_viewport::restore_views(world);
 
     // The recompile runs on `EditorScene` changing, so inserting it
     // is the whole of loading the animation.
@@ -171,7 +182,7 @@ pub(crate) fn open(world: &mut World, text: &str, path: PathBuf) {
         project.scene,
     )));
     world.insert_resource(ProjectBookmarks(project.bookmarks));
-    world.insert_resource(ProjectPath(Some(path)));
+    true
 }
 
 /// Gives a project that came with no camera the cameras and the
@@ -208,6 +219,7 @@ pub(crate) fn serialize(
     folder: &Path,
 ) -> Option<String> {
     layout::capture(world);
+    moxie_viewport::capture_views(world);
     // The root comes too, or the `ChildOf` on everything below it
     // would name an entity the file never held.
     let subjects: Vec<Entity> = world
@@ -230,6 +242,7 @@ pub(crate) fn serialize(
         .deny_all_resources()
         .allow_resource::<ProjectSettings>()
         .allow_resource::<ProjectLayout>()
+        .allow_resource::<ViewportViews>()
         .extract_resources()
         .build();
 
@@ -302,6 +315,7 @@ fn clear(world: &mut World) {
     // project's.
     world.insert_resource(ProjectSettings::default());
     world.insert_resource(ProjectLayout::default());
+    world.insert_resource(ViewportViews::default());
 }
 
 /// What a subject is saved as. An allowlist: the rest is the running

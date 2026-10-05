@@ -123,6 +123,7 @@ fn setup_editor_ui(
     mut registry: ResMut<DockRegistry<EditorTheme>>,
     mut tree: ResMut<DockTree>,
     project: Res<ProjectSettings>,
+    layout: Res<ProjectLayout>,
     assets: Res<AssetServer>,
 ) {
     let size = project.size();
@@ -153,8 +154,9 @@ fn setup_editor_ui(
 
     register_windows(&mut registry, &assets);
 
-    if let Some(standard) = ProjectLayout::standard().tree() {
-        *tree = standard;
+    // The layout of the project loaded ahead of this.
+    if let Some(saved) = layout.tree() {
+        *tree = saved;
     }
 }
 

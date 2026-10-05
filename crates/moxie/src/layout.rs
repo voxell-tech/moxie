@@ -39,38 +39,6 @@ pub enum LayoutNode {
 }
 
 impl ProjectLayout {
-    /// The layout a blank project starts with.
-    pub(crate) fn standard() -> Self {
-        let split = |stacked, fraction, a, b| LayoutNode::Split {
-            stacked,
-            fraction,
-            a,
-            b,
-        };
-        let tabs = |windows: &[&str]| LayoutNode::Tabs {
-            windows: windows
-                .iter()
-                .map(ToString::to_string)
-                .collect(),
-            active: 0,
-        };
-        Self {
-            nodes: vec![
-                split(true, 0.7, 1, 8),
-                split(false, 0.28, 2, 5),
-                split(true, 0.5, 3, 4),
-                tabs(&["preview"]),
-                tabs(&["inspector", "project"]),
-                split(false, 0.76, 6, 7),
-                tabs(&["viewport"]),
-                tabs(&["hierarchy", "assets"]),
-                split(false, 0.8, 9, 10),
-                tabs(&["timeline"]),
-                tabs(&["action"]),
-            ],
-        }
-    }
-
     /// The layout `tree` holds.
     pub(crate) fn of(tree: &DockTree) -> Self {
         let mut nodes = Vec::new();

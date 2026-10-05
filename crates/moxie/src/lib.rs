@@ -70,7 +70,7 @@ impl Plugin for MoxiePlugin {
         .init_resource::<ProjectLayout>()
         // Ahead of `Startup`, where an app opens the project it was
         // asked for.
-        .add_systems(PreStartup, project::spawn_defaults)
+        .add_systems(PreStartup, project::new_scene)
         .add_systems(PreUpdate, ensure_scene_root);
     }
 }
