@@ -81,7 +81,7 @@ pub fn plugin(app: &mut App) {
         .init_resource::<OutputAspect>()
         .init_resource::<ViewportViews>()
         .init_resource::<SelectedEntity>()
-        .add_plugins((camera::add_view_commands, gizmo::plugin))
+        .add_plugins((camera::plugin, gizmo::plugin))
         .add_command(FRAME_SELECTED, &[Chord::key(KeyCode::KeyF)])
         .add_systems(Startup, (keep_gizmos_to_viewports, spawn_grid))
         .add_systems(Update, (ease_cameras, place_cameras).chain())

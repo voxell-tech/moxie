@@ -476,7 +476,7 @@ pub(crate) const VIEW_COMMANDS: [CommandId; 5] = [
 
 /// The commands that change a viewport's view, with a key on the
 /// numpad and one beside Alt for a keyboard with none.
-pub(crate) fn add_view_commands(app: &mut App) {
+pub(crate) fn plugin(app: &mut App) {
     let command = |id, label, run| CommandSpec {
         id: CommandId(id),
         label,
