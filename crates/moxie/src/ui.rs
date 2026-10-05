@@ -26,8 +26,8 @@ use moxie_ui::theme::{EditorTheme, Hue};
 use crate::subject::Target;
 use crate::{
     EditorState, PreviewImage, ProjectBookmarks, ProjectLayout,
-    ProjectPath, ProjectSettings, SelectedAction, SelectedEntity,
-    playback, scene, view,
+    ProjectPath, ProjectSettings, SelectedAction, playback, scene,
+    view,
 };
 
 /// Wires the editor UI tree and the per-frame
@@ -77,7 +77,6 @@ impl Plugin for UiPlugin {
         .init_resource::<preview::PreviewView>()
         .init_resource::<view::Rendering>()
         .init_resource::<SelectedAction>()
-        .init_resource::<SelectedEntity>()
         .init_resource::<ProjectBookmarks>()
         .init_resource::<ProjectPath>()
         .init_resource::<assets::AssetFoldState>()
