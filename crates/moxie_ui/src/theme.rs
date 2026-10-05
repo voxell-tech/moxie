@@ -90,6 +90,7 @@ pub struct EditorTheme {
     pub motion: Motion,
     pub layer: Layers,
     pub viewport: ViewportControls,
+    pub gizmo: GizmoStyle,
 }
 
 /// Semantic colour slots. A fill is translucent and layers over
@@ -190,9 +191,6 @@ pub struct Layers {
 pub struct ViewportControls {
     /// Radians a pixel of drag orbits by.
     pub orbit_speed: f32,
-    /// The share of the distance to the focus a pixel of drag pans
-    /// by.
-    pub pan_speed: f32,
     /// The share of the distance to the focus a scrolled line zooms
     /// by.
     pub zoom_per_line: f32,
@@ -206,6 +204,87 @@ pub struct ViewportControls {
     /// How far a pressed pointer moves, in logical pixels, before
     /// its release stops being a click.
     pub click_slop: f32,
+    /// How much farther than a tight fit the camera sits from what
+    /// it frames, as a factor.
+    pub frame_margin: f32,
+    /// The radius framed around a selection with no bounds.
+    pub frame_radius: f32,
+    /// The height of the viewport's toolbar.
+    pub toolbar: f32,
+}
+
+/// How a viewport's transform gizmo looks and answers the pointer.
+/// Lengths are logical pixels on screen.
+#[derive(Clone, Copy, Debug)]
+pub struct GizmoStyle {
+    /// A handle's length from the gizmo's origin, and the radius of
+    /// a rotation ring.
+    pub size: f32,
+    /// The radius of the handle at the origin, where the stem of an
+    /// axis starts.
+    pub centre: f32,
+    /// The radius of the ring around a rotation or a scale.
+    pub outer_ring: f32,
+    /// The length of the cone that tips a translation handle.
+    pub cone_length: f32,
+    /// The radius of that cone's base.
+    pub cone_radius: f32,
+    /// The side of the box that tips a scale handle.
+    pub tip: f32,
+    /// How far along each of its two axes the middle of a plane
+    /// handle is.
+    pub plane_offset: f32,
+    /// The side of a plane handle.
+    pub plane_size: f32,
+    /// How near the pointer has to be to a handle to grab it.
+    pub pick_radius: f32,
+    pub line_width: f32,
+    /// How far behind the gizmo's origin a rotation ring is still
+    /// drawn, as a share of its radius.
+    pub ring_overlap: f32,
+    /// How far off the line of sight an axis handle starts to show
+    /// and where it shows in full, as one less the cosine between
+    /// the two.
+    pub axis_fade: [f32; 2],
+    /// The same for a plane handle seen edge on, as the cosine
+    /// between its normal and the line of sight.
+    pub plane_fade: [f32; 2],
+    /// The opacity of a handle at rest.
+    pub rest_alpha: f32,
+    /// The opacity of the handle under the pointer, or being
+    /// dragged.
+    pub hot_alpha: f32,
+    /// The opacity of a plane handle's fill, as a share of its
+    /// outline's.
+    pub plane_fill: f32,
+    /// The opacity of the disc that turns the subject freely, shown
+    /// under the pointer.
+    pub ball_alpha: f32,
+    /// World units a snapped translation moves in.
+    pub translate_snap: f32,
+    /// Radians a snapped rotation turns in.
+    pub rotate_snap: f32,
+    /// The step of a snapped scale factor.
+    pub scale_snap: f32,
+    /// The handles of the x, y and z axes.
+    pub axes: [Color; 3],
+    /// The handles that face the view.
+    pub centre_color: Color,
+    /// The wedge a rotation has swept.
+    pub sweep: Color,
+    /// The bounds of the subject under the pointer.
+    pub hover: Color,
+    /// The frame a scene camera looks out through.
+    pub camera: Color,
+    /// How far ahead of a scene camera its frame is drawn, in world
+    /// units.
+    pub camera_depth: f32,
+    /// The disc and rays of a directional light.
+    pub light: Color,
+    /// The radius of a directional light's disc, in world units.
+    pub light_radius: f32,
+    /// The length of a directional light's rays, in world units.
+    pub light_ray: f32,
 }
 
 /// Font sizes, three steps.
@@ -227,6 +306,21 @@ pub struct Motion {
     pub expand: Duration,
     /// The curve an expansion follows.
     pub expand_ease: EaseFn,
+    /// The time a zoom or a camera takes to close most of the way to
+    /// where it is headed.
+    pub follow: Duration,
+}
+
+impl Motion {
+    /// The share of the way to where it is headed that a value
+    /// following at [`Self::follow`] closes in `delta`.
+    pub fn follow_share(&self, delta: Duration) -> f32 {
+        let follow = self.follow.as_secs_f32();
+        if follow <= 0.0 {
+            return 1.0;
+        }
+        1.0 - (-delta.as_secs_f32() / follow).exp()
+    }
 }
 
 impl Default for EditorTheme {
@@ -284,6 +378,7 @@ impl Default for EditorTheme {
                 ease: ease::cubic::ease_out,
                 expand: Duration::from_millis(240),
                 expand_ease: ease::cubic::ease_in_out,
+                follow: Duration::from_millis(60),
             },
             layer: Layers {
                 drop_hint: 150,
@@ -293,12 +388,45 @@ impl Default for EditorTheme {
             },
             viewport: ViewportControls {
                 orbit_speed: 0.005,
-                pan_speed: 0.0015,
                 zoom_per_line: 0.1,
                 zoom_per_pixel: 0.002,
                 min_distance: 0.05,
                 max_distance: 10_000.0,
                 click_slop: 4.0,
+                frame_margin: 1.2,
+                frame_radius: 1.0,
+                toolbar: 32.0,
+            },
+            gizmo: GizmoStyle {
+                size: 90.0,
+                centre: 18.0,
+                outer_ring: 108.0,
+                cone_length: 22.0,
+                cone_radius: 5.5,
+                tip: 9.0,
+                plane_offset: 51.0,
+                plane_size: 13.0,
+                pick_radius: 8.0,
+                line_width: 3.0,
+                ring_overlap: 0.02,
+                axis_fade: [0.02, 0.1],
+                plane_fade: [0.175, 0.25],
+                rest_alpha: 0.6,
+                hot_alpha: 1.0,
+                plane_fill: 0.5,
+                ball_alpha: 0.05,
+                translate_snap: 0.5,
+                rotate_snap: core::f32::consts::PI / 12.0,
+                scale_snap: 0.1,
+                axes: [palette.red, palette.green, palette.blue],
+                centre_color: base[8],
+                sweep: base[8].with_alpha(0.2),
+                hover: base[7],
+                camera: base[7],
+                camera_depth: 1.5,
+                light: palette.yellow,
+                light_radius: 0.4,
+                light_ray: 1.2,
             },
             palette,
         }

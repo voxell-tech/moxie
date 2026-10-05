@@ -8,6 +8,7 @@
 
 mod catalog;
 mod icons;
+mod layout;
 mod materials;
 mod playback;
 mod presets;
@@ -19,7 +20,6 @@ mod tests;
 mod thumbnails;
 mod ui;
 mod view;
-mod viewport;
 
 use core::time::Duration;
 use std::path::PathBuf;
@@ -27,13 +27,12 @@ use std::path::PathBuf;
 use bevy::app::PluginGroupBuilder;
 use bevy::asset::UnapprovedPathMode;
 use bevy::prelude::*;
-use bevy::settings::{
-    ReflectSettingsGroup, SettingsGroup, SettingsPlugin,
-};
 use bevy_motiongfx::BevyMotionGfxPlugin;
 use bevy_motiongfx::prelude::TimelineId;
 use bevy_motiongfx::scene::id::EntityUid;
+pub use layout::{LayoutNode, ProjectLayout};
 use moxie_asset::{MoxieAssetPlugin, register_absolute_source};
+pub(crate) use moxie_ui::SelectedEntity;
 pub use project::open_path;
 pub use scene::EditorScene;
 
@@ -59,16 +58,105 @@ impl Plugin for MoxiePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             BevyMotionGfxPlugin,
-            SettingsPlugin::new("org.voxell.motiongfx.editor"),
             MoxieAssetPlugin,
             presets::plugin,
             ui::UiPlugin,
             thumbnails::plugin,
             catalog::plugin,
             materials::plugin,
-            viewport::plugin,
+            moxie_viewport::plugin,
         ))
+        .init_resource::<ProjectSettings>()
+        .init_resource::<ProjectLayout>()
+        // Ahead of `Startup`, where an app opens the project it was
+        // asked for.
+        .add_systems(PreStartup, project::new_scene)
         .add_systems(PreUpdate, ensure_scene_root);
+    }
+}
+
+/// The settings of a project, saved with it.
+#[derive(Resource, Reflect, Clone, Debug, PartialEq)]
+#[reflect(Resource, Default, Clone)]
+pub struct ProjectSettings {
+    /// The resolution the project renders at, in pixels.
+    pub size: UVec2,
+    /// The shortest an action runs, and the step retiming moves in.
+    pub timestep: TimeStep,
+}
+
+impl Default for ProjectSettings {
+    fn default() -> Self {
+        Self {
+            size: UVec2::new(1920, 1080),
+            timestep: TimeStep::default(),
+        }
+    }
+}
+
+/// The step a project's time moves in: a frame of a video, or a
+/// duration of its own for a project played in real time.
+#[derive(Reflect, Clone, Copy, Debug, PartialEq)]
+#[reflect(Default, Clone)]
+pub enum TimeStep {
+    Fps24,
+    Fps25,
+    Fps30,
+    Fps50,
+    Fps60,
+    Fps120,
+    Custom(Duration),
+}
+
+impl Default for TimeStep {
+    fn default() -> Self {
+        Self::Custom(Duration::from_millis(10))
+    }
+}
+
+impl TimeStep {
+    /// The frames a second it stands for. `None` for a custom step.
+    pub fn fps(self) -> Option<u32> {
+        match self {
+            Self::Fps24 => Some(24),
+            Self::Fps25 => Some(25),
+            Self::Fps30 => Some(30),
+            Self::Fps50 => Some(50),
+            Self::Fps60 => Some(60),
+            Self::Fps120 => Some(120),
+            Self::Custom(_) => None,
+        }
+    }
+
+    /// How long one step lasts, a frame to the nearest nanosecond.
+    pub const fn duration(self) -> Duration {
+        match self {
+            Self::Fps24 => Duration::from_nanos(41_666_667),
+            Self::Fps25 => Duration::from_millis(40),
+            Self::Fps30 => Duration::from_nanos(33_333_333),
+            Self::Fps50 => Duration::from_millis(20),
+            Self::Fps60 => Duration::from_nanos(16_666_667),
+            Self::Fps120 => Duration::from_nanos(8_333_333),
+            Self::Custom(step) => step,
+        }
+    }
+}
+
+impl ProjectSettings {
+    pub(crate) fn timestep(&self) -> Duration {
+        // A custom step can be typed down to nothing.
+        self.timestep.duration().max(Duration::from_millis(1))
+    }
+
+    /// The longest a side of the output is, in pixels.
+    const MAX_SIDE: u32 = 8192;
+
+    /// The resolution as it can be rendered: at least a pixel each
+    /// way, and no side past [`Self::MAX_SIDE`].
+    pub(crate) fn size(&self) -> UVec2 {
+        // An inspector can type any number, and neither a zero nor a
+        // texture larger than the GPU holds is survived.
+        self.size.clamp(UVec2::ONE, UVec2::splat(Self::MAX_SIDE))
     }
 }
 
@@ -102,9 +190,10 @@ pub(crate) fn ensure_scene_root(
 #[reflect(Component, Default, Clone)]
 pub struct SceneRoot;
 
-/// Zoom range, spanning the scales the time axis is exercised at.
+/// The coarsest zoom.
 const MIN_PX_PER_SECOND: f32 = 1.0;
-const MAX_PX_PER_SECOND: f32 = 20_000.0;
+/// The width of one timestep at the finest zoom.
+const FINEST_STEP_PX: f32 = 48.0;
 
 /// Maps animation time to timeline pixels.
 #[derive(Resource, Clone, Copy, PartialEq)]
@@ -165,19 +254,29 @@ impl TimelineView {
         }
     }
 
+    /// The zoom range of a project that moves in steps of `timestep`:
+    /// at the finest, one step is [`FINEST_STEP_PX`] wide.
+    pub(crate) fn range(timestep: Duration) -> (f32, f32) {
+        let finest = FINEST_STEP_PX / timestep.as_secs_f32();
+        (MIN_PX_PER_SECOND, finest.max(MIN_PX_PER_SECOND))
+    }
+
     /// Scale the zoom by `factor` and leave `anchor_time` sitting at
-    /// `anchor_x`, saturating at the ends of the range.
+    /// `anchor_x`, saturating at the ends of the range for a project
+    /// that moves in steps of `timestep`.
     pub(crate) fn zoom_to(
         &mut self,
         anchor_x: f32,
         anchor_time: Duration,
         factor: f32,
+        timestep: Duration,
     ) {
         if !(factor.is_finite() && factor > 0.0) {
             return;
         }
-        self.px_per_second = (self.px_per_second * factor)
-            .clamp(MIN_PX_PER_SECOND, MAX_PX_PER_SECOND);
+        let (coarsest, finest) = Self::range(timestep);
+        self.px_per_second =
+            (self.px_per_second * factor).clamp(coarsest, finest);
         // Put the anchor at the left edge, then push it back to
         // `anchor_x`.
         self.offset = anchor_time;
@@ -191,23 +290,27 @@ impl TimelineView {
     }
 
     /// Scale the view so a `duration` long animation spans a `width`
-    /// px panel, leaving a little room after it.
-    pub(crate) fn fit(&mut self, width: f32, duration: Duration) {
+    /// px panel, leaving a little room after it, within the range
+    /// for a project that moves in steps of `timestep`.
+    pub(crate) fn fit(
+        &mut self,
+        width: f32,
+        duration: Duration,
+        timestep: Duration,
+    ) {
         let secs = duration.as_secs_f32();
         if secs <= 0.0 {
             return;
         }
-        self.px_per_second = (width / (secs * 1.02))
-            .clamp(MIN_PX_PER_SECOND, MAX_PX_PER_SECOND);
+        let (coarsest, finest) = Self::range(timestep);
+        self.px_per_second =
+            (width / (secs * 1.02)).clamp(coarsest, finest);
         self.offset = Duration::ZERO;
     }
 }
 
-/// The offscreen texture the composition's scene cameras render into.
-/// `bevy_ui` scales this image to fit the preview area above the
-/// timeline panel, so growing the panel shrinks the whole frame
-/// uniformly instead of distorting it. Sized from
-/// [`EditorSettings::physical_size`].
+/// The offscreen texture the scene cameras render into, and the
+/// preview shows. As large as [`ProjectSettings::size`].
 #[derive(Resource)]
 pub(crate) struct PreviewImage(pub(crate) Handle<Image>);
 
@@ -228,10 +331,6 @@ pub(crate) struct EditorState {
 #[derive(Resource, Default, Clone, PartialEq)]
 pub(crate) struct SelectedAction(pub(crate) Option<Vec<usize>>);
 
-/// The entity currently selected in the hierarchy panel, if any.
-#[derive(Resource, Default, Clone, Copy, PartialEq)]
-pub(crate) struct SelectedEntity(pub(crate) Option<Entity>);
-
 /// Folders bookmarked for browsing in the asset panel. Saved and
 /// loaded with the project: a bookmark only means something alongside
 /// the assets it points at.
@@ -242,30 +341,3 @@ pub(crate) struct ProjectBookmarks(pub(crate) Vec<PathBuf>);
 /// to. Its folder is the asset panel's own, permanent bookmark.
 #[derive(Resource, Default, Clone)]
 pub(crate) struct ProjectPath(pub(crate) Option<PathBuf>);
-
-#[derive(Debug, Resource, SettingsGroup, Reflect)]
-#[reflect(Resource, SettingsGroup, Default)]
-pub struct EditorSettings {
-    hdr: bool,
-    physical_size: UVec2,
-    /// The shortest an action runs, and the step retiming moves in.
-    min_duration: Duration,
-}
-
-impl Default for EditorSettings {
-    fn default() -> Self {
-        Self {
-            hdr: Default::default(),
-            // Portrait 9:16 to match the current compositions; the
-            // offscreen preview renders at this resolution.
-            physical_size: UVec2::new(1920, 1080),
-            min_duration: Duration::from_millis(10),
-        }
-    }
-}
-
-impl EditorSettings {
-    pub(crate) fn min_duration(&self) -> Duration {
-        self.min_duration.max(Duration::from_millis(1))
-    }
-}

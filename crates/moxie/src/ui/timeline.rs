@@ -40,7 +40,6 @@ use moxie_ui::elements::{
     timeline_lane, timeline_link, timeline_span,
 };
 use moxie_ui::field_icon::{field_icon, root_hue};
-use moxie_ui::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use moxie_ui::gaps::{changing, changing_under};
 use moxie_ui::icons as ui_icons;
 use moxie_ui::theme::{EditorTheme, Spacing};
@@ -55,7 +54,10 @@ use crate::playback::{
 use crate::scene::is_track;
 use crate::subject::Caption;
 use crate::ui::action::DEFAULT_STAGGER;
-use crate::{EditorScene, EditorState, SelectedAction, TimelineView};
+use crate::{
+    EditorScene, EditorState, ProjectSettings, SelectedAction,
+    TimeStep, TimelineView,
+};
 
 /// The timeline's resources and interaction systems.
 pub(crate) struct TimelinePlugin;
@@ -102,9 +104,6 @@ const MINOR_TICK: f32 = 4.0;
 const HEADER_ROW: f32 = 18.0;
 /// The side of a retime handle's chevron.
 const HANDLE_ICON: f32 = 7.0;
-/// The rotation that points the chevron left, in degrees.
-const CHEVRON_LEFT: f32 = 270.0;
-
 /// Viewport where the timeline, track and action UI is displayed.
 #[derive(Component, Default, Clone)]
 pub(crate) struct TrackViewport;
@@ -213,11 +212,11 @@ fn time_axis() -> AnyView<Bevy, EditorTheme> {
                 .width(percent(100.0))
                 .height(px(TIME_AXIS_HEIGHT)),
         );
-        let marks = keyed::<EditorTheme, (u32, TimelineView)>(
+        let marks = keyed::<EditorTheme, AxisView>(
             changing_under(Some(axis), move |world: &World| {
                 axis_view(world, axis)
             }),
-            |&(width, view)| axis_marks(width, view),
+            |&view| axis_marks(view),
         )
         .within(frame().width(percent(100.0)).height(percent(100.0)));
         cx.under(axis, |cx| cx.build(marks));
@@ -225,10 +224,12 @@ fn time_axis() -> AnyView<Bevy, EditorTheme> {
     })
 }
 
-/// The time axis's width and the view it draws, so a change to
-/// either redraws the marks. Width is rounded so sub-pixel jitter
-/// cannot.
-fn axis_view(world: &World, node: Entity) -> (u32, TimelineView) {
+/// The time axis's width, the view it draws and the timestep its
+/// marks fall on, so a change to any redraws the marks. Width is
+/// rounded so sub-pixel jitter cannot.
+type AxisView = (u32, TimelineView, TimeStep);
+
+fn axis_view(world: &World, node: Entity) -> AxisView {
     let width = world
         .get::<ComputedNode>(node)
         .map(|computed| {
@@ -236,30 +237,38 @@ fn axis_view(world: &World, node: Entity) -> (u32, TimelineView) {
                 as u32
         })
         .unwrap_or(0);
+    let timestep = world
+        .get_resource::<ProjectSettings>()
+        .map(|settings| settings.timestep)
+        .unwrap_or_default();
 
-    (width, *world.resource::<TimelineView>())
+    (width, *world.resource::<TimelineView>(), timestep)
 }
 
-/// Every tick and reading across `width` px of `view`.
+/// Every tick and reading across the axis.
 fn axis_marks(
-    width: u32,
-    view: TimelineView,
+    (width, view, timestep): AxisView,
 ) -> AnyView<Bevy, EditorTheme> {
     AnyView::<Bevy, EditorTheme>::new(move |cx| {
         let color = cx.theme().color.text_dim;
         let mut marks = Vec::new();
-        for tick in time_axis::ticks(&view, width as f32) {
-            let major = tick.label.is_some();
+        for tick in time_axis::ticks(&view, width as f32, timestep) {
+            let height =
+                MINOR_TICK + (MAJOR_TICK - MINOR_TICK) * tick.reading;
+            let alpha = (0.3 + 0.3 * tick.reading) * tick.strength;
             marks.push(
                 time_tick(
                     px(tick.x),
-                    px(if major { MAJOR_TICK } else { MINOR_TICK }),
-                    color.with_alpha(if major { 0.6 } else { 0.3 }),
+                    px(height),
+                    color.with_alpha(alpha),
                 )
                 .boxed(),
             );
             if let Some(text) = tick.label {
-                marks.push(time_label(px(tick.x), text).boxed());
+                marks.push(
+                    time_label(px(tick.x), text, tick.reading)
+                        .boxed(),
+                );
             }
         }
         cx.build(
@@ -271,8 +280,8 @@ fn axis_marks(
     })
 }
 
-/// Faint vertical lines under the boxes at the ruler's major ticks,
-/// drawn again when their width or the view changes.
+/// Faint vertical lines under the boxes at the ruler's ticks, drawn
+/// again when their width or the view changes.
 fn time_grid() -> AnyView<Bevy, EditorTheme> {
     AnyView::<Bevy, EditorTheme>::new(|cx| {
         let grid = cx.build(
@@ -281,11 +290,11 @@ fn time_grid() -> AnyView<Bevy, EditorTheme> {
                 .inset(UiRect::all(px(0.0)))
                 .tagged(Pickable::IGNORE),
         );
-        let lines = keyed::<EditorTheme, (u32, TimelineView)>(
+        let lines = keyed::<EditorTheme, AxisView>(
             changing_under(Some(grid), move |world: &World| {
                 axis_view(world, grid)
             }),
-            |&(width, view)| grid_lines(width, view),
+            |&view| grid_lines(view),
         )
         .within(
             frame()
@@ -298,19 +307,29 @@ fn time_grid() -> AnyView<Bevy, EditorTheme> {
     })
 }
 
-/// A full-height line at every major tick across `width` px of
-/// `view`.
+/// The opacity of a grid line at a reading, and between readings.
+const MAJOR_LINE: f32 = 0.12;
+const MINOR_LINE: f32 = 0.04;
+
+/// A full-height line at every tick across the axis.
 fn grid_lines(
-    width: u32,
-    view: TimelineView,
+    (width, view, timestep): AxisView,
 ) -> AnyView<Bevy, EditorTheme> {
     AnyView::<Bevy, EditorTheme>::new(move |cx| {
-        let color = cx.theme().color.text_dim.with_alpha(0.12);
-        let lines = time_axis::ticks(&view, width as f32)
+        let color = cx.theme().color.text_dim;
+        let lines = time_axis::ticks(&view, width as f32, timestep)
             .into_iter()
-            .filter(|tick| tick.label.is_some())
             .map(|tick| {
-                time_tick(px(tick.x), percent(100.0), color).boxed()
+                // Fainter between the readings.
+                let alpha = (MINOR_LINE
+                    + (MAJOR_LINE - MINOR_LINE) * tick.reading)
+                    * tick.strength;
+                time_tick(
+                    px(tick.x),
+                    percent(100.0),
+                    color.with_alpha(alpha),
+                )
+                .boxed()
             })
             .collect::<Vec<_>>();
         cx.build(
@@ -454,7 +473,11 @@ fn block_boxes(key: &BlockKey) -> AnyView<Bevy, EditorTheme> {
             chevron: cx
                 .world
                 .resource::<AssetServer>()
-                .load(ui_icons::CHEVRON),
+                .load(ui_icons::CHEVRON_RIGHT),
+            chevron_open: cx
+                .world
+                .resource::<AssetServer>()
+                .load(ui_icons::CHEVRON_DOWN),
             trash: cx
                 .world
                 .resource::<AssetServer>()
@@ -476,7 +499,10 @@ struct Tree<'a> {
     theme: &'a EditorTheme,
     world: &'a World,
     pattern: Handle<Image>,
+    /// Points right.
     chevron: Handle<Image>,
+    /// Points down.
+    chevron_open: Handle<Image>,
     trash: Handle<Image>,
 }
 
@@ -656,19 +682,16 @@ impl Tree<'_> {
     /// toggles the fold.
     fn header(&self, placed: &Placed) -> AnyView<Bevy, EditorTheme> {
         let path = placed.path.clone();
-        let rotation = if placed.folded {
-            CHEVRON_SHUT
+        let image = if placed.folded {
+            &self.chevron
         } else {
-            CHEVRON_OPEN
+            &self.chevron_open
         };
         let fold_path = path.clone();
         let chevron = button(
-            icon(self.chevron.clone())
-                .size(7.0)
-                .rotation(rotation)
-                .when::<Dragged, _>(|icon, _: &EditorTheme| {
-                icon.opacity(0.2)
-            }),
+            icon(image.clone()).size(7.0).when::<Dragged, _>(
+                |icon, _: &EditorTheme| icon.opacity(0.2),
+            ),
         )
         .padding(UiRect::all(px(3.0)))
         .rules(tint)
@@ -812,9 +835,11 @@ impl Tree<'_> {
         kind: retime::Kind,
     ) -> AnyView<Bevy, EditorTheme> {
         let color = self.theme.color;
+        // Half a turn or none: a node turned any other way cannot be
+        // clipped by the lanes it scrolls in.
         let rotation = match kind {
-            retime::Kind::Delay => CHEVRON_LEFT,
-            retime::Kind::Resize => CHEVRON_SHUT,
+            retime::Kind::Delay => 180.0,
+            retime::Kind::Resize => 0.0,
         };
         let surface = frame()
             .width(px(retime::ACTION_HANDLE_PX))
@@ -1032,7 +1057,7 @@ mod tests {
             let animation = &mut scene.edit().animation;
             animation.children.push(SceneNode::block(
                 motiongfx_scene::block::Block {
-                    name: Some("Camera".into()),
+                    name: Some("Titles".into()),
                     ..motiongfx_scene::block::Block::chain(Vec::new())
                 },
             ));
@@ -1047,7 +1072,7 @@ mod tests {
             vec![vec![0], vec![1], vec![2]]
         );
         editor.text("Track 1");
-        editor.text("Camera");
+        editor.text("Titles");
         editor.text("Track 3");
     }
 
@@ -1228,6 +1253,7 @@ mod tests {
             0.0,
             Duration::ZERO,
             20.0,
+            Duration::from_millis(10),
         );
         editor.step(SETTLE);
         assert_ne!(marks(&mut editor), before);

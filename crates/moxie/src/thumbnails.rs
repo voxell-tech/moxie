@@ -17,6 +17,7 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use moxie_asset::{AssetRef, AssetTypeAppExt as _};
+use moxie_viewport::framing_distance;
 
 use crate::presets;
 
@@ -264,7 +265,7 @@ fn develop(
                         let radius = Vec3::from(aabb.half_extents)
                             .length()
                             .max(0.01);
-                        let distance = radius / (fov / 2.0).sin();
+                        let distance = framing_distance(radius, fov);
                         let direction =
                             Vec3::new(1.0, 0.8, 1.4).normalize();
                         *transform = Transform::from_translation(

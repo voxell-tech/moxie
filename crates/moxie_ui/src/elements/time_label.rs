@@ -13,9 +13,11 @@ const OPACITY: f32 = 0.7;
 /// edge and placed above the mark it reads for.
 ///
 /// The leftmost reading sits flush, the rest centre over their mark.
+/// `strength` fades it, from none to one.
 pub fn time_label(
     x: impl Into<Prop<Val>>,
     text: impl Into<Prop<String>>,
+    strength: f32,
 ) -> impl View<Bevy, EditorTheme> {
     let x = x.into();
     let text = text.into();
@@ -55,7 +57,7 @@ pub fn time_label(
                     .size(size)
                     .wrap(false)
                     .tone(Tone::Dim)
-                    .opacity(OPACITY),
+                    .opacity(OPACITY * strength),
             );
         });
         node
@@ -107,6 +109,7 @@ mod tests {
             time_label(
                 resource::<Mark, _>(|mark| px(mark.0)),
                 "0:02",
+                1.0,
             ),
         );
         let ui = app.world().get::<Node>(node).unwrap();
@@ -131,6 +134,7 @@ mod tests {
             time_label(
                 px(10.0),
                 resource::<Mark, _>(|mark| format!("{}", mark.0)),
+                1.0,
             ),
         );
         let text = reading(&app, node);

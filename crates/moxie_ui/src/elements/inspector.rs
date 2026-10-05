@@ -14,7 +14,7 @@ use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::*;
 use bevy::reflect::TypeRegistration;
 use bevy::reflect::std_traits::ReflectDefault;
-use bevy_fynix::tokens::{Motion, Tone};
+use bevy_fynix::tokens::Tone;
 use bevy_fynix::views::{
     BehaviorExt as _, ContextMenuExt as _, FrameProps as _,
     MenuEntry, Open, button, column, frame, icon, label, menu_button,
@@ -25,7 +25,6 @@ use bevy_fynix::{
     each, keyed,
 };
 
-use crate::fold::{CHEVRON_OPEN, CHEVRON_SHUT};
 use crate::gaps::{anchored, changing_under};
 use crate::icons;
 use crate::inspector::{
@@ -435,7 +434,8 @@ fn root_card(
                 .allows(cx.world, field)
         });
         let assets = cx.world.resource::<AssetServer>();
-        let chevron = assets.load(icons::CHEVRON);
+        let chevron_shut = assets.load::<Image>(icons::CHEVRON_RIGHT);
+        let chevron_open = assets.load::<Image>(icons::CHEVRON_DOWN);
         let trash = assets.load::<Image>(icons::TRASH);
         let theme = cx.theme();
         let space = theme.space;
@@ -455,17 +455,17 @@ fn root_card(
             cx.world.entity_mut(card).insert(Open);
         }
 
-        let chevron = icon(chevron)
-            .tone(Tone::Dim)
-            .size(space.icon)
-            .rotation(component::<Open, _>(card, |open| {
-                if open.is_some() {
-                    CHEVRON_OPEN
-                } else {
-                    CHEVRON_SHUT
-                }
-            }))
-            .transition(Motion::Interact);
+        // An image for each state, as a node that is turned cannot
+        // be clipped by the scroll area it is in.
+        let chevron = icon(component::<Open, _>(card, move |open| {
+            if open.is_some() {
+                chevron_open.clone()
+            } else {
+                chevron_shut.clone()
+            }
+        }))
+        .tone(Tone::Dim)
+        .size(space.icon);
         let title = name.clone();
         let mut header = button(
             row((chevron, label(title).bold(true).wrap(false)))

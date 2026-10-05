@@ -2,36 +2,32 @@ mod action;
 mod assets;
 pub(crate) mod hierarchy;
 mod inspector;
+mod preview;
 mod settings;
 pub(crate) mod timeline;
 mod top_bar;
 
-use bevy::camera::Hdr;
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::schedule::common_conditions::not;
-use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
-use bevy::text::EditableText;
-use bevy::ui::widget::ImageNode;
-use bevy::ui::{IsDefaultUiCamera, UiTargetCamera};
+use bevy::ui::{IsDefaultUiCamera, UiSystems, UiTargetCamera};
 use bevy_fynix::dock::{
-    DockAreaStyle, DockLeaf, DockNode, DockRegistry, DockTree,
-    DockWindowKind, Edge, dock,
+    DockRegistry, DockTree, DockWindowKind, dock,
 };
 use bevy_fynix::views::{FrameProps as _, column};
-use bevy_fynix::{AnyView, Bevy, View, mount};
+use bevy_fynix::{AnyView, Bevy, mount};
 use bevy_motiongfx::motiongfx::field_path::field;
-use moxie_ui::MoxieUiPlugin;
 use moxie_ui::field_icon::FieldIconAppExt as _;
-use moxie_ui::gaps::{anchored, changing_under};
+use moxie_ui::inspector::InspectAppExt as _;
 use moxie_ui::theme::{EditorTheme, Hue};
+use moxie_ui::{MoxieUiPlugin, text_field_focused};
 
 use crate::subject::Target;
 use crate::{
-    EditorSettings, EditorState, PreviewImage, ProjectBookmarks,
-    ProjectPath, SelectedAction, SelectedEntity, playback, scene,
-    view,
+    EditorState, PreviewImage, ProjectBookmarks, ProjectLayout,
+    ProjectPath, ProjectSettings, SelectedAction, SelectedEntity,
+    playback, scene, view,
 };
 
 /// Wires the editor UI tree and the per-frame
@@ -76,6 +72,8 @@ impl Plugin for UiPlugin {
             .register_root_hue::<SpotLight>(Hue::Yellow)
             .register_root_hue::<RectLight>(Hue::Yellow)
             .init_resource::<EditorState>()
+            .init_resource::<preview::PreviewView>()
+            .init_resource::<view::Rendering>()
             .init_resource::<SelectedAction>()
             .init_resource::<SelectedEntity>()
             .init_resource::<ProjectBookmarks>()
@@ -97,41 +95,38 @@ impl Plugin for UiPlugin {
                         .run_if(not(text_field_focused)),
                     playback::stop_at_track_end,
                     playback::track_playing,
-                    view::retarget_scene_cameras,
+                    view::resize_preview,
+                    view::sync_scene_cameras,
                 )
                     .chain(),
             )
+            .init_resource::<preview::LastArea>()
+            .add_systems(
+                PostUpdate,
+                preview::remember_area.after(UiSystems::Layout),
+            )
             .add_observer(playback::on_toggle_playback);
+
+        app.with_inspect_group("Cameras")
+            .register_inspectable::<Camera>()
+            .register_inspectable::<Projection>();
     }
 }
 
-/// True while a text field holds focus.
-pub(crate) fn text_field_focused(
-    focus: Res<InputFocus>,
-    q_editable: Query<(), With<EditableText>>,
-) -> bool {
-    focus
-        .get()
-        .is_some_and(|entity| q_editable.contains(entity))
-}
-
-/// Marks the UI camera (which owns the window). Every other (scene)
-/// camera is retargeted to the offscreen preview image; see
-/// [`retarget_scene_cameras`].
-///
-/// [`retarget_scene_cameras`]: crate::view::retarget_scene_cameras
+/// Marker component for the UI camera, which owns the window.
 #[derive(Component, Default, Clone)]
-pub(crate) struct TrackViewportCamera;
+pub(crate) struct UiCamera;
 
 fn setup_editor_ui(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     mut registry: ResMut<DockRegistry<EditorTheme>>,
     mut tree: ResMut<DockTree>,
-    settings: Res<EditorSettings>,
+    project: Res<ProjectSettings>,
+    layout: Res<ProjectLayout>,
     assets: Res<AssetServer>,
 ) {
-    let size = settings.physical_size.max(UVec2::ONE);
+    let size = project.size();
     let preview = images.add(Image::new_target_texture(
         size.x,
         size.y,
@@ -144,7 +139,7 @@ fn setup_editor_ui(
     // meshes (e.g. bevy_vello's composite quad, layer 0)
     // full-window. `IsDefaultUiCamera` catches dock UI spawned
     // without a target (drag ghosts, drop overlays).
-    let ui_camera = commands
+    commands
         .spawn_scene(bsn! [
             Camera2d
             Camera {
@@ -153,58 +148,16 @@ fn setup_editor_ui(
                 // holds one.
                 clear_color: { moxie_ui::theme::BG },
             }
-            TrackViewportCamera
+            UiCamera
         ])
-        .insert((RenderLayers::layer(1), IsDefaultUiCamera))
-        .id();
-
-    if settings.hdr {
-        commands.entity(ui_camera).insert(Hdr);
-    }
+        .insert((RenderLayers::layer(1), IsDefaultUiCamera));
 
     register_windows(&mut registry, &assets);
 
-    //
-    // The dock layout.
-    //
-    let viewport = tree.set_root_leaf(
-        DockLeaf::new("viewport", DockAreaStyle::TabBar)
-            .with_windows(vec!["viewport".into()]),
-    );
-
-    tree.split(viewport, Edge::Bottom, "timeline".into());
-    let vsplit = tree.root.expect("root split exists");
-    tree.set_fraction(vsplit, 0.7);
-    let timeline = tree
-        .find_leaf_with_window("timeline")
-        .expect("just split in a timeline leaf");
-    if let Some(DockNode::Leaf(leaf)) = tree.get_mut(timeline) {
-        leaf.area_id = "timeline".into();
+    // The layout of the project loaded ahead of this.
+    if let Some(saved) = layout.tree() {
+        *tree = saved;
     }
-
-    tree.split(timeline, Edge::Right, "action".into());
-    if let Some(hsplit) = tree.parent_of(timeline) {
-        tree.set_fraction(hsplit, 0.8);
-    }
-
-    tree.split(viewport, Edge::Right, "inspector".into());
-    if let Some(hsplit) = tree.parent_of(viewport) {
-        tree.set_fraction(hsplit, 0.8);
-    }
-
-    if let Some((sidebar, hierarchy_tab)) =
-        tree.split(viewport, Edge::Left, "hierarchy".into())
-    {
-        // `add_tab` activates what it just added; Hierarchy stays the
-        // one shown on a fresh layout.
-        tree.add_tab(sidebar, "assets");
-        tree.set_active(sidebar, hierarchy_tab);
-    }
-    if let Some(hsplit) = tree.parent_of(viewport) {
-        tree.set_fraction(hsplit, 0.2);
-    }
-
-    tree.split(viewport, Edge::Right, "preview".into());
 }
 
 /// Mounts the top bar over the dock, on the UI camera. Runs after
@@ -212,7 +165,7 @@ fn setup_editor_ui(
 /// and the camera exist.
 fn mount_editor_ui(world: &mut World) {
     let camera = world
-        .query_filtered::<Entity, With<TrackViewportCamera>>()
+        .query_filtered::<Entity, With<UiCamera>>()
         .single(world)
         .expect("the UI camera was just spawned");
     let root = mount::<EditorTheme>(
@@ -249,12 +202,12 @@ fn register_windows(
             kind(
                 "Viewport",
                 crate::icons::VIEWPORT,
-                crate::viewport::panel,
+                moxie_viewport::panel,
             ),
         )
         .register(
             "preview",
-            kind("Preview", crate::icons::PREVIEW, preview),
+            kind("Preview", crate::icons::PREVIEW, preview::panel),
         )
         .register(
             "timeline",
@@ -281,59 +234,11 @@ fn register_windows(
             ),
         )
         .register(
-            "settings",
-            kind("Settings", crate::icons::SETTINGS, settings::panel),
+            "project",
+            kind("Project", crate::icons::PROJECT, settings::panel),
         )
         .register(
             "assets",
             kind("Assets", crate::icons::ASSETS, assets::panel),
         );
-}
-
-/// The composition's preview, letterboxed to the area it sits in.
-fn preview() -> AnyView<Bevy, EditorTheme> {
-    AnyView::<Bevy, EditorTheme>::new(|cx| {
-        let preview = cx.world.resource::<PreviewImage>().0.clone();
-        cx.build(
-            column((anchored::<EditorTheme, _>(move |area| {
-                preview_frame(preview, area)
-            }),))
-            .width(percent(100.0))
-            .height(percent(100.0))
-            .justify(JustifyContent::Center)
-            .align(AlignItems::Center),
-        )
-    })
-}
-
-/// The preview image, sized to fit `area`. Hidden until that area has
-/// a size: at a fresh `ComputedNode` it does not, and `Auto` would
-/// flash at the image's native size for a frame.
-fn preview_frame(
-    preview: Handle<Image>,
-    area: Option<Entity>,
-) -> impl View<Bevy, EditorTheme> {
-    let fit = move || {
-        changing_under(area, move |world: &World| {
-            area.and_then(|area| view::preview_fit(world, area))
-        })
-    };
-    column(())
-        .width(
-            fit()
-                .map(|fit| fit.map_or(Val::ZERO, |(width, _)| width)),
-        )
-        .height(
-            fit().map(|fit| {
-                fit.map_or(Val::ZERO, |(_, height)| height)
-            }),
-        )
-        .display(fit().map(|fit| {
-            if fit.is_some() {
-                Display::Flex
-            } else {
-                Display::None
-            }
-        }))
-        .with(ImageNode::new(preview))
 }

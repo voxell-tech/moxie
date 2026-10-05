@@ -1,0 +1,267 @@
+(
+  world: (
+    resources: {
+      "moxie::ProjectSettings": (
+        size: (1920, 1080),
+        timestep: Custom((
+          secs: 0,
+          nanos: 10000000,
+        )),
+      ),
+      "moxie::layout::ProjectLayout": (
+        nodes: [
+          Split(
+            stacked: true,
+            fraction: 0.7,
+            a: 1,
+            b: 8,
+          ),
+          Split(
+            stacked: false,
+            fraction: 0.28,
+            a: 2,
+            b: 5,
+          ),
+          Split(
+            stacked: true,
+            fraction: 0.5,
+            a: 3,
+            b: 4,
+          ),
+          Tabs(
+            windows: [
+              "preview",
+            ],
+            active: 0,
+          ),
+          Tabs(
+            windows: [
+              "inspector",
+              "project",
+            ],
+            active: 0,
+          ),
+          Split(
+            stacked: false,
+            fraction: 0.76,
+            a: 6,
+            b: 7,
+          ),
+          Tabs(
+            windows: [
+              "viewport",
+            ],
+            active: 0,
+          ),
+          Tabs(
+            windows: [
+              "hierarchy",
+              "assets",
+            ],
+            active: 0,
+          ),
+          Split(
+            stacked: false,
+            fraction: 0.8,
+            a: 9,
+            b: 10,
+          ),
+          Tabs(
+            windows: [
+              "timeline",
+            ],
+            active: 0,
+          ),
+          Tabs(
+            windows: [
+              "action",
+            ],
+            active: 0,
+          ),
+        ],
+      ),
+      "moxie_viewport::camera::ViewportViews": ([
+        (
+          focus: (0.0, 3.0, 5.0),
+          yaw: 0.6,
+          pitch: -0.4,
+          distance: 30.0,
+          orthographic: false,
+          grid: true,
+        ),
+      ]),
+    },
+    entities: {
+      4294966858: (
+        components: {
+          "bevy_camera::visibility::Visibility": Inherited,
+          "bevy_ecs::hierarchy::ChildOf": (4294966861),
+          "bevy_ecs::name::Name": "Light",
+          "bevy_light::cascade::CascadeShadowConfig": (
+            bounds: [
+              10.0,
+              24.662123,
+              60.82203,
+              150.00003,
+            ],
+            overlap_proportion: 0.2,
+            minimum_distance: 0.1,
+          ),
+          "bevy_light::directional_light::DirectionalLight": (
+            color: LinearRgba((
+              red: 1.0,
+              green: 1.0,
+              blue: 1.0,
+              alpha: 1.0,
+            )),
+            illuminance: 10000.0,
+            shadow_maps_enabled: false,
+            contact_shadows_enabled: false,
+            affects_lightmapped_mesh_diffuse: true,
+            shadow_depth_bias: 0.02,
+            shadow_normal_bias: 1.8,
+          ),
+          "bevy_motiongfx::scene::id::EntityUid": ("011ad864-3b88-4f54-a709-38bd774916f2"),
+          "bevy_transform::components::transform::Transform": (
+            translation: (3.0, 10.0, 5.0),
+            rotation: (-0.4800628, 0.23145755, 0.13296969, 0.83563524),
+            scale: (1.0, 1.0, 1.0),
+          ),
+        },
+      ),
+      4294966859: (
+        components: {
+          "bevy_camera::camera::Camera": (
+            viewport: None,
+            order: 1,
+            is_active: true,
+            computed: (
+              clip_from_view: (0.0010416667, 0.0, 0.0, 0.0, 0.0, 0.0018518518, 0.0, 0.0, 0.0, 0.0, 0.0005, 0.0, -0.0, -0.0, 0.5, 1.0),
+              target_info: Some((
+                physical_size: (1920, 1080),
+                scale_factor: 1.0,
+              )),
+              old_viewport_size: None,
+              old_sub_camera_view: None,
+            ),
+            output_mode: Write(
+              blend_state: None,
+              clear_color: Default,
+            ),
+            msaa_writeback: Auto,
+            clear_color: r#None,
+            invert_culling: false,
+            sub_camera_view: None,
+          ),
+          "bevy_camera::components::Camera2d": (),
+          "bevy_camera::projection::Projection": Orthographic((
+            near: -1000.0,
+            far: 1000.0,
+            viewport_origin: (0.5, 0.5),
+            scaling_mode: WindowSize,
+            scale: 1.0,
+            area: (
+              min: (-960.0, -540.0),
+              max: (960.0, 540.0),
+            ),
+          )),
+          "bevy_camera::visibility::Visibility": Inherited,
+          "bevy_ecs::hierarchy::ChildOf": (4294966861),
+          "bevy_ecs::name::Name": "Camera 2D",
+          "bevy_motiongfx::scene::id::EntityUid": ("e7e8b2ec-1163-4aa4-bc63-5bd049793bc7"),
+          "bevy_transform::components::transform::Transform": (
+            translation: (0.0, 0.0, 0.0),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (1.0, 1.0, 1.0),
+          ),
+        },
+      ),
+      4294966860: (
+        components: {
+          "bevy_camera::camera::Camera": (
+            viewport: None,
+            order: 0,
+            is_active: true,
+            computed: (
+              clip_from_view: (1.357995, 0.0, 0.0, 0.0, 0.0, 2.4142134, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.1, 0.0),
+              target_info: Some((
+                physical_size: (1920, 1080),
+                scale_factor: 1.0,
+              )),
+              old_viewport_size: None,
+              old_sub_camera_view: None,
+            ),
+            output_mode: Write(
+              blend_state: None,
+              clear_color: Default,
+            ),
+            msaa_writeback: Auto,
+            clear_color: Custom(Srgba((
+              red: 0.02,
+              green: 0.02,
+              blue: 0.04,
+              alpha: 1.0,
+            ))),
+            invert_culling: false,
+            sub_camera_view: None,
+          ),
+          "bevy_camera::components::Camera3d": (
+            depth_load_op: Clear(0.0),
+            depth_texture_usages: (16),
+          ),
+          "bevy_camera::projection::Projection": Perspective((
+            fov: 0.7853982,
+            aspect_ratio: 1.7777778,
+            near: 0.1,
+            far: 1000.0,
+            near_clip_plane: (0.0, 0.0, -1.0, -0.1),
+          )),
+          "bevy_camera::visibility::Visibility": Inherited,
+          "bevy_ecs::hierarchy::ChildOf": (4294966861),
+          "bevy_ecs::name::Name": "Camera",
+          "bevy_motiongfx::scene::id::EntityUid": ("15946ab2-94ed-4387-b7ae-ec94eddcd35e"),
+          "bevy_transform::components::transform::Transform": (
+            translation: (0.0, 2.0, 14.0),
+            rotation: (-0.07088902, -0.0, -0.0, 0.99748415),
+            scale: (1.0, 1.0, 1.0),
+          ),
+        },
+      ),
+      4294966861: (
+        components: {
+          "bevy_camera::visibility::Visibility": Inherited,
+          "bevy_ecs::hierarchy::Children": ([
+            4294966860,
+            4294966859,
+            4294966858,
+          ]),
+          "bevy_transform::components::transform::Transform": (
+            translation: (0.0, 0.0, 0.0),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (1.0, 1.0, 1.0),
+          ),
+          "moxie::SceneRoot": (),
+        },
+      ),
+    },
+  ),
+  scene: (
+    stage: (
+      subjects: [],
+    ),
+    animation: (
+      combinator: All,
+      children: [
+        Block(
+          block: (
+            combinator: Chain,
+            children: [],
+          ),
+        ),
+      ],
+    ),
+    values: (),
+  ),
+  bookmarks: [],
+  assets: [],
+)

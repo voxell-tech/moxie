@@ -4,18 +4,56 @@ use bevy::input::mouse::MouseScrollUnit;
 use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
+use bevy_fynix::Theme;
 use moxie_ui::cursor::PointerEventExt as _;
+use moxie_ui::theme::EditorTheme;
 
 use super::TrackViewport;
 use super::reorder::scrolled;
 use crate::playback::x_from_cursor;
-use crate::{EditorState, TimelineView};
+use crate::{EditorState, ProjectSettings, TimelineView};
 
 /// Zoom factor per wheel notch.
 const WHEEL_STEP: f32 = 1.1;
 
 pub(super) fn plugin(app: &mut App) {
-    app.add_observer(on_fit_timeline);
+    app.init_resource::<ZoomGoal>()
+        .add_systems(Update, ease_zoom)
+        .add_observer(on_fit_timeline);
+}
+
+/// The zoom the timeline is easing to, in pixels a second, and the
+/// point it zooms about, in pixels from the left edge.
+#[derive(Resource, Default)]
+pub(super) struct ZoomGoal(Option<(f32, f32)>);
+
+/// Eases the zoom on to its [`ZoomGoal`].
+fn ease_zoom(
+    time: Res<Time>,
+    theme: Res<Theme<EditorTheme>>,
+    settings: Res<ProjectSettings>,
+    mut goal: ResMut<ZoomGoal>,
+    mut view: ResMut<TimelineView>,
+) {
+    let Some((to, anchor_x)) = goal.0 else {
+        return;
+    };
+    let now = view.px_per_second;
+    // In ratios: a zoom is as far from half as it is from double.
+    let share = theme.0.motion.follow_share(time.delta());
+    let eased = now * (to / now).powf(share);
+    let arrived = (eased / to - 1.0).abs() < 1e-3;
+    let next = if arrived { to } else { eased };
+    let anchor_time = view.time_from_x(anchor_x);
+    view.zoom_to(
+        anchor_x,
+        anchor_time,
+        next / now,
+        settings.timestep(),
+    );
+    if arrived {
+        goal.0 = None;
+    }
 }
 
 /// Command to fit the animation to the panel, dispatched from the fit
@@ -28,13 +66,16 @@ fn on_fit_timeline(
     _fit: On<FitTimeline>,
     q_viewport: Query<&ComputedNode, With<TrackViewport>>,
     state: Res<EditorState>,
+    settings: Res<ProjectSettings>,
+    mut goal: ResMut<ZoomGoal>,
     mut view: ResMut<TimelineView>,
 ) {
     let Some(computed) = q_viewport.iter().next() else {
         return;
     };
     let width = computed.size().x * computed.inverse_scale_factor();
-    view.fit(width, state.duration);
+    goal.0 = None;
+    view.fit(width, state.duration, settings.timestep());
 }
 
 /// Zoom on Alt+wheel, pan sideways on Shift+wheel or a
@@ -43,6 +84,8 @@ pub(super) fn on_track_scroll(
     mut scroll: On<Pointer<Scroll>>,
     keys: Res<ButtonInput<KeyCode>>,
     ui_scale: Res<UiScale>,
+    settings: Res<ProjectSettings>,
+    mut goal: ResMut<ZoomGoal>,
     mut view: ResMut<TimelineView>,
     mut q_viewport: Query<
         (&ComputedNode, &UiGlobalTransform, &mut ScrollPosition),
@@ -68,8 +111,14 @@ pub(super) fn on_track_scroll(
         let notches = delta.y / px_per_notch;
         let cursor = scroll.logical(&ui_scale);
         let anchor_x = x_from_cursor(cursor, computed, transform);
-        let anchor_time = view.time_from_x(anchor_x);
-        view.zoom_to(anchor_x, anchor_time, WHEEL_STEP.powf(notches));
+        // On from where it is already headed, so quick notches add
+        // up.
+        let from = goal.0.map_or(view.px_per_second, |(to, _)| to);
+        let (coarsest, finest) =
+            TimelineView::range(settings.timestep());
+        let to =
+            (from * WHEEL_STEP.powf(notches)).clamp(coarsest, finest);
+        goal.0 = Some((to, anchor_x));
         return;
     }
 

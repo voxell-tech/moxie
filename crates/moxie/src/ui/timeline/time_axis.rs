@@ -1,79 +1,146 @@
+//! The marks of the time axis: one every so many timesteps, and the
+//! reading at the wider spaced of them.
+
 use core::time::Duration;
 
-use crate::TimelineView;
+use crate::{TimeStep, TimelineView};
 
+/// Minimum spacing between ticks.
 const MIN_TICK_PX: f32 = 10.0;
 /// Minimum spacing between labelled ticks.
 const MIN_LABEL_PX: f32 = 48.0;
+/// How many times its minimum spacing a level of marks is at before
+/// it is at full strength.
+const FADE: f32 = 2.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Tick {
     /// Pixels from the left edge of the view.
     pub(crate) x: f32,
     pub(crate) label: Option<String>,
+    /// How far in the mark has faded, from none to one.
+    pub(crate) strength: f32,
+    /// How far in its reading has, from none to one.
+    pub(crate) reading: f32,
 }
 
-/// The finest spacing that still leaves `min_px` between marks at
-/// this scale, off a ladder of one and five per power of ten.
-fn tick_step(px_per_second: f32, min_px: f32) -> i64 {
-    let px_per_ms = px_per_second / 1000.0;
-    // Milliseconds a gap has to cover.
-    let target = (min_px / px_per_ms).max(1.0);
-    // A zero scale makes `target` infinite, so cap the exponent.
-    let exp = target.log10().floor().clamp(0.0, 9.0) as u32;
-    let magnitude = 10i64.pow(exp);
-
-    if target <= magnitude as f32 {
-        magnitude
-    } else if target <= 5.0 * magnitude as f32 {
-        5 * magnitude
-    } else {
-        10 * magnitude
-    }
-}
-
-/// Decimal places follow the step, to ensure one row never mixes
-/// `0.5` with `1`.
-fn label(ms: i64, major_ms: i64) -> String {
-    let secs = ms as f32 / 1000.0;
-    // Enough decimals to tell one mark from the next, and no more.
-    let decimals = match major_ms {
-        1_000.. => 0,
-        100.. => 1,
-        10.. => 2,
-        _ => 3,
+/// The spacings marks are drawn at, in timesteps, each a multiple of
+/// the one before: the frames that divide a second and then seconds,
+/// or one and five per power of ten for a step that is no frame.
+fn ladder(timestep: TimeStep) -> Vec<u64> {
+    const SECONDS: [u64; 9] =
+        [1, 5, 10, 30, 60, 300, 600, 1800, 3600];
+    let (frames, fps) = match timestep {
+        TimeStep::Fps24 => (&[1, 2, 4, 12][..], 24),
+        TimeStep::Fps25 => (&[1, 5][..], 25),
+        TimeStep::Fps30 => (&[1, 5, 15][..], 30),
+        TimeStep::Fps50 => (&[1, 5, 25][..], 50),
+        TimeStep::Fps60 => (&[1, 5, 15, 30][..], 60),
+        TimeStep::Fps120 => (&[1, 5, 10, 30, 60][..], 120),
+        TimeStep::Custom(_) => {
+            return (0..10)
+                .flat_map(|exponent| {
+                    let magnitude = 10u64.pow(exponent);
+                    [magnitude, 5 * magnitude]
+                })
+                .collect();
+        }
     };
-
-    format!("{secs:.decimals$}")
+    frames
+        .iter()
+        .copied()
+        .chain(SECONDS.map(|seconds| seconds * fps))
+        .collect()
 }
 
-/// Every mark visible across a timeline `width` px wide in order.
-pub(crate) fn ticks(view: &TimelineView, width: f32) -> Vec<Tick> {
-    let px_per_second = view.px_per_second;
+/// The finest spacing of `ladder` that leaves `min_px` between marks
+/// when a timestep is `px_per_step` wide.
+fn spacing(ladder: &[u64], px_per_step: f32, min_px: f32) -> u64 {
+    ladder
+        .iter()
+        .copied()
+        .find(|&steps| steps as f32 * px_per_step >= min_px)
+        .or(ladder.last().copied())
+        .unwrap_or(1)
+}
+
+/// The reading at `steps` timesteps in, among readings `major` apart:
+/// seconds and frames at a frame rate, and seconds otherwise.
+fn label(steps: u64, major: u64, timestep: TimeStep) -> String {
+    if let Some(fps) = timestep.fps() {
+        let fps = u64::from(fps);
+        let (seconds, frames) = (steps / fps, steps % fps);
+        // Whole seconds apart, the frames would all read nothing.
+        return if major.is_multiple_of(fps) {
+            format!("{seconds}")
+        } else {
+            format!("{seconds}:{frames:02}")
+        };
+    }
+    let step = timestep.duration().as_secs_f64();
+    // Enough decimals to tell one mark from the next, and no more.
+    let apart = major as f64 * step;
+    let decimals = [1.0, 0.1, 0.01]
+        .iter()
+        .position(|&least| apart >= least - f64::EPSILON)
+        .unwrap_or(3);
+    format!("{:.decimals$}", steps as f64 * step)
+}
+
+/// Every mark visible across a timeline `width` px wide in order, a
+/// whole number of `timestep`s in each. A level of marks fades in as
+/// the zoom brings it apart.
+pub(crate) fn ticks(
+    view: &TimelineView,
+    width: f32,
+    timestep: TimeStep,
+) -> Vec<Tick> {
+    let step = timestep.duration().max(Duration::from_millis(1));
+    let px_per_step = view.px_per_second * step.as_secs_f32();
     // A zero scale has no marks to give.
-    if !(px_per_second.is_finite() && px_per_second > 0.0) {
+    if !(px_per_step.is_finite() && px_per_step > 0.0) {
         return Vec::new();
     }
-    let px_per_ms = px_per_second / 1000.0;
 
-    let minor_ms = tick_step(px_per_second, MIN_TICK_PX);
-    let major_ms = tick_step(px_per_second, MIN_LABEL_PX);
-    // `major_ms` is always a multiple of `minor_ms`.
-    let ticks_per_label = major_ms / minor_ms;
-    let offset_ms = view.offset.as_millis() as i64;
+    let ladder = ladder(timestep);
+    let minor = spacing(&ladder, px_per_step, MIN_TICK_PX);
+    let major = spacing(&ladder, px_per_step, MIN_LABEL_PX);
+    let offset =
+        (view.offset.as_secs_f64() / step.as_secs_f64()) as i64;
+    let across = (width / px_per_step) as i64;
     // Pad the range for labels near the edges.
-    let from_ms = offset_ms - major_ms;
-    let to_ms = offset_ms + (width / px_per_ms) as i64 + major_ms;
-    let first_tick = from_ms.div_euclid(minor_ms).max(0);
-    let last_tick = to_ms.div_euclid(minor_ms);
+    let (minor_i, major_i) = (minor as i64, major as i64);
+    let first = (offset - major_i).div_euclid(minor_i).max(0);
+    let last = (offset + across + major_i).div_euclid(minor_i);
 
-    (first_tick..=last_tick)
-        .map(|tick_index| {
-            let ms = tick_index * minor_ms;
+    (first..=last)
+        .map(|index| {
+            let steps = index as u64 * minor;
+            // The widest spacing it is a mark of.
+            let level = ladder
+                .iter()
+                .copied()
+                .filter(|&level| level >= minor)
+                .take_while(|&level| steps.is_multiple_of(level))
+                .last()
+                .unwrap_or(minor);
+            let apart = level as f32 * px_per_step;
+            let faded = |least: f32| {
+                ((apart - least) / (least * (FADE - 1.0)))
+                    .clamp(0.0, 1.0)
+            };
+            let labelled = level >= major;
             Tick {
-                x: view.x_from_time(Duration::from_millis(ms as u64)),
-                label: (tick_index.rem_euclid(ticks_per_label) == 0)
-                    .then(|| label(ms, major_ms)),
+                x: view
+                    .x_from_time(step.saturating_mul(steps as u32)),
+                label: labelled
+                    .then(|| label(steps, major, timestep)),
+                strength: faded(MIN_TICK_PX),
+                reading: if labelled {
+                    faded(MIN_LABEL_PX)
+                } else {
+                    0.0
+                },
             }
         })
         .collect()
@@ -83,105 +150,48 @@ pub(crate) fn ticks(view: &TimelineView, width: f32) -> Vec<Tick> {
 mod tests {
     use super::*;
 
-    /// Expected label spacing at different zoom levels.
-    const SCALES: [(f32, i64); 6] = [
-        (1.0, 50_000),
-        (20.0, 5_000),
-        (160.0, 500),
-        (640.0, 100),
-        (5_000.0, 10),
-        (20_000.0, 5),
-    ];
-
-    /// A view at `px_per_second`, parked `offset_secs` in.
-    fn view(px_per_second: f32, offset_secs: f32) -> TimelineView {
+    fn view(px_per_second: f32) -> TimelineView {
         TimelineView {
             px_per_second,
-            offset: Duration::from_secs_f32(offset_secs),
+            offset: Duration::ZERO,
         }
     }
 
-    /// Adjacent labels should always display different values.
     #[test]
-    fn neighbours_in_a_row_never_read_alike() {
-        for (scale, step) in SCALES {
-            assert_eq!(tick_step(scale, MIN_LABEL_PX), step);
-            for i in 0..20 {
-                let a = label(i * step, step);
-                let b = label((i + 1) * step, step);
-                assert_ne!(
-                    a, b,
-                    "scale {scale} (step {step}ms) repeats {a}"
-                );
-            }
+    fn marks_land_on_frames_and_read_in_seconds_and_frames() {
+        // A frame is 10 px wide: one mark a frame, a reading every
+        // twelfth.
+        let marks = ticks(&view(240.0), 400.0, TimeStep::Fps24);
+        for (frame, mark) in marks.iter().enumerate() {
+            assert!((mark.x - frame as f32 * 10.0).abs() < 1e-2);
+            assert_eq!(mark.label.is_some(), frame % 12 == 0);
         }
+        let readings = marks
+            .iter()
+            .filter_map(|mark| mark.label.as_deref())
+            .take(3)
+            .collect::<Vec<_>>();
+        assert_eq!(readings, ["0:00", "0:12", "1:00"]);
+
+        // Readings whole seconds apart leave the frames out.
+        let marks = ticks(&view(60.0), 400.0, TimeStep::Fps24);
+        let reading = marks.iter().find_map(|mark| {
+            mark.label.as_deref().filter(|&label| label != "0")
+        });
+        assert_eq!(reading, Some("1"));
     }
 
-    /// Labels should use the expected number of decimal places.
     #[test]
-    fn labels_read_as_expected_at_the_current_scale() {
-        let step = tick_step(
-            TimelineView::default().px_per_second,
-            MIN_LABEL_PX,
-        );
-        assert_eq!(label(0, step), "0.0");
-        assert_eq!(label(500, step), "0.5");
-        assert_eq!(label(1_000, step), "1.0");
-    }
+    fn a_level_of_marks_fades_in_as_it_comes_apart() {
+        let step = TimeStep::Custom(Duration::from_millis(10));
+        // A mark every 10 ms is exactly its minimum apart here, and
+        // every other one is a mark of 50 ms too.
+        let marks = ticks(&view(1_000.0), 400.0, step);
+        assert_eq!(marks[1].strength, 0.0);
+        assert_eq!(marks[5].strength, 1.0);
 
-    /// Ticks cover the visible range, panned or not, and labels are
-    /// evenly spaced.
-    #[test]
-    fn marks_span_the_range_and_label_every_nth() {
-        for (scale, _) in SCALES {
-            // Two screens in, so the pan bites at every scale rather
-            // than washing out against the clamp at the coarse end.
-            let panned =
-                ticks(&view(scale, 2.0 * 800.0 / scale), 800.0);
-            assert!(!panned.is_empty(), "no panned marks at {scale}");
-            assert!(
-                panned.first().unwrap().x <= 0.0,
-                "scale {scale} starts inside the panned view"
-            );
-            assert!(
-                panned.last().unwrap().x >= 800.0,
-                "scale {scale} stops short when panned"
-            );
-
-            let marks = ticks(&view(scale, 0.0), 800.0);
-            assert!(!marks.is_empty(), "no marks at {scale}");
-
-            // Zero is always the first mark, and always labelled.
-            let first = marks.first().unwrap();
-            assert_eq!(
-                first.x, 0.0,
-                "scale {scale} misses the origin"
-            );
-            assert!(
-                first.label.is_some(),
-                "scale {scale} origin bare"
-            );
-            assert!(
-                marks.last().unwrap().x >= 800.0,
-                "scale {scale} stops short"
-            );
-
-            let labelled = marks
-                .iter()
-                .enumerate()
-                .filter(|(_, mark)| mark.label.is_some())
-                .map(|(i, _)| i)
-                .collect::<Vec<_>>();
-
-            assert!(labelled.len() >= 2, "too few labels at {scale}");
-            let stride = labelled[1];
-            for pair in labelled.windows(2) {
-                assert_eq!(
-                    pair[1] - pair[0],
-                    stride,
-                    "scale {scale} labels are uneven: {labelled:?}"
-                );
-            }
-        }
+        // Half again as far apart, it is half way in.
+        let marks = ticks(&view(1_500.0), 400.0, step);
+        assert!((marks[1].strength - 0.5).abs() < 1e-3);
     }
 }
