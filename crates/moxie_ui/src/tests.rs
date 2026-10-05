@@ -51,7 +51,8 @@ pub fn app() -> App {
     .insert_resource(TimeUpdateStrategy::ManualDuration(
         Duration::from_millis(50),
     ));
-    app.world_mut().spawn(PrimaryWindow);
+    // A window proper: a focused key bubbles until it meets one.
+    app.world_mut().spawn((Window::default(), PrimaryWindow));
     // The first update only starts the clock.
     app.update();
     app

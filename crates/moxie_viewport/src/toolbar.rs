@@ -2,6 +2,7 @@
 //! where the camera looks from.
 
 use bevy::prelude::*;
+use bevy_fynix::shortcut::{CommandId, shortcut_text};
 use bevy_fynix::views::{
     BehaviorExt as _, FrameProps as _, TooltipExt as _, button,
     dropdown, frame, ghost, label, row, segmented,
@@ -14,6 +15,18 @@ use moxie_ui::theme::EditorTheme;
 use super::camera::{EditorCamera, View, show};
 use super::gizmo::{GizmoMode, GizmoSettings, GizmoSpace};
 
+/// The keys bound to `commands`, as a tooltip lists them.
+fn keys<const N: usize>(
+    world: &World,
+    commands: [CommandId; N],
+) -> String {
+    commands
+        .into_iter()
+        .filter_map(|command| shortcut_text(world, command))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// The toolbar of the viewport `camera` draws.
 pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
     AnyView::<Bevy, EditorTheme>::new(move |cx| {
@@ -24,6 +37,8 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
         let control = theme.space.row;
         let lit = theme.color.selection;
 
+        let mode_keys =
+            keys(cx.world, GizmoMode::ALL.map(GizmoMode::command));
         let mode = segmented(
             ["Move", "Rotate", "Scale"],
             resource::<GizmoSettings, _>(|settings| {
@@ -37,7 +52,7 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
         )
         .width(px(168.0))
         .height(px(control))
-        .tooltip(|| label("Gizmo mode (W, E, R)"));
+        .tooltip(move || label(format!("Gizmo mode ({mode_keys})")));
         let space = segmented(
             ["World", "Local"],
             resource::<GizmoSettings, _>(|settings| {
@@ -73,6 +88,7 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
                     orbit.grid = !orbit.grid;
                 }
             });
+        let view_keys = keys(cx.world, View::ALL.map(View::command));
         let chevron = cx
             .world
             .resource::<AssetServer>()
@@ -89,18 +105,14 @@ pub(super) fn toolbar(camera: Entity) -> AnyView<Bevy, EditorTheme> {
             chevron,
             move |world, at| {
                 if let Some(&view) = View::ALL.get(at) {
-                    let ran = world
-                        .run_system_cached_with(show, (camera, view));
-                    if let Err(err) = ran {
-                        error!("could not change the view: {err}");
-                    }
+                    show(world, camera, view);
                 }
             },
         )
         .width(px(132.0))
         .max_width(px(132.0))
         .height(px(control))
-        .tooltip(|| label("View (numpad 5, 1, 3, 7, 0)"));
+        .tooltip(move || label(format!("View ({view_keys})")));
 
         cx.build(
             row((mode, space, frame().grow(1.0), grid, view))

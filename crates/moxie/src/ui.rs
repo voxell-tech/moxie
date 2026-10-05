@@ -4,30 +4,31 @@ pub(crate) mod hierarchy;
 mod inspector;
 mod preview;
 mod settings;
+mod shortcuts;
 pub(crate) mod timeline;
 mod top_bar;
 
 use bevy::camera::visibility::RenderLayers;
-use bevy::ecs::schedule::common_conditions::not;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::ui::{IsDefaultUiCamera, UiSystems, UiTargetCamera};
 use bevy_fynix::dock::{
     DockRegistry, DockTree, DockWindowKind, dock,
 };
+use bevy_fynix::shortcut::{Chord, ShortcutAppExt as _};
 use bevy_fynix::views::{FrameProps as _, column};
 use bevy_fynix::{AnyView, Bevy, mount};
 use bevy_motiongfx::motiongfx::field_path::field;
+use moxie_ui::MoxieUiPlugin;
 use moxie_ui::field_icon::FieldIconAppExt as _;
 use moxie_ui::inspector::InspectAppExt as _;
 use moxie_ui::theme::{EditorTheme, Hue};
-use moxie_ui::{MoxieUiPlugin, text_field_focused};
 
 use crate::subject::Target;
 use crate::{
     EditorState, PreviewImage, ProjectBookmarks, ProjectLayout,
-    ProjectPath, ProjectSettings, SelectedAction, SelectedEntity,
-    playback, scene, view,
+    ProjectPath, ProjectSettings, SelectedAction, playback, scene,
+    view,
 };
 
 /// Wires the editor UI tree and the per-frame
@@ -36,76 +37,80 @@ pub(crate) struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((MoxieUiPlugin, timeline::TimelinePlugin))
-            .insert_resource(moxie_ui::inspector::FieldAnimatable(
-                Some(|world, field| {
-                    Target::of(world, field).is_some_and(|target| {
-                        target.is_animatable(world)
-                    })
-                }),
-            ))
-            .insert_resource(moxie_ui::inspector::FieldHasAction(
-                Some(|world, field| {
-                    Target::of(world, field).is_some_and(|target| {
-                        target.has_action(world)
-                    })
-                }),
-            ))
-            .register_field_icon(
-                field!(Transform.translation),
-                crate::icons::TRANSLATE,
+        app.add_plugins((
+            MoxieUiPlugin,
+            timeline::TimelinePlugin,
+            shortcuts::plugin,
+            top_bar::plugin,
+        ))
+        .insert_resource(moxie_ui::inspector::FieldAnimatable(Some(
+            |world, field| {
+                Target::of(world, field)
+                    .is_some_and(|target| target.is_animatable(world))
+            },
+        )))
+        .insert_resource(moxie_ui::inspector::FieldHasAction(Some(
+            |world, field| {
+                Target::of(world, field)
+                    .is_some_and(|target| target.has_action(world))
+            },
+        )))
+        .register_field_icon(
+            field!(Transform.translation),
+            crate::icons::TRANSLATE,
+        )
+        .register_field_icon(
+            field!(Transform.rotation),
+            crate::icons::ROTATE,
+        )
+        .register_field_icon(
+            field!(Transform.scale),
+            crate::icons::SCALE,
+        )
+        .register_root_hue::<Transform>(Hue::Blue)
+        .register_root_hue::<Visibility>(Hue::Purple)
+        .register_root_hue::<StandardMaterial>(Hue::Orange)
+        .register_root_hue::<Projection>(Hue::Green)
+        .register_root_hue::<PointLight>(Hue::Yellow)
+        .register_root_hue::<DirectionalLight>(Hue::Yellow)
+        .register_root_hue::<SpotLight>(Hue::Yellow)
+        .register_root_hue::<RectLight>(Hue::Yellow)
+        .init_resource::<EditorState>()
+        .init_resource::<preview::PreviewView>()
+        .init_resource::<view::Rendering>()
+        .init_resource::<SelectedAction>()
+        .init_resource::<ProjectBookmarks>()
+        .init_resource::<ProjectPath>()
+        .init_resource::<assets::AssetFoldState>()
+        .init_resource::<hierarchy::Dragging>()
+        .init_resource::<scene::EditorScene>()
+        .add_systems(
+            Startup,
+            (setup_editor_ui, mount_editor_ui).chain(),
+        )
+        .add_systems(
+            Update,
+            (
+                scene::recompile_dirty_scene
+                    .run_if(scene::scene_dirty),
+                playback::track_first_timeline,
+                playback::stop_at_track_end,
+                playback::track_playing,
+                view::resize_preview,
+                view::sync_scene_cameras,
             )
-            .register_field_icon(
-                field!(Transform.rotation),
-                crate::icons::ROTATE,
-            )
-            .register_field_icon(
-                field!(Transform.scale),
-                crate::icons::SCALE,
-            )
-            .register_root_hue::<Transform>(Hue::Blue)
-            .register_root_hue::<Visibility>(Hue::Purple)
-            .register_root_hue::<StandardMaterial>(Hue::Orange)
-            .register_root_hue::<Projection>(Hue::Green)
-            .register_root_hue::<PointLight>(Hue::Yellow)
-            .register_root_hue::<DirectionalLight>(Hue::Yellow)
-            .register_root_hue::<SpotLight>(Hue::Yellow)
-            .register_root_hue::<RectLight>(Hue::Yellow)
-            .init_resource::<EditorState>()
-            .init_resource::<preview::PreviewView>()
-            .init_resource::<view::Rendering>()
-            .init_resource::<SelectedAction>()
-            .init_resource::<SelectedEntity>()
-            .init_resource::<ProjectBookmarks>()
-            .init_resource::<ProjectPath>()
-            .init_resource::<assets::AssetFoldState>()
-            .init_resource::<hierarchy::Dragging>()
-            .init_resource::<scene::EditorScene>()
-            .add_systems(
-                Startup,
-                (setup_editor_ui, mount_editor_ui).chain(),
-            )
-            .add_systems(
-                Update,
-                (
-                    scene::recompile_dirty_scene
-                        .run_if(scene::scene_dirty),
-                    playback::track_first_timeline,
-                    playback::play_pause_hotkey
-                        .run_if(not(text_field_focused)),
-                    playback::stop_at_track_end,
-                    playback::track_playing,
-                    view::resize_preview,
-                    view::sync_scene_cameras,
-                )
-                    .chain(),
-            )
-            .init_resource::<preview::LastArea>()
-            .add_systems(
-                PostUpdate,
-                preview::remember_area.after(UiSystems::Layout),
-            )
-            .add_observer(playback::on_toggle_playback);
+                .chain(),
+        )
+        .init_resource::<preview::LastArea>()
+        .add_systems(
+            PostUpdate,
+            preview::remember_area.after(UiSystems::Layout),
+        )
+        .add_command(
+            playback::TOGGLE_PLAYBACK,
+            &[Chord::key(KeyCode::Space)],
+        )
+        .add_observer(playback::on_toggle_playback);
 
         app.with_inspect_group("Cameras")
             .register_inspectable::<Camera>()
@@ -236,6 +241,14 @@ fn register_windows(
         .register(
             "project",
             kind("Project", crate::icons::PROJECT, settings::panel),
+        )
+        .register(
+            shortcuts::WINDOW,
+            kind(
+                "Shortcuts",
+                crate::icons::SHORTCUTS,
+                shortcuts::panel,
+            ),
         )
         .register(
             "assets",

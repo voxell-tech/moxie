@@ -8,6 +8,7 @@ pub const TIMELINE: &str = "icons/media/film-02.png";
 pub const HIERARCHY: &str = "icons/editor/dotpoints-01.png";
 pub const PROJECT: &str = "icons/general/settings-04.png";
 pub const ACTION: &str = "icons/general/speedometer-04.png";
+pub const SHORTCUTS: &str = "icons/general/menu-01.png";
 pub const INSPECTOR: &str = "icons/general/info-circle.png";
 pub const ASSETS: &str = "icons/files/folder.png";
 

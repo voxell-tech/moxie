@@ -12,14 +12,20 @@ use bevy::picking::pointer::PointerLocation;
 use bevy::prelude::*;
 use bevy::ui::widget::ViewportNode;
 use bevy_fynix::Theme;
+use bevy_fynix::shortcut::{
+    Chord, CommandId, CommandSpec, Layer, ScopeId, ScopeSpec,
+    ShortcutAppExt as _,
+};
+use moxie_ui::SelectedEntity;
 use moxie_ui::inspector::Field;
 use moxie_ui::theme::{EditorTheme, GizmoStyle};
-use moxie_ui::{SelectedEntity, text_field_focused};
 
+pub(crate) use self::drag::ActiveDrag;
 pub(super) use self::drag::watch;
-use self::drag::{ActiveDrag, Pending, drive};
+use self::drag::{Pending, drive};
 use self::fills::{FillMaterial, Fills, HandleFills, spawn_fills};
 use self::paint::{Shown, paint};
+use super::camera::VIEWPORT;
 use super::{EDITOR_LAYER, EditorCamera};
 
 /// Segments a rotation ring is drawn and picked by.
@@ -31,18 +37,14 @@ pub(super) fn plugin(app: &mut App) {
         .init_resource::<GizmoSettings>()
         .init_resource::<ActiveDrag>()
         .add_systems(Startup, (style_handles, spawn_fills))
-        .add_systems(
-            Update,
-            (pick_mode.run_if(not(text_field_focused)), drive)
-                .chain()
-                .after(super::place_cameras),
-        )
+        .add_systems(Update, drive.after(super::place_cameras))
         .add_systems(
             PostUpdate,
             handles
                 .in_set(super::Overlay)
                 .before(VisibilitySystems::VisibilityPropagate),
         );
+    add_commands(app);
 }
 
 /// The gizmo's handles, drawn over the scene.
@@ -73,6 +75,15 @@ impl GizmoMode {
     pub(crate) const ALL: [Self; 3] =
         [Self::Translate, Self::Rotate, Self::Scale];
 
+    /// The command that picks this mode.
+    pub(crate) const fn command(self) -> CommandId {
+        CommandId(match self {
+            Self::Translate => "gizmo.mode.translate",
+            Self::Rotate => "gizmo.mode.rotate",
+            Self::Scale => "gizmo.mode.scale",
+        })
+    }
+
     fn field(self, entity: Entity) -> Field {
         Field::of::<Transform>(entity).child(match self {
             Self::Translate => "translation",
@@ -101,22 +112,74 @@ pub(crate) struct GizmoSettings {
     pub(crate) space: GizmoSpace,
 }
 
-fn pick_mode(
-    keys: Res<ButtonInput<KeyCode>>,
-    active: Res<ActiveDrag>,
-    mut settings: ResMut<GizmoSettings>,
-) {
-    // A drag keeps the mode it began in, or it would write one field
-    // under the handles of another.
-    if active.0.is_some() {
-        return;
+/// The scope of a gizmo handle being dragged.
+const DRAG: ScopeSpec = ScopeSpec {
+    id: ScopeId("gizmo.drag"),
+    label: "Dragging the gizmo",
+    layer: Layer::Gesture,
+    active: Some(dragging),
+};
+
+/// Whether a gizmo handle is being dragged.
+fn dragging(world: &World) -> bool {
+    world
+        .get_resource::<ActiveDrag>()
+        .is_some_and(ActiveDrag::under_way)
+}
+
+fn add_commands(app: &mut App) {
+    app.add_scope(DRAG).add_command(
+        CommandSpec {
+            id: CommandId("gizmo.cancel_drag"),
+            label: "Cancel the drag",
+            scope: DRAG.id,
+            run: |world, _| drag::cancel(world),
+            enabled: |_| true,
+            repeat: false,
+        },
+        &[Chord::key(KeyCode::Escape)],
+    );
+
+    let pick = |mode: GizmoMode, label, key, run| {
+        (
+            CommandSpec {
+                id: mode.command(),
+                label,
+                scope: VIEWPORT,
+                run,
+                // A drag keeps the mode it began in, or it would
+                // write one field under the handles of another.
+                enabled: |world| !dragging(world),
+                repeat: false,
+            },
+            Chord::key(key),
+        )
+    };
+    fn set(world: &mut World, mode: GizmoMode) {
+        world.resource_mut::<GizmoSettings>().mode = mode;
     }
-    let picked = [KeyCode::KeyW, KeyCode::KeyE, KeyCode::KeyR]
-        .into_iter()
-        .zip(GizmoMode::ALL)
-        .find(|(key, _)| keys.just_pressed(*key));
-    if let Some((_, mode)) = picked {
-        settings.mode = mode;
+    for (command, chord) in [
+        pick(
+            GizmoMode::Translate,
+            "Move",
+            KeyCode::KeyW,
+            |world, _| {
+                set(world, GizmoMode::Translate);
+            },
+        ),
+        pick(
+            GizmoMode::Rotate,
+            "Rotate",
+            KeyCode::KeyE,
+            |world, _| {
+                set(world, GizmoMode::Rotate);
+            },
+        ),
+        pick(GizmoMode::Scale, "Scale", KeyCode::KeyR, |world, _| {
+            set(world, GizmoMode::Scale);
+        }),
+    ] {
+        app.add_command(command, &[chord]);
     }
 }
 

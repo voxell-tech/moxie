@@ -12,7 +12,6 @@
 
 use core::time::Duration;
 
-use bevy::input::ButtonInput;
 use bevy::picking::events::{
     Click, Drag, DragEnd, DragStart, Pointer, Press, Release,
 };
@@ -20,6 +19,10 @@ use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::UiScale;
 use bevy::window::SystemCursorIcon;
+use bevy_fynix::shortcut::{
+    Chord, CommandId, CommandSpec, Layer, ScopeId, ScopeSpec,
+    ShortcutAppExt as _,
+};
 use bevy_fynix::{AnyView, Bevy, EntityCursor, Hovered, Theme, View};
 use bevy_motiongfx::scene::backend::Backend;
 use motiongfx_scene::block::Node as SceneNode;
@@ -33,8 +36,37 @@ use crate::{EditorScene, ProjectSettings, TimelineView};
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<Dragging>()
-        .add_systems(Update, (cancel_on_escape, show_handles));
+        .add_systems(Update, show_handles)
+        .add_scope(DRAG)
+        .add_command(
+            CommandSpec {
+                id: CommandId("timeline.cancel_retime"),
+                label: "Cancel the retime",
+                scope: DRAG.id,
+                run: |world, _| {
+                    if let Err(err) = world.run_system_cached(cancel)
+                    {
+                        error!("could not cancel the retime: {err}");
+                    }
+                },
+                enabled: |_| true,
+                repeat: false,
+            },
+            &[Chord::key(KeyCode::Escape)],
+        );
 }
+
+/// The scope of an edge being dragged.
+const DRAG: ScopeSpec = ScopeSpec {
+    id: ScopeId("timeline.retime"),
+    label: "Retiming",
+    layer: Layer::Gesture,
+    active: Some(|world| {
+        world
+            .get_resource::<Dragging>()
+            .is_some_and(|dragging| dragging.0.is_some())
+    }),
+};
 
 /// An edge handle's width.
 pub(crate) const EDGE_HANDLE_PX: f32 = 6.0;
@@ -258,8 +290,7 @@ fn wire_edge(
 
 /// Drops the drag without committing, re-laying the untouched tree to
 /// undo the preview.
-fn cancel_on_escape(
-    keys: Res<ButtonInput<KeyCode>>,
+fn cancel(
     theme: Res<Theme<EditorTheme>>,
     mut dragging: ResMut<Dragging>,
     editor_scene: Res<EditorScene>,
@@ -272,9 +303,6 @@ fn cancel_on_escape(
         (Without<BoxPath>, Without<GapPath>),
     >,
 ) {
-    if !keys.just_pressed(KeyCode::Escape) {
-        return;
-    }
     let Some(gesture) = dragging.0.take() else {
         return;
     };

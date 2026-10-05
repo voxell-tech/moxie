@@ -8,8 +8,10 @@ use bevy::picking::events::{
 };
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
+use bevy_fynix::shortcut::{CommandId, CommandSpec, GLOBAL};
 use bevy_motiongfx::prelude::{TimelineId, *};
 use moxie_ui::cursor::PointerEventExt as _;
+use moxie_ui::layout::logical_rect;
 
 use crate::{EditorState, TimelineView};
 
@@ -19,15 +21,15 @@ use crate::{EditorState, TimelineView};
 #[derive(Event)]
 pub(crate) struct TogglePlayback;
 
-/// Request a toggle when the spacebar is pressed.
-pub(crate) fn play_pause_hotkey(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut commands: Commands,
-) {
-    if keys.just_pressed(KeyCode::Space) {
-        commands.trigger(TogglePlayback);
-    }
-}
+/// The command that flips playback.
+pub(crate) const TOGGLE_PLAYBACK: CommandSpec = CommandSpec {
+    id: CommandId("playback.toggle"),
+    label: "Play or pause",
+    scope: GLOBAL,
+    run: |world, _| world.trigger(TogglePlayback),
+    enabled: |_| true,
+    repeat: false,
+};
 
 /// Flip `is_playing` for all players, rewinding to the start first if
 /// playback is starting from the end of the track.
@@ -101,14 +103,7 @@ pub(crate) fn x_from_cursor(
     computed: &ComputedNode,
     transform: &UiGlobalTransform,
 ) -> f32 {
-    let inv = computed.inverse_scale_factor();
-    let (_scale, _angle, center) =
-        transform.to_scale_angle_translation();
-    let rect = Rect::from_center_size(
-        center.trunc() * inv,
-        computed.size() * inv,
-    );
-    cursor.x - rect.min.x
+    cursor.x - logical_rect(computed, transform).min.x
 }
 
 /// Move the timeline to `time` and stop playback so the scrub isn't
