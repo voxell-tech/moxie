@@ -78,20 +78,26 @@ impl Codec {
     }
 }
 
-/// The `ffmpeg` on this machine, if one is found: on the `PATH`, or
-/// where a package manager puts it.
+/// The `ffmpeg` to encode with, if one is found: the one shipped
+/// beside this program, else one on the `PATH` or where a package
+/// manager puts it.
 pub fn find_ffmpeg() -> Option<PathBuf> {
     let name = if cfg!(windows) {
         "ffmpeg.exe"
     } else {
         "ffmpeg"
     };
+    let shipped = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(PathBuf::from));
     let path = std::env::var_os("PATH").unwrap_or_default();
     // An app started from the desktop is not given the shell's
     // `PATH`.
     let usual = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
         .map(PathBuf::from);
-    std::env::split_paths(&path)
+    shipped
+        .into_iter()
+        .chain(std::env::split_paths(&path))
         .chain(usual)
         .map(|dir| dir.join(name))
         .find(|file| file.is_file())
