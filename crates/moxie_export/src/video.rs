@@ -4,7 +4,7 @@ use core::time::Duration;
 use std::fs::File;
 use std::io::Write as _;
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 
 use bevy::math::UVec2;
 use bevy::tasks::futures::check_ready;
@@ -153,7 +153,8 @@ enum Pipe {
     Unopened,
     Idle(ChildStdin),
     Writing(Task<(ChildStdin, std::io::Result<()>)>),
-    Closing(Task<std::io::Result<ExitStatus>>),
+    /// Shut, with ffmpeg finishing the file.
+    Closing,
     Closed,
 }
 
@@ -221,25 +222,26 @@ impl Video {
                 // The end of its input is what tells ffmpeg to
                 // finish the file.
                 drop(stdin);
-                if let Some(mut child) = self.child.take() {
-                    self.pipe = Pipe::Closing(
-                        IoTaskPool::get()
-                            .spawn(async move { child.wait() }),
-                    );
-                }
+                self.pipe = Pipe::Closing;
                 Ok(false)
             }
-            Pipe::Closing(mut task) => {
-                let Some(status) = check_ready(&mut task) else {
-                    self.pipe = Pipe::Closing(task);
-                    return Ok(false);
+            Pipe::Closing => {
+                let Some(child) = &mut self.child else {
+                    return Ok(true);
                 };
-                match status {
-                    Ok(status) if status.success() => {
+                // A failure keeps the child, so drop deletes the
+                // file.
+                match child.try_wait() {
+                    Ok(None) => {
+                        self.pipe = Pipe::Closing;
+                        Ok(false)
+                    }
+                    Ok(Some(status)) if status.success() => {
+                        self.child = None;
                         let _ = std::fs::remove_file(self.log());
                         Ok(true)
                     }
-                    Ok(status) => {
+                    Ok(Some(status)) => {
                         Err(self.failure(&status.to_string()))
                     }
                     Err(err) => Err(self.failure(&err.to_string())),
@@ -340,5 +342,87 @@ mod tests {
             rate_of(Duration::from_millis(300)),
             (1_000_000_000, 300_000_000),
         );
+    }
+
+    /// A [`Video`] into `name` in a folder of its own, encoded by a
+    /// shell script that copies its input to the file and then runs
+    /// `then`.
+    #[cfg(unix)]
+    fn stand_in(name: &str, then: &str) -> (Video, PathBuf) {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        bevy::tasks::IoTaskPool::get_or_init(Default::default);
+        let dir = std::env::temp_dir().join(format!(
+            "moxie_export_{name}_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ffmpeg = dir.join("ffmpeg");
+        // The output is the last argument.
+        let script = format!(
+            "#!/bin/sh\nfor arg; do out=$arg; done\ncat > \
+             \"$out\"\n{then}\n"
+        );
+        std::fs::write(&ffmpeg, script).unwrap();
+        std::fs::set_permissions(
+            &ffmpeg,
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        let path = dir.join("out.mp4");
+        let video = Video::new(
+            ffmpeg,
+            Codec::H264,
+            Quality::Draft,
+            path.clone(),
+            Duration::from_millis(40),
+        );
+        (video, path)
+    }
+
+    /// Writes one frame and closes the pipe, leaving ffmpeg to
+    /// finish.
+    #[cfg(unix)]
+    fn write_and_shut(video: &mut Video) {
+        let frame = Frame {
+            size: UVec2::ONE,
+            data: vec![0; 4],
+        };
+        video.write(frame).unwrap();
+        while !matches!(video.pipe, Pipe::Closing) {
+            video.finished().unwrap();
+            video.close().unwrap();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_video_ffmpeg_fails_to_finish_is_deleted() {
+        let (mut video, path) = stand_in("fails", "exit 1");
+        write_and_shut(&mut video);
+        let result = loop {
+            match video.close() {
+                Ok(false) => {
+                    std::thread::sleep(Duration::from_millis(5))
+                }
+                done => break done,
+            }
+        };
+        assert!(result.is_err());
+        let log = video.log();
+        drop(video);
+        assert!(!path.exists());
+        assert!(!log.exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_video_cancelled_as_ffmpeg_finishes_is_deleted() {
+        let (mut video, path) = stand_in("cancelled", "sleep 5");
+        write_and_shut(&mut video);
+        assert!(path.exists(), "ffmpeg is still finishing it");
+        drop(video);
+        assert!(!path.exists());
     }
 }
