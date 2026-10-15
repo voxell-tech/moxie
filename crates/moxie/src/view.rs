@@ -4,6 +4,7 @@
 use bevy::camera::RenderTarget;
 use bevy::prelude::*;
 use bevy::render::render_resource::Extent3d;
+use moxie_export::Export;
 use moxie_viewport::{EditorCamera, OutputAspect, SceneCamera};
 
 use crate::thumbnails::ThumbnailCamera;
@@ -27,8 +28,8 @@ pub(crate) struct PreviewPanel;
 pub(crate) struct Rendering(pub(crate) bool);
 
 /// Renders every scene camera into the [`PreviewImage`] while a
-/// preview is on screen. Which draws over which, and what each
-/// clears to, is each camera's own.
+/// preview is on screen or an [`Export`] runs. Which draws over
+/// which, and what each clears to, is each camera's own.
 pub(crate) fn sync_scene_cameras(
     mut commands: Commands,
     preview: Res<PreviewImage>,
@@ -36,14 +37,17 @@ pub(crate) fn sync_scene_cameras(
     mut rendering: ResMut<Rendering>,
     mut aspect: ResMut<OutputAspect>,
     panels: Query<&ComputedNode, With<PreviewPanel>>,
+    exports: Query<(), With<Export>>,
     mut cameras: Query<
         (Entity, &mut Camera, Option<&RenderTarget>),
         ProjectCamera,
     >,
 ) {
     // A hidden tab is laid out with no size.
-    let shown =
-        panels.iter().any(|panel| panel.size().min_element() > 0.0);
+    let shown = !exports.is_empty()
+        || panels
+            .iter()
+            .any(|panel| panel.size().min_element() > 0.0);
     rendering.set_if_neq(Rendering(!cameras.is_empty()));
     let output = settings.size().as_vec2();
     aspect.set_if_neq(OutputAspect(output.x / output.y));

@@ -3790,6 +3790,7 @@ dependencies = [
  "fynix",
  "motiongfx_scene",
  "moxie_asset",
+ "moxie_export",
  "moxie_ui",
  "moxie_viewport",
  "rfd",

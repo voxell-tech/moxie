@@ -13,6 +13,7 @@ motiongfx_scene = { workspace = true }
 moxie_ui = { workspace = true }
 moxie_asset = { workspace = true }
 moxie_viewport = { workspace = true }
+moxie_export = { workspace = true }
 bevy_fynix = { workspace = true }
 fynix = { workspace = true }
 bevy = { workspace = true, default-features = true, features = [

@@ -7,6 +7,7 @@
 )]
 
 mod catalog;
+mod export;
 mod icons;
 mod keymap;
 mod layout;
@@ -68,6 +69,7 @@ impl Plugin for MoxiePlugin {
             materials::plugin,
             moxie_viewport::plugin,
             keymap::plugin,
+            export::plugin,
         ))
         .init_resource::<ProjectSettings>()
         .init_resource::<ProjectLayout>()
