@@ -33,15 +33,22 @@ impl Codec {
         }
     }
 
-    fn args(self) -> &'static [&'static str] {
-        match self {
+    fn args(self, quality: Quality) -> Vec<&'static str> {
+        let crf = match (self, quality) {
+            (Self::H264, Quality::Draft) => Some("28"),
+            (Self::H264, Quality::Standard) => Some("23"),
+            (Self::H264, Quality::High) => Some("18"),
+            (Self::Vp9, Quality::Draft) => Some("38"),
+            (Self::Vp9, Quality::Standard) => Some("31"),
+            (Self::Vp9, Quality::High) => Some("24"),
+            (Self::ProRes4444, _) => None,
+        };
+        let codec: &[&str] = match self {
             Self::H264 => &[
                 "-c:v",
                 "libx264",
                 "-preset",
                 "medium",
-                "-crf",
-                "18",
                 // Padded: 4:2:0 has no odd sizes. Tagged in the
                 // filter, where the encoder takes its tags from.
                 "-vf",
@@ -65,8 +72,6 @@ impl Codec {
             Self::Vp9 => &[
                 "-c:v",
                 "libvpx-vp9",
-                "-crf",
-                "24",
                 "-b:v",
                 "0",
                 "-row-mt",
@@ -74,8 +79,23 @@ impl Codec {
                 "-pix_fmt",
                 "yuva420p",
             ],
+        };
+        let mut args = codec.to_vec();
+        if let Some(crf) = crf {
+            args.extend(["-crf", crf]);
         }
+        args
     }
+}
+
+/// How closely a video keeps to the frames, against how large it is.
+/// ProRes keeps them all, whichever is asked for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Quality {
+    Draft,
+    #[default]
+    Standard,
+    High,
 }
 
 /// The `ffmpeg` to encode with, if one is found: the one shipped
@@ -120,6 +140,7 @@ pub(crate) fn rate_of(step: Duration) -> (u32, u32) {
 pub(crate) struct Video {
     ffmpeg: PathBuf,
     codec: Codec,
+    quality: Quality,
     path: PathBuf,
     step: Duration,
     /// The process, until it is left to finish by itself.
@@ -140,12 +161,14 @@ impl Video {
     pub(crate) fn new(
         ffmpeg: PathBuf,
         codec: Codec,
+        quality: Quality,
         path: PathBuf,
         step: Duration,
     ) -> Self {
         Self {
             ffmpeg,
             codec,
+            quality,
             path,
             step,
             child: None,
@@ -242,7 +265,7 @@ impl Video {
             .args(["-video_size", &format!("{}x{}", size.x, size.y)])
             .args(["-framerate", &format!("{frames}/{seconds}")])
             .args(["-i", "pipe:0", "-an"])
-            .args(self.codec.args())
+            .args(self.codec.args(self.quality))
             .arg(&self.path)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
@@ -286,10 +309,13 @@ impl Video {
 
 impl Drop for Video {
     fn drop(&mut self) {
-        // Still here, so the export was cancelled or failed.
+        // Still here, so the export was cancelled or failed, and
+        // what is on disk is no video.
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             let _ = child.wait();
+            let _ = std::fs::remove_file(&self.path);
+            let _ = std::fs::remove_file(self.log());
         }
     }
 }

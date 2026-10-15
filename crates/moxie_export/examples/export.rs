@@ -16,7 +16,8 @@ use bevy::winit::WinitPlugin;
 use bevy_motiongfx::BevyMotionGfxPlugin;
 use bevy_motiongfx::prelude::*;
 use moxie_export::{
-    Codec, Export, ExportFinished, Output, find_ffmpeg, frame_count,
+    Codec, Export, ExportFinished, Output, Quality, find_ffmpeg,
+    frame_count,
 };
 
 /// A width whose rows are padded on their way back from the GPU.
@@ -139,6 +140,7 @@ fn setup(
             Output::Video {
                 ffmpeg: ffmpeg.clone(),
                 codec,
+                quality: Quality::High,
                 path: folder
                     .join("cube")
                     .with_extension(codec.extension()),

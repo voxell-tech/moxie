@@ -22,7 +22,7 @@ use bevy::render::view::screenshot::{
 use bevy_motiongfx::prelude::{
     MotionGfxManager, RealtimePlayer, TimelineId,
 };
-pub use video::{Codec, find_ffmpeg};
+pub use video::{Codec, Quality, find_ffmpeg};
 
 /// Frames rendered and not yet written, at most.
 const MAX_IN_FLIGHT: u32 = 4;
@@ -46,6 +46,7 @@ pub enum Output {
     Video {
         ffmpeg: PathBuf,
         codec: Codec,
+        quality: Quality,
         path: PathBuf,
     },
 }
@@ -93,9 +94,10 @@ impl Export {
             Output::Video {
                 ffmpeg,
                 codec,
+                quality,
                 path,
             } => Sink::Video(video::Video::new(
-                ffmpeg, codec, path, step,
+                ffmpeg, codec, quality, path, step,
             )),
         };
         Self {
@@ -262,7 +264,7 @@ fn drive(
         };
         let timeline = manager
             .get_timeline_mut(&job.timeline)
-            .ok_or("the timeline to export is gone")?;
+            .ok_or("the timeline was rebuilt while it exported")?;
         job.resume.get_or_insert(timeline.target_time());
         timeline.set_target_track(0);
         timeline.set_target_time(job.step * index);
