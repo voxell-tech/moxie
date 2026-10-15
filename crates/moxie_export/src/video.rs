@@ -396,9 +396,11 @@ mod tests {
         }
     }
 
+    // One test, as on Linux a script being written on one thread
+    // cannot be started on another ("Text file busy").
     #[test]
     #[cfg(unix)]
-    fn a_video_ffmpeg_fails_to_finish_is_deleted() {
+    fn a_video_ffmpeg_does_not_finish_is_deleted() {
         let (mut video, path) = stand_in("fails", "exit 1");
         write_and_shut(&mut video);
         let result = loop {
@@ -412,17 +414,13 @@ mod tests {
         assert!(result.is_err());
         let log = video.log();
         drop(video);
-        assert!(!path.exists());
+        assert!(!path.exists(), "a failed video is deleted");
         assert!(!log.exists());
-    }
 
-    #[test]
-    #[cfg(unix)]
-    fn a_video_cancelled_as_ffmpeg_finishes_is_deleted() {
         let (mut video, path) = stand_in("cancelled", "sleep 5");
         write_and_shut(&mut video);
         assert!(path.exists(), "ffmpeg is still finishing it");
         drop(video);
-        assert!(!path.exists());
+        assert!(!path.exists(), "a cancelled video is deleted");
     }
 }
