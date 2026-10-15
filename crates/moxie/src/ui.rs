@@ -1,5 +1,6 @@
 mod action;
 mod assets;
+mod export;
 pub(crate) mod hierarchy;
 mod inspector;
 mod preview;
@@ -41,6 +42,7 @@ impl Plugin for UiPlugin {
             MoxieUiPlugin,
             timeline::TimelinePlugin,
             shortcuts::plugin,
+            export::plugin,
             top_bar::plugin,
         ))
         .insert_resource(moxie_ui::inspector::FieldAnimatable(Some(
@@ -253,5 +255,29 @@ fn register_windows(
         .register(
             "assets",
             kind("Assets", crate::icons::ASSETS, assets::panel),
+        )
+        .register(
+            export::WINDOW,
+            kind("Export", crate::icons::EXPORT, export::panel),
         );
+}
+
+/// Shows the dock window `window`, opening it beside the project's
+/// panel when it is not open yet.
+fn show_window(world: &mut World, window: &'static str) {
+    let mut tree = world.resource_mut::<DockTree>();
+    let shown = tree
+        .tabs()
+        .find(|(_, tab)| tab.window_id == window)
+        .map(|(leaf, tab)| (leaf, tab.id));
+    if let Some((leaf, tab)) = shown {
+        tree.set_active(leaf, tab);
+        return;
+    }
+    let leaf = tree
+        .find_leaf_with_window("project")
+        .or_else(|| tree.leaves().next().map(|(leaf, _)| leaf));
+    if let Some(leaf) = leaf {
+        tree.add_tab(leaf, window);
+    }
 }

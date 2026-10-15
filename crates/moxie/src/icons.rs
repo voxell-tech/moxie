@@ -11,6 +11,7 @@ pub const ACTION: &str = "icons/general/speedometer-04.png";
 pub const SHORTCUTS: &str = "icons/general/menu-01.png";
 pub const INSPECTOR: &str = "icons/general/info-circle.png";
 pub const ASSETS: &str = "icons/files/folder.png";
+pub const EXPORT: &str = "icons/arrows/arrow-up.png";
 
 pub const PLUS: &str = "icons/general/plus.png";
 pub const TRASH: &str = "icons/general/trash-01.png";

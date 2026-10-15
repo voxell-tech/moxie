@@ -21,7 +21,7 @@ const FILE: [CommandId; 5] = [
     CommandId("file.new"),
     CommandId("file.open"),
     CommandId("file.save"),
-    crate::export::EXPORT,
+    super::export::OPEN,
     super::shortcuts::OPEN,
 ];
 
