@@ -17,10 +17,11 @@ use crate::project;
 const BAR_HEIGHT: f32 = 26.0;
 
 /// The commands of the File menu, in its order.
-const FILE: [CommandId; 4] = [
+const FILE: [CommandId; 5] = [
     CommandId("file.new"),
     CommandId("file.open"),
     CommandId("file.save"),
+    super::export::OPEN,
     super::shortcuts::OPEN,
 ];
 

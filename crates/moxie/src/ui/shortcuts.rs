@@ -5,7 +5,6 @@
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input_focus::{FocusedInput, InputFocus};
 use bevy::prelude::*;
-use bevy_fynix::dock::DockTree;
 use bevy_fynix::shortcut::{
     Chord, CommandId, CommandList, CommandSpec, GLOBAL, Keymap,
     Layer, Mods, ScopeId, ScopeSpec, ShortcutAppExt as _,
@@ -50,32 +49,13 @@ pub(super) fn plugin(app: &mut App) {
                 id: OPEN,
                 label: "Keyboard shortcuts",
                 scope: GLOBAL,
-                run: |world, _| open(world),
+                run: |world, _| super::show_window(world, WINDOW),
                 enabled: |_| true,
                 repeat: false,
             },
             &[],
         )
         .add_observer(capture);
-}
-
-/// Shows the panel, beside the project's when it is not open yet.
-fn open(world: &mut World) {
-    let mut tree = world.resource_mut::<DockTree>();
-    let shown = tree
-        .tabs()
-        .find(|(_, tab)| tab.window_id == WINDOW)
-        .map(|(leaf, tab)| (leaf, tab.id));
-    if let Some((leaf, tab)) = shown {
-        tree.set_active(leaf, tab);
-        return;
-    }
-    let leaf = tree
-        .find_leaf_with_window("project")
-        .or_else(|| tree.leaves().next().map(|(leaf, _)| leaf));
-    if let Some(leaf) = leaf {
-        tree.add_tab(leaf, WINDOW);
-    }
 }
 
 /// The command waiting for the key it will be bound to, if any.

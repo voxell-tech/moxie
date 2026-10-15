@@ -3790,6 +3790,7 @@ dependencies = [
  "fynix",
  "motiongfx_scene",
  "moxie_asset",
+ "moxie_export",
  "moxie_ui",
  "moxie_viewport",
  "rfd",
@@ -3802,6 +3803,15 @@ dependencies = [
  "bevy",
  "ron",
  "serde",
+]
+
+[[package]]
+name = "moxie_export"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_motiongfx",
+ "image",
 ]
 
 [[package]]

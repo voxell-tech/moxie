@@ -1,0 +1,15 @@
+[package]
+name = "moxie_export"
+description = "Renders a MotionGfx timeline frame by frame into image files or a video."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bevy_motiongfx = { workspace = true }
+bevy = { workspace = true, default-features = true }
+image = { workspace = true }
+
+[lints]
+workspace = true
